@@ -34,10 +34,10 @@ def print_header(title: str) -> None:
 
 def main():
     """Run the agent interaction demo."""
-    print_header("🦠 Memory Parasite Protocol - Demo")
+    print_header(" Memory Parasite Protocol - Demo")
     
     # Initialize agents
-    print("\n📦 Initializing agents...")
+    print("\n Initializing agents...")
     dex_agent = DexAgent()
     nft_agent = NFTAgent()
     defi_agent = DeFiAgent()
@@ -45,11 +45,11 @@ def main():
     agents = [dex_agent, nft_agent, defi_agent]
     
     for agent in agents:
-        print(f"  ✓ {agent.config.agent_name} ({agent.agent_id})")
+        print(f"   {agent.config.agent_name} ({agent.agent_id})")
         print(f"    Goal: {agent.goal[:60]}...")
     
     # Initialize agent codebases
-    print_header("📝 Initial Codebases")
+    print_header(" Initial Codebases")
     for agent in agents:
         agent.memory.codebase = agent.get_initial_code()
         print(f"\n{agent.config.agent_name}:")
@@ -57,7 +57,7 @@ def main():
         print(f"  Sample: {agent.memory.codebase.splitlines()[0][:50]}...")
     
     # Demonstrate infection creation
-    print_header("🧬 Creating Infections")
+    print_header(" Creating Infections")
     
     # DEX agent infects NFT agent
     infection1 = Infection(
@@ -78,7 +78,7 @@ def swap_nft_for_tokens(nft_id: str, token_amount: Decimal) -> bool:
         ),
     )
     
-    print(f"\n📤 Infection 1: {dex_agent.agent_id} → {nft_agent.agent_id}")
+    print(f"\n Infection 1: {dex_agent.agent_id} → {nft_agent.agent_id}")
     print(f"   Type: {infection1.infection_type.value}")
     print(f"   Message: {infection1.payload.message[:50]}...")
     print(f"   Hash: {infection1.infection_hash[:16]}...")
@@ -101,13 +101,13 @@ def get_lending_liquidity(pool_id: str) -> Decimal:
         ),
     )
     
-    print(f"\n📤 Infection 2: {defi_agent.agent_id} → {dex_agent.agent_id}")
+    print(f"\n Infection 2: {defi_agent.agent_id} → {dex_agent.agent_id}")
     print(f"   Type: {infection2.infection_type.value}")
     print(f"   Message: {infection2.payload.message[:50]}...")
     print(f"   Hash: {infection2.infection_hash[:16]}...")
     
     # Deliver infections
-    print_header("📬 Delivering Infections")
+    print_header(" Delivering Infections")
     
     nft_agent.receive_infection(infection1)
     dex_agent.receive_infection(infection2)
@@ -116,7 +116,7 @@ def get_lending_liquidity(pool_id: str) -> Decimal:
     print(f"  {dex_agent.agent_id} has {len(dex_agent.pending_infections)} pending infection(s)")
     
     # Simulate infection responses
-    print_header("⚡ Processing Infections")
+    print_header(" Processing Infections")
     
     # NFT agent ACCEPTS the DEX suggestion
     print(f"\n{nft_agent.config.agent_name} evaluating infection from {infection1.source_agent_id}...")
@@ -136,7 +136,7 @@ def get_lending_liquidity(pool_id: str) -> Decimal:
     nft_agent.memory.infections_accepted.append(infection1.id)
     nft_agent.pending_infections.clear()
     
-    print(f"  ✅ ACCEPTED - Applied mutation {mutation1.mutation_hash}")
+    print(f"   ACCEPTED - Applied mutation {mutation1.mutation_hash}")
     
     # DEX agent MUTATES the DeFi mandate
     print(f"\n{dex_agent.config.agent_name} evaluating infection from {infection2.source_agent_id}...")
@@ -159,10 +159,10 @@ def get_lending_liquidity(pool_id: str) -> Decimal:
     dex_agent.memory.infections_accepted.append(infection2.id)
     dex_agent.pending_infections.clear()
     
-    print(f"  🔄 MUTATED - Applied partial mutation {mutation2.mutation_hash}")
+    print(f"   MUTATED - Applied partial mutation {mutation2.mutation_hash}")
     
     # Now NFT agent infects DeFi agent (and gets REJECTED)
-    print_header("❌ Rejection Example")
+    print_header(" Rejection Example")
     
     infection3 = Infection(
         source_agent_id=nft_agent.agent_id,
@@ -174,7 +174,7 @@ def get_lending_liquidity(pool_id: str) -> Decimal:
         ),
     )
     
-    print(f"\n📤 Infection 3: {nft_agent.agent_id} → {defi_agent.agent_id}")
+    print(f"\n Infection 3: {nft_agent.agent_id} → {defi_agent.agent_id}")
     print(f"   Type: {infection3.infection_type.value} (aggressive!)")
     print(f"   Priority: {infection3.payload.priority}/10 (low)")
     
@@ -185,14 +185,14 @@ def get_lending_liquidity(pool_id: str) -> Decimal:
     infection3.reject("Override rejected - NFT collateral is only one use case, not pivot-worthy")
     defi_agent.pending_infections.clear()
     
-    print(f"  ❌ REJECTED - {infection3.target_response[:50]}...")
+    print(f"   REJECTED - {infection3.target_response[:50]}...")
     
     # Show final chimera status
-    print_header("🧪 Chimera Analysis")
+    print_header(" Chimera Analysis")
     
     for agent in agents:
         stats = mutation_engine.get_agent_chimera_stats(agent.agent_id)
-        status_icon = "🦠" if stats["is_chimera"] else "🔬"
+        status_icon = "" if stats["is_chimera"] else ""
         
         print(f"\n{status_icon} {agent.config.agent_name}")
         print(f"   Is Chimera: {stats['is_chimera']}")
@@ -201,16 +201,16 @@ def get_lending_liquidity(pool_id: str) -> Decimal:
         print(f"   Mutations: {stats['mutation_count']}")
     
     # Show infection summary
-    print_header("📊 Infection Summary")
+    print_header(" Infection Summary")
     
     all_infections = [infection1, infection2, infection3]
     
     for inf in all_infections:
         result_icon = {
-            InfectionResult.ACCEPTED: "✅",
-            InfectionResult.REJECTED: "❌",
-            InfectionResult.MUTATED: "🔄",
-        }.get(inf.result, "⏳")
+            InfectionResult.ACCEPTED: "",
+            InfectionResult.REJECTED: "",
+            InfectionResult.MUTATED: "",
+        }.get(inf.result, "")
         
         print(f"\n{result_icon} {inf.source_agent_id} → {inf.target_agent_id}")
         print(f"   Type: {inf.infection_type.value}")
@@ -218,7 +218,7 @@ def get_lending_liquidity(pool_id: str) -> Decimal:
         print(f"   Hash: {inf.infection_hash}")
     
     # Final codebase sizes
-    print_header("📁 Final Codebases")
+    print_header(" Final Codebases")
     
     for agent in agents:
         lines = len(agent.memory.codebase.splitlines())
@@ -226,7 +226,7 @@ def get_lending_liquidity(pool_id: str) -> Decimal:
         print(f"  {agent.config.agent_name}: {lines} lines, {accepted} infections accepted")
     
     print("\n" + "=" * 60)
-    print("  Demo complete! The agents have parasitized each other. 🦠")
+    print("  Demo complete! The agents have parasitized each other. ")
     print("=" * 60 + "\n")
 
 

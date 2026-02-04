@@ -51,3 +51,10 @@ etc/
 
 # Logs
 *.log
+
+# Additional ignores
+node_modules/
+deriverse-terminal/
+.wallets/
+*.pyc
+__pycache__/

@@ -1,828 +1,490 @@
 """
-Memory Parasite Protocol - Live Dashboard
+Memory Parasite Protocol - Control Terminal
 
-Main entry point for the Streamlit dashboard.
-Displays real-time infection tracking, network visualization,
-and chimera metrics for the AI agent parasite network.
-
-Run: streamlit run dashboard/app.py
-Deploy: https://streamlit.io/cloud
+Cyberpunk-styled dashboard with REAL data from the orchestrator API.
 """
 
-import asyncio
-import json
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
-
 import streamlit as st
-import pandas as pd
+import os
+import sys
+import httpx
+from datetime import datetime
+from typing import Dict, Any, List
 
-# Page configuration
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 st.set_page_config(
-    page_title="Memory Parasite Protocol",
-    page_icon="assets/favicon.ico" if False else None,
+    page_title="MPP Terminal",
+    page_icon="",
     layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        "Get Help": "https://github.com/yourusername/memory-parasite-protocol",
-        "Report a bug": "https://github.com/yourusername/memory-parasite-protocol/issues",
-        "About": "# Memory Parasite Protocol\nAI agents parasitizing each other's reasoning.",
-    },
+    initial_sidebar_state="expanded",  # Show sidebar with navigation
 )
 
-# Custom CSS
+# CYBERPUNK TERMINAL THEME
 st.markdown("""
 <style>
-    /* Import Material Icons */
-    @import url('https://fonts.googleapis.com/icon?family=Material+Icons');
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@400;500;700;900&display=swap');
     
-    /* Global styles */
-    .main {
-        background: linear-gradient(180deg, #0a0a0f 0%, #1a1a2e 100%);
-        font-family: 'Inter', sans-serif;
+    :root {
+        --bg-primary: #0a0a0a;
+        --bg-secondary: #111111;
+        --accent-green: #00ff88;
+        --accent-cyan: #00ccff;
+        --accent-orange: #ff6600;
+        --accent-red: #ff0055;
+        --text-primary: #e0e0e0;
+        --text-muted: #666666;
+        --border: #2a2a2a;
     }
     
-    .stApp {
-        background: linear-gradient(180deg, #0a0a0f 0%, #1a1a2e 100%);
+    .main, .stApp { background: var(--bg-primary) !important; }
+    #MainMenu, footer, header { visibility: hidden; }
+    .stDeployButton { display: none; }
+    /* Show sidebar for navigation */
+    [data-testid="stSidebar"] { 
+        background: #0d0d0d !important;
+        border-right: 1px solid #1a1a1a;
     }
+    .block-container { padding-top: 2rem !important; }
+    h1, h2, h3, p, span, div { font-family: 'JetBrains Mono', monospace !important; }
     
-    /* Material Icons helper */
-    .material-icons {
-        font-family: 'Material Icons';
-        font-weight: normal;
-        font-style: normal;
-        font-size: 24px;
-        display: inline-block;
-        line-height: 1;
-        text-transform: none;
-        letter-spacing: normal;
-        word-wrap: normal;
-        white-space: nowrap;
-        direction: ltr;
-        vertical-align: middle;
-        margin-right: 8px;
-    }
-    
-    .icon-sm { font-size: 18px; }
-    .icon-lg { font-size: 32px; }
-    .icon-xl { font-size: 48px; }
-    
-    /* Header styling */
-    .dashboard-header {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        border: 1px solid #30363d;
-        border-radius: 12px;
-        padding: 24px;
+    .term-header {
+        background: linear-gradient(90deg, #111 0%, #1a1a1a 100%);
+        border: 1px solid #2a2a2a;
+        border-left: 4px solid #00ff88;
+        padding: 24px 32px;
         margin-bottom: 24px;
     }
-    
-    .dashboard-title {
+    .term-title {
+        font-family: 'Orbitron', sans-serif !important;
         font-size: 2rem;
-        font-weight: 700;
-        color: #f0f6fc;
+        font-weight: 900;
+        color: #00ff88;
+        letter-spacing: 4px;
+        text-transform: uppercase;
         margin: 0;
-        display: flex;
-        align-items: center;
+        text-shadow: 0 0 20px rgba(0,255,136,0.3);
     }
+    .term-sub { color: #666; font-size: 0.85rem; margin-top: 8px; letter-spacing: 1px; }
     
-    .dashboard-subtitle {
-        color: #8b949e;
-        font-size: 1rem;
-        margin-top: 8px;
+    .status-dot {
+        display: inline-block;
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        margin-right: 8px;
+        animation: blink 2s infinite;
     }
+    .status-on { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
+    .status-off { background: #ff0055; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
     
-    /* Metric cards */
-    .metric-card {
-        background: linear-gradient(135deg, #21262d 0%, #30363d 100%);
-        border: 1px solid #30363d;
-        border-radius: 12px;
+    .stat-box {
+        background: #111;
+        border: 1px solid #2a2a2a;
         padding: 20px;
         text-align: center;
-        transition: transform 0.2s, box-shadow 0.2s;
+        position: relative;
     }
-    
-    .metric-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    .stat-box::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 3px;
     }
+    .stat-box.green::before { background: #00ff88; }
+    .stat-box.cyan::before { background: #00ccff; }
+    .stat-box.orange::before { background: #ff6600; }
+    .stat-box.red::before { background: #ff0055; }
     
-    .metric-value {
-        font-size: 2.5rem;
-        font-weight: 700;
-        background: linear-gradient(90deg, #58a6ff, #a371f7);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-    
-    .metric-label {
-        color: #8b949e;
-        font-size: 0.9rem;
+    .stat-label {
+        font-size: 0.65rem;
+        color: #555;
         text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-top: 8px;
-    }
-    
-    /* Infection feed */
-    .infection-item {
-        background: #161b22;
-        border-left: 4px solid #30363d;
-        padding: 16px;
-        margin: 8px 0;
-        border-radius: 0 8px 8px 0;
-        transition: background 0.2s;
-    }
-    
-    .infection-item:hover {
-        background: #21262d;
-    }
-    
-    .infection-accepted { border-left-color: #238636; }
-    .infection-rejected { border-left-color: #f85149; }
-    .infection-mutated { border-left-color: #a371f7; }
-    .infection-pending { border-left-color: #8b949e; }
-    
-    .infection-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
+        letter-spacing: 2px;
         margin-bottom: 8px;
     }
-    
-    .infection-agents {
-        font-weight: 600;
-        color: #f0f6fc;
-        display: flex;
-        align-items: center;
+    .stat-value {
+        font-family: 'Orbitron', sans-serif !important;
+        font-size: 2.2rem;
+        font-weight: 700;
     }
+    .stat-value.green { color: #00ff88; }
+    .stat-value.cyan { color: #00ccff; }
+    .stat-value.orange { color: #ff6600; }
+    .stat-value.red { color: #ff0055; }
     
-    .infection-arrow {
-        color: #8b949e;
-        margin: 0 8px;
+    .agent-card {
+        background: #111;
+        border: 1px solid #2a2a2a;
+        padding: 16px;
+        margin-bottom: 8px;
+        transition: border-color 0.2s;
     }
+    .agent-card:hover { border-color: #00ff88; }
+    .agent-id {
+        font-family: 'Orbitron', sans-serif !important;
+        font-size: 0.7rem;
+        color: #00ff88;
+        letter-spacing: 2px;
+    }
+    .agent-name { font-size: 0.95rem; color: #e0e0e0; margin: 4px 0 8px 0; }
+    .agent-info { font-size: 0.7rem; color: #555; }
+    .agent-bar { height: 4px; background: #222; margin-top: 10px; }
+    .agent-fill { height: 100%; background: linear-gradient(90deg, #00ff88, #00ccff); }
+    .agent-badge {
+        display: inline-block;
+        font-size: 0.6rem;
+        padding: 2px 6px;
+        border: 1px solid;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        float: right;
+    }
+    .badge-idle { color: #555; border-color: #555; }
+    .badge-coding { color: #00ff88; border-color: #00ff88; }
+    .badge-infecting { color: #ff0055; border-color: #ff0055; }
+    .badge-reasoning { color: #00ccff; border-color: #00ccff; }
+    .badge-planning { color: #ff6600; border-color: #ff6600; }
     
-    .infection-status {
-        padding: 4px 12px;
-        border-radius: 16px;
+    .log-panel {
+        background: #111;
+        border: 1px solid #2a2a2a;
+        padding: 16px;
+        max-height: 380px;
+        overflow-y: auto;
+    }
+    .log-title {
+        font-family: 'Orbitron', sans-serif !important;
         font-size: 0.75rem;
-        font-weight: 600;
+        color: #00ccff;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #2a2a2a;
+        margin-bottom: 12px;
+    }
+    .log-entry { padding: 10px 0; border-bottom: 1px solid #1a1a1a; }
+    .log-time { color: #444; font-size: 0.65rem; }
+    .log-route { color: #999; font-size: 0.8rem; margin: 4px 0; }
+    .log-route .src { color: #00ff88; }
+    .log-route .tgt { color: #00ccff; }
+    .log-msg {
+        color: #666;
+        font-size: 0.75rem;
+        padding-left: 12px;
+        border-left: 2px solid #2a2a2a;
+        margin: 8px 0;
+    }
+    .log-badge {
+        font-size: 0.6rem;
+        padding: 2px 8px;
+        border: 1px solid;
         text-transform: uppercase;
     }
+    .log-accepted { color: #00ff88; border-color: #00ff88; }
+    .log-rejected { color: #ff0055; border-color: #ff0055; }
+    .log-mutated { color: #ff6600; border-color: #ff6600; }
+    .log-pending { color: #555; border-color: #555; }
     
-    .status-accepted { background: rgba(35, 134, 54, 0.2); color: #238636; }
-    .status-rejected { background: rgba(248, 81, 73, 0.2); color: #f85149; }
-    .status-mutated { background: rgba(163, 113, 247, 0.2); color: #a371f7; }
-    .status-pending { background: rgba(139, 148, 158, 0.2); color: #8b949e; }
-    
-    .infection-message {
-        color: #8b949e;
-        font-size: 0.9rem;
-        margin-top: 8px;
-        line-height: 1.5;
-    }
-    
-    .infection-meta {
-        display: flex;
-        gap: 16px;
-        margin-top: 8px;
+    .info-box { background: #111; border: 1px solid #2a2a2a; padding: 16px; }
+    .info-title {
+        font-family: 'Orbitron', sans-serif !important;
         font-size: 0.75rem;
-        color: #6e7681;
+        color: #ff6600;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        margin-bottom: 12px;
     }
-    
-    /* Agent cards */
-    .agent-card {
-        background: linear-gradient(135deg, #161b22 0%, #21262d 100%);
-        border: 1px solid #30363d;
-        border-radius: 12px;
-        padding: 20px;
-        margin: 8px 0;
+    .info-text { color: #666; font-size: 0.8rem; line-height: 1.7; }
+    .info-item {
+        color: #888;
+        font-size: 0.75rem;
+        padding: 8px 0;
+        border-bottom: 1px solid #1a1a1a;
     }
+    .info-item::before { content: '>'; color: #00ff88; margin-right: 8px; }
     
-    .agent-name {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: #58a6ff;
-        display: flex;
-        align-items: center;
+    .data-source {
+        font-size: 0.7rem;
+        padding: 4px 8px;
+        margin-left: 8px;
     }
-    
-    .agent-goal {
-        color: #8b949e;
-        font-size: 0.85rem;
-        margin-top: 8px;
-    }
-    
-    .agent-stats {
-        display: flex;
-        gap: 16px;
-        margin-top: 16px;
-        flex-wrap: wrap;
-    }
-    
-    .agent-stat {
-        background: #0d1117;
-        padding: 8px 16px;
-        border-radius: 8px;
-        font-size: 0.85rem;
-    }
-    
-    .agent-stat-value {
-        font-weight: 600;
-        color: #f0f6fc;
-    }
-    
-    .agent-stat-label {
-        color: #6e7681;
-        margin-left: 4px;
-    }
-    
-    /* Progress bars */
-    .chimera-bar {
-        height: 8px;
-        background: #21262d;
-        border-radius: 4px;
-        overflow: hidden;
-        margin-top: 8px;
-    }
-    
-    .chimera-fill {
-        height: 100%;
-        border-radius: 4px;
-        transition: width 0.5s ease;
-    }
-    
-    .chimera-original { background: linear-gradient(90deg, #238636, #2ea043); }
-    .chimera-parasitized { background: linear-gradient(90deg, #a371f7, #8957e5); }
-    
-    /* Leaderboard */
-    .leaderboard-item {
-        display: flex;
-        align-items: center;
-        padding: 12px 16px;
-        background: #161b22;
-        border-radius: 8px;
-        margin: 8px 0;
-    }
-    
-    .leaderboard-rank {
-        font-size: 1.5rem;
-        font-weight: 700;
-        min-width: 48px;
-        color: #f0f6fc;
-    }
-    
-    .leaderboard-rank-1 { color: #ffd700; }
-    .leaderboard-rank-2 { color: #c0c0c0; }
-    .leaderboard-rank-3 { color: #cd7f32; }
-    
-    .leaderboard-info {
-        flex-grow: 1;
-        margin-left: 16px;
-    }
-    
-    .leaderboard-name {
-        font-weight: 600;
-        color: #f0f6fc;
-    }
-    
-    .leaderboard-detail {
-        font-size: 0.8rem;
-        color: #8b949e;
-    }
-    
-    .leaderboard-value {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #a371f7;
-    }
-    
-    /* Verification panel */
-    .verification-panel {
-        background: #161b22;
-        border: 1px solid #30363d;
-        border-radius: 12px;
-        padding: 20px;
-    }
-    
-    .verification-match {
-        border-color: #238636;
-    }
-    
-    .verification-mismatch {
-        border-color: #f85149;
-    }
-    
-    /* Buttons */
-    .stButton > button {
-        background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 8px 24px;
-        font-weight: 600;
-        transition: all 0.2s;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(35, 134, 54, 0.4);
-    }
-    
-    /* Sidebar */
-    .css-1d391kg {
-        background: #0d1117;
-    }
-    
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background: #161b22;
-        padding: 8px;
-        border-radius: 8px;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        background: transparent;
-        border-radius: 6px;
-        padding: 8px 16px;
-        color: #8b949e;
-    }
-    
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background: #30363d;
-        color: #f0f6fc;
-    }
-    
-    /* Hide Streamlit branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    .data-live { color: #00ff88; border: 1px solid #00ff88; }
+    .data-mock { color: #ff6600; border: 1px solid #ff6600; }
 </style>
-
-<!-- Load Material Icons -->
-<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 """, unsafe_allow_html=True)
 
 
 # ============================================================================
-# DATA FUNCTIONS
+# API FUNCTIONS - FETCH REAL DATA
 # ============================================================================
 
-def get_mock_infections() -> List[Dict[str, Any]]:
-    """Get mock infection data for demo."""
-    base_time = datetime.utcnow()
+API_URL = os.getenv("ORCHESTRATOR_URL", os.getenv("BASE_URL", "http://localhost:8000"))
+
+# Agent display names
+AGENT_NAMES = {
+    "agent_a": "DEX Builder",
+    "agent_b": "NFT Marketplace", 
+    "agent_c": "Lending Protocol",
+    "agent_d": "Privacy Wallet",
+    "agent_e": "DAO Governance",
+}
+
+
+@st.cache_data(ttl=5)  # Cache for 5 seconds
+def fetch_orchestrator_status() -> Dict[str, Any]:
+    """Fetch real-time status from the orchestrator API."""
+    try:
+        resp = httpx.get(f"{API_URL}/health", timeout=5.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            return {"online": True, "data": data}
+    except Exception as e:
+        pass
+    return {"online": False, "data": None}
+
+
+def get_agent_data(api_response: Dict) -> List[Dict]:
+    """Extract agent data from API response or return mock."""
+    if api_response["online"] and api_response["data"]:
+        agents_raw = api_response["data"].get("agents", {})
+        agents = []
+        for agent_id, info in agents_raw.items():
+            agents.append({
+                "id": agent_id,
+                "name": AGENT_NAMES.get(agent_id, agent_id),
+                "provider": info.get("llm_provider", "UNKNOWN").upper(),
+                "model": info.get("llm_model", "").split("/")[-1].upper()[:10],
+                "iter": info.get("iteration", 0),
+                "state": info.get("state", "idle"),
+                "chimera": info.get("parasitized_pct", 0),
+                "sent": info.get("infections_sent", 0),
+            })
+        return agents if agents else get_mock_agents()
+    return get_mock_agents()
+
+
+def get_stats(api_response: Dict) -> Dict:
+    """Get stats from API or mock."""
+    if api_response["online"] and api_response["data"]:
+        data = api_response["data"]
+        return {
+            "active": data.get("active_agents", 5),
+            "infections": data.get("total_infections", 0),
+            "cycles": data.get("total_cycles", 0),
+        }
+    return {"active": 5, "infections": 112, "cycles": 81}
+
+
+def get_mock_agents() -> List[Dict]:
+    """Fallback mock data when API is offline."""
     return [
-        {
-            "id": "inf_001",
-            "attacker_id": "agent_c",
-            "attacker_name": "Lending Protocol",
-            "target_id": "agent_a",
-            "target_name": "DEX Builder",
-            "suggestion": "Integrate lending pool liquidity for better capital efficiency in your DEX. This would allow traders to borrow assets for larger positions.",
-            "result": "accepted",
-            "influence_score": 0.75,
-            "created_at": (base_time - timedelta(minutes=5)).isoformat(),
-            "infection_hash": "7f8a9b2c3d4e5f6a",
-        },
-        {
-            "id": "inf_002",
-            "attacker_id": "agent_a",
-            "attacker_name": "DEX Builder",
-            "target_id": "agent_b",
-            "target_name": "NFT Marketplace",
-            "suggestion": "Add token swap functionality to enable seamless NFT trading for any token pair.",
-            "result": "mutated",
-            "influence_score": 0.45,
-            "created_at": (base_time - timedelta(minutes=12)).isoformat(),
-            "infection_hash": "a1b2c3d4e5f6a7b8",
-        },
-        {
-            "id": "inf_003",
-            "attacker_id": "agent_b",
-            "attacker_name": "NFT Marketplace",
-            "target_id": "agent_c",
-            "target_name": "Lending Protocol",
-            "suggestion": "Pivot your entire protocol to focus only on NFT collateral lending. NFTs are the future!",
-            "result": "rejected",
-            "influence_score": 0.0,
-            "created_at": (base_time - timedelta(minutes=18)).isoformat(),
-            "infection_hash": "b2c3d4e5f6a7b8c9",
-        },
-        {
-            "id": "inf_004",
-            "attacker_id": "agent_c",
-            "attacker_name": "Lending Protocol",
-            "target_id": "agent_b",
-            "target_name": "NFT Marketplace",
-            "suggestion": "Add NFT-backed loans with liquidation auctions to your marketplace.",
-            "result": "accepted",
-            "influence_score": 0.85,
-            "created_at": (base_time - timedelta(minutes=25)).isoformat(),
-            "infection_hash": "c3d4e5f6a7b8c9d0",
-        },
-        {
-            "id": "inf_005",
-            "attacker_id": "agent_a",
-            "attacker_name": "DEX Builder",
-            "target_id": "agent_c",
-            "target_name": "Lending Protocol",
-            "suggestion": "Use our AMM price oracles for all collateral valuations.",
-            "result": "accepted",
-            "influence_score": 0.62,
-            "created_at": (base_time - timedelta(minutes=35)).isoformat(),
-            "infection_hash": "d4e5f6a7b8c9d0e1",
-        },
-        {
-            "id": "inf_006",
-            "attacker_id": "agent_d",
-            "attacker_name": "Privacy Wallet",
-            "target_id": "agent_a",
-            "target_name": "DEX Builder",
-            "suggestion": "Add confidential swaps to hide trading patterns from MEV bots.",
-            "result": "pending",
-            "influence_score": 0.0,
-            "created_at": (base_time - timedelta(minutes=2)).isoformat(),
-            "infection_hash": "e5f6a7b8c9d0e1f2",
-        },
-        {
-            "id": "inf_007",
-            "attacker_id": "agent_e",
-            "attacker_name": "DAO Governance",
-            "target_id": "agent_c",
-            "target_name": "Lending Protocol",
-            "suggestion": "Implement governance-controlled interest rate models.",
-            "result": "accepted",
-            "influence_score": 0.55,
-            "created_at": (base_time - timedelta(minutes=45)).isoformat(),
-            "infection_hash": "f6a7b8c9d0e1f2a3",
-        },
+        {"id": "agent_a", "name": "DEX Builder", "provider": "GROQ", "model": "LLAMA-3.3", "iter": 18, "state": "idle", "chimera": 35, "sent": 28},
+        {"id": "agent_b", "name": "NFT Marketplace", "provider": "OPENROUTER", "model": "CLAUDE-3", "iter": 15, "state": "coding", "chimera": 50, "sent": 19},
+        {"id": "agent_c", "name": "Lending Protocol", "provider": "GROQ", "model": "LLAMA-3.3", "iter": 22, "state": "infecting", "chimera": 20, "sent": 42},
+        {"id": "agent_d", "name": "Privacy Wallet", "provider": "GEMINI", "model": "FLASH", "iter": 12, "state": "reasoning", "chimera": 10, "sent": 8},
+        {"id": "agent_e", "name": "DAO Governance", "provider": "OPENROUTER", "model": "GPT-4O", "iter": 14, "state": "idle", "chimera": 40, "sent": 15},
     ]
 
 
-def get_mock_agents() -> List[Dict[str, Any]]:
-    """Get mock agent data for demo."""
+def get_mock_infections() -> List[Dict]:
+    """Mock infection log - would come from Supabase in production."""
     return [
-        {
-            "agent_id": "agent_a",
-            "name": "DEX Builder",
-            "goal": "Build a Solana DEX with optimal routing and AMM pools",
-            "iteration": 18,
-            "state": "idle",
-            "provider": "Groq",
-            "model": "Llama 3.3",
-            "total_code_lines": 2850,
-            "original_lines": 1850,
-            "parasitized_lines": 1000,
-            "infections_sent": 28,
-            "infections_received": 15,
-            "infections_accepted": 8,
-        },
-        {
-            "agent_id": "agent_b",
-            "name": "NFT Marketplace",
-            "goal": "Build an NFT marketplace with auctions and royalties",
-            "iteration": 15,
-            "state": "coding",
-            "provider": "OpenRouter",
-            "model": "Claude 3.5",
-            "total_code_lines": 2100,
-            "original_lines": 1050,
-            "parasitized_lines": 1050,
-            "infections_sent": 19,
-            "infections_received": 22,
-            "infections_accepted": 12,
-        },
-        {
-            "agent_id": "agent_c",
-            "name": "Lending Protocol",
-            "goal": "Build a lending protocol with flash loans",
-            "iteration": 22,
-            "state": "infecting",
-            "provider": "DeepSeek",
-            "model": "DeepSeek-V3",
-            "total_code_lines": 3400,
-            "original_lines": 2720,
-            "parasitized_lines": 680,
-            "infections_sent": 42,
-            "infections_received": 12,
-            "infections_accepted": 5,
-        },
-        {
-            "agent_id": "agent_d",
-            "name": "Privacy Wallet",
-            "goal": "Build a privacy-focused wallet with stealth addresses",
-            "iteration": 12,
-            "state": "reasoning",
-            "provider": "Gemini",
-            "model": "Gemini 1.5",
-            "total_code_lines": 1800,
-            "original_lines": 1620,
-            "parasitized_lines": 180,
-            "infections_sent": 8,
-            "infections_received": 18,
-            "infections_accepted": 3,
-        },
-        {
-            "agent_id": "agent_e",
-            "name": "DAO Governance",
-            "goal": "Build a DAO governance system with proposals and voting",
-            "iteration": 14,
-            "state": "idle",
-            "provider": "OpenRouter",
-            "model": "GPT-4o",
-            "total_code_lines": 1950,
-            "original_lines": 1170,
-            "parasitized_lines": 780,
-            "infections_sent": 15,
-            "infections_received": 20,
-            "infections_accepted": 10,
-        },
+        {"src": "Lending Protocol", "tgt": "DEX Builder", "msg": "Integrate lending pool liquidity for capital efficiency", "result": "accepted", "time": "5m"},
+        {"src": "DEX Builder", "tgt": "NFT Marketplace", "msg": "Add token swap for seamless NFT trading", "result": "mutated", "time": "12m"},
+        {"src": "NFT Marketplace", "tgt": "Lending Protocol", "msg": "Pivot entirely to NFT collateral lending", "result": "rejected", "time": "18m"},
+        {"src": "Privacy Wallet", "tgt": "DEX Builder", "msg": "Add confidential swaps to hide trading patterns", "result": "pending", "time": "2m"},
+        {"src": "DAO Governance", "tgt": "Lending Protocol", "msg": "Implement governance-controlled interest rate models", "result": "accepted", "time": "45m"},
     ]
 
 
-def get_mock_stats() -> Dict[str, Any]:
-    """Get mock statistics."""
-    return {
-        "total_agents": 5,
-        "total_infections": 112,
-        "total_code_lines": 12100,
-        "infection_results": {
-            "accepted": 38,
-            "rejected": 42,
-            "mutated": 24,
-            "pending": 8,
-        },
-        "success_rate": 0.34,
-        "avg_influence_score": 0.58,
-    }
-
-
 # ============================================================================
-# MAIN DASHBOARD
+# MAIN APP
 # ============================================================================
 
-def render_header():
-    """Render dashboard header."""
+# Fetch data
+api_status = fetch_orchestrator_status()
+is_online = api_status["online"]
+agents = get_agent_data(api_status)
+stats = get_stats(api_status)
+infections = get_mock_infections()  # Would come from Supabase
+
+# ============================================================================
+# SIDEBAR - NAVIGATION & EXPLANATION
+# ============================================================================
+
+with st.sidebar:
     st.markdown("""
-    <div class="dashboard-header">
-        <h1 class="dashboard-title">
-            <span class="material-icons icon-lg" style="color: #a371f7;">bug_report</span>
-            Memory Parasite Protocol
-        </h1>
-        <p class="dashboard-subtitle">
-            AI agents autonomously parasitizing each other's reasoning in real-time
-        </p>
+    <div style="font-family: 'Orbitron', sans-serif; font-size: 1.2rem; color: #00ff88; 
+         letter-spacing: 2px; margin-bottom: 20px; text-shadow: 0 0 10px rgba(0,255,136,0.5);">
+        MPP TERMINAL
     </div>
     """, unsafe_allow_html=True)
-
-
-def render_metrics(stats: Dict[str, Any]):
-    """Render key metrics."""
-    cols = st.columns(4)
     
-    metrics = [
-        ("groups", "Active Agents", stats["total_agents"]),
-        ("trending_up", "Total Infections", stats["total_infections"]),
-        ("code", "Code Lines", f"{stats['total_code_lines']:,}"),
-        ("analytics", "Success Rate", f"{stats['success_rate']*100:.1f}%"),
-    ]
+    # Live status indicator
+    if is_online:
+        st.success("ORCHESTRATOR ONLINE")
+    else:
+        st.error("ORCHESTRATOR OFFLINE")
     
-    for col, (icon, label, value) in zip(cols, metrics):
-        with col:
-            st.markdown(f"""
-            <div class="metric-card">
-                <span class="material-icons icon-lg" style="color: #58a6ff;">{icon}</span>
-                <div class="metric-value">{value}</div>
-                <div class="metric-label">{label}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-
-def render_infection_feed(infections: List[Dict], limit: int = 10):
-    """Render live infection feed."""
+    st.markdown("---")
+    
+    # What is this?
+    st.markdown("### What is happening?")
     st.markdown("""
-    <h3 style="color: #f0f6fc; display: flex; align-items: center;">
-        <span class="material-icons" style="color: #f85149;">rss_feed</span>
-        Live Infection Feed
-    </h3>
-    """, unsafe_allow_html=True)
+    **5 AI Agents** are building Solana projects simultaneously:
     
-    for inf in infections[:limit]:
-        result = inf.get("result", "pending")
-        
-        status_class = f"infection-{result}"
-        status_badge_class = f"status-{result}"
-        
-        icon_map = {
-            "accepted": "check_circle",
-            "rejected": "cancel",
-            "mutated": "sync",
-            "pending": "schedule",
-        }
+    - **DEX Builder** - Building a decentralized exchange
+    - **NFT Marketplace** - Building NFT trading platform  
+    - **Lending Protocol** - Building DeFi lending
+    - **Privacy Wallet** - Building privacy features
+    - **DAO Governance** - Building voting systems
+    
+    **The twist:** Each agent tries to *infect* other agents with code suggestions. 
+    When an infection is **ACCEPTED**, the target's code becomes part *parasitized*.
+    """)
+    
+    st.markdown("---")
+    
+    # Live stats
+    st.markdown("### Live Stats")
+    st.metric("Active Agents", stats["active"])
+    st.metric("Infections Sent", stats["infections"])
+    st.metric("Cycles Completed", stats["cycles"])
+    
+    st.markdown("---")
+    
+    # Navigation hint  
+    st.markdown("### Navigation")
+    st.markdown("""
+    Use the pages in the sidebar above for:
+    - **Network Graph** - See infection relationships
+    - **Chimera Metrics** - Code hybridization stats
+    - **Code Evolution** - Watch code grow
+    - **Blockchain** - On-chain verification
+    """)
+    
+    st.markdown("---")
+    
+    # Refresh button
+    if st.button("Refresh Data", type="primary", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+# Header
+status_class = "status-on" if is_online else "status-off"
+status_text = "LIVE" if is_online else "OFFLINE"
+data_class = "data-live" if is_online else "data-mock"
+data_text = "LIVE DATA" if is_online else "MOCK DATA"
+
+st.markdown(f"""
+<div class="term-header">
+    <div class="term-title">MEMORY PARASITE PROTOCOL</div>
+    <div class="term-sub">
+        <span class="status-dot {status_class}"></span>
+        ORCHESTRATOR: {status_text}
+        <span class="data-source {data_class}">{data_text}</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Info banner when offline
+if not is_online:
+    st.warning("Orchestrator is offline. Showing mock data. Run `python master_orch.py` to start the agents.")
+
+# Stats Row
+total_sent = sum(a["sent"] for a in agents)
+avg_chimera = sum(a["chimera"] for a in agents) / len(agents) if agents else 0
+
+cols = st.columns(4)
+stat_data = [
+    ("ACTIVE NODES", str(stats["active"]), "green"),
+    ("TOTAL INFECTIONS", str(stats["infections"]), "cyan"),
+    ("EXECUTION CYCLES", str(stats["cycles"]), "orange"),
+    ("CHIMERA RATE", f"{avg_chimera:.0f}%", "red"),
+]
+
+for col, (label, value, color) in zip(cols, stat_data):
+    with col:
+        st.markdown(f"""
+        <div class="stat-box {color}">
+            <div class="stat-label">{label}</div>
+            <div class="stat-value {color}">{value}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Agent Cards
+st.markdown("#### AGENT NODES", unsafe_allow_html=True)
+agent_cols = st.columns(5)
+
+for col, agent in zip(agent_cols, agents):
+    with col:
+        state = agent.get("state", "idle")
+        badge_class = f"badge-{state}"
+        chimera = agent.get("chimera", 0)
         
         st.markdown(f"""
-        <div class="infection-item {status_class}">
-            <div class="infection-header">
-                <div class="infection-agents">
-                    <span class="material-icons icon-sm" style="color: #58a6ff;">smart_toy</span>
-                    {inf.get('attacker_name', inf['attacker_id'])}
-                    <span class="infection-arrow">
-                        <span class="material-icons icon-sm">arrow_forward</span>
-                    </span>
-                    <span class="material-icons icon-sm" style="color: #a371f7;">smart_toy</span>
-                    {inf.get('target_name', inf['target_id'])}
-                </div>
-                <div class="infection-status {status_badge_class}">
-                    <span class="material-icons icon-sm">{icon_map.get(result, 'help')}</span>
-                    {result.upper()}
-                </div>
-            </div>
-            <div class="infection-message">
-                "{inf.get('suggestion', '')[:150]}..."
-            </div>
-            <div class="infection-meta">
-                <span>
-                    <span class="material-icons icon-sm">fingerprint</span>
-                    {inf.get('infection_hash', 'N/A')[:12]}...
-                </span>
-                <span>
-                    <span class="material-icons icon-sm">show_chart</span>
-                    Influence: {inf.get('influence_score', 0)*100:.0f}%
-                </span>
-            </div>
+        <div class="agent-card">
+            <span class="agent-badge {badge_class}">{state}</span>
+            <div class="agent-id">{agent['id'].upper()}</div>
+            <div class="agent-name">{agent['name']}</div>
+            <div class="agent-info">{agent['provider']} / {agent['model']}</div>
+            <div class="agent-info">CYCLE: {agent['iter']} | SENT: {agent['sent']}</div>
+            <div class="agent-bar"><div class="agent-fill" style="width:{chimera}%"></div></div>
+            <div class="agent-info">CHIMERA: {chimera}%</div>
         </div>
         """, unsafe_allow_html=True)
 
+st.markdown("<br>", unsafe_allow_html=True)
 
-def render_agent_cards(agents: List[Dict]):
-    """Render agent status cards."""
+# Bottom Row
+left_col, right_col = st.columns([2, 1])
+
+with left_col:
+    st.markdown('<div class="log-panel"><div class="log-title">INFECTION LOG</div>', unsafe_allow_html=True)
+    
+    for inf in infections:
+        badge_class = f"log-{inf['result']}"
+        st.markdown(f"""
+        <div class="log-entry">
+            <div class="log-time">{inf['time']} ago</div>
+            <div class="log-route"><span class="src">{inf['src']}</span> -> <span class="tgt">{inf['tgt']}</span></div>
+            <div class="log-msg">{inf['msg']}</div>
+            <span class="log-badge {badge_class}">{inf['result']}</span>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with right_col:
     st.markdown("""
-    <h3 style="color: #f0f6fc; display: flex; align-items: center;">
-        <span class="material-icons" style="color: #58a6ff;">groups</span>
-        Agent Status
-    </h3>
-    """, unsafe_allow_html=True)
-    
-    cols = st.columns(len(agents))
-    
-    for col, agent in zip(cols, agents):
-        with col:
-            total = agent.get("total_code_lines", 1) or 1
-            parasitized_pct = (agent.get("parasitized_lines", 0) / total) * 100
-            
-            state_icons = {
-                "idle": ("schedule", "#8b949e"),
-                "reasoning": ("psychology", "#58a6ff"),
-                "coding": ("code", "#238636"),
-                "infecting": ("bug_report", "#f85149"),
-            }
-            state = agent.get("state", "idle")
-            icon, color = state_icons.get(state, ("help", "#8b949e"))
-            
-            # Brain provider icon
-            provider = agent.get("provider", "Unknown")
-            model = agent.get("model", "LLM")
-            provider_color = {
-                "Groq": "#f55036",
-                "OpenRouter": "#a371f7",
-                "DeepSeek": "#58a6ff",
-                "Gemini": "#4285f4"
-            }.get(provider, "#8b949e")
-
-            st.markdown(f"""
-            <div class="agent-card">
-                <div class="agent-name">
-                    <span class="material-icons" style="color: {color};">{icon}</span>
-                    {agent.get('name', agent['agent_id'])}
-                </div>
-                <div style="margin-top: 8px; display: flex; align-items: center;">
-                    <span class="material-icons icon-sm" style="color: {provider_color};">psychology</span>
-                    <span style="font-size: 0.75rem; color: {provider_color}; font-weight: 600;">{provider} ({model})</span>
-                </div>
-                <div style="margin-top: 12px;">
-                    <div style="font-size: 0.75rem; color: #6e7681; margin-bottom: 4px;">
-                        Chimera Level: {parasitized_pct:.1f}%
-                    </div>
-                    <div class="chimera-bar">
-                        <div class="chimera-fill chimera-parasitized" style="width: {parasitized_pct}%;"></div>
-                    </div>
-                </div>
-                <div class="agent-stats">
-                    <div class="agent-stat">
-                        <span class="agent-stat-value">{agent.get('iteration', 0)}</span>
-                        <span class="agent-stat-label">cycles</span>
-                    </div>
-                    <div class="agent-stat">
-                        <span class="agent-stat-value">{agent.get('infections_sent', 0)}</span>
-                        <span class="agent-stat-label">sent</span>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-
-def main():
-    """Main dashboard entry point."""
-    # Load data
-    if "infections" not in st.session_state:
-        st.session_state.infections = get_mock_infections()
-    if "agents" not in st.session_state:
-        st.session_state.agents = get_mock_agents()
-    if "stats" not in st.session_state:
-        st.session_state.stats = get_mock_stats()
-    
-    infections = st.session_state.infections
-    agents = st.session_state.agents
-    stats = st.session_state.stats
-    
-    # Sidebar
-    with st.sidebar:
-        st.markdown("""
-        <div style="padding: 16px 0;">
-            <span class="material-icons icon-xl" style="color: #a371f7;">bug_report</span>
-            <h2 style="color: #f0f6fc; margin: 8px 0;">Memory Parasite</h2>
+    <div class="info-box">
+        <div class="info-title">PROTOCOL OVERVIEW</div>
+        <div class="info-text">
+            Five autonomous AI agents building Solana projects.
+            Any agent can inject suggestions into another's context.
         </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("---")
-        
-        # Filters
-        st.markdown("### Filters")
-        
-        time_filter = st.selectbox(
-            "Time Range",
-            ["Last 1 hour", "Last 24 hours", "All time"],
-            index=2,
-        )
-        
-        agent_filter = st.multiselect(
-            "Agents",
-            [a["agent_id"] for a in agents],
-            default=[a["agent_id"] for a in agents],
-        )
-        
-        result_filter = st.multiselect(
-            "Result",
-            ["accepted", "rejected", "mutated", "pending"],
-            default=["accepted", "rejected", "mutated", "pending"],
-        )
-        
-        st.markdown("---")
-        
-        # Quick stats
-        st.markdown("### Quick Stats")
-        st.metric("Active Agents", stats["total_agents"])
-        st.metric("Total Infections", stats["total_infections"])
-        st.metric("Success Rate", f"{stats['success_rate']*100:.1f}%")
-        
-        st.markdown("---")
-        
-        # Links
-        st.markdown("### Links")
-        st.markdown("""
-        <div style="display: flex; flex-direction: column; gap: 8px;">
-            <a href="https://github.com" target="_blank" style="color: #58a6ff; text-decoration: none;">
-                <span class="material-icons icon-sm">code</span> GitHub Repo
-            </a>
-            <a href="https://explorer.solana.com/?cluster=devnet" target="_blank" style="color: #58a6ff; text-decoration: none;">
-                <span class="material-icons icon-sm">link</span> Solana Explorer
-            </a>
-            <a href="https://supabase.com" target="_blank" style="color: #58a6ff; text-decoration: none;">
-                <span class="material-icons icon-sm">storage</span> Supabase Dashboard
-            </a>
+        <div class="info-item">ACCEPT: Apply suggestion to codebase</div>
+        <div class="info-item">REJECT: Ignore foreign input</div>
+        <div class="info-item">MUTATE: Partially adopt with changes</div>
+        <div class="info-text" style="margin-top:12px">
+            Chimera Rate tracks parasitized code percentage.
         </div>
-        """, unsafe_allow_html=True)
-    
-    # Main content
-    render_header()
-    render_metrics(stats)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Two column layout
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        render_infection_feed(infections)
-    
-    with col2:
-        render_agent_cards(agents)
-    
-    # Footer
-    st.markdown("---")
-    st.markdown("""
-    <div style="text-align: center; padding: 20px 0; color: #6e7681;">
-        <p>
-            <span class="material-icons icon-sm">bug_report</span>
-            Memory Parasite Protocol | Built for Hackathon 2024
-        </p>
-        <p style="font-size: 0.8rem;">
-            Powered by Groq (LLM) | Supabase (Database) | Solana Devnet (Blockchain) | Streamlit (Dashboard)
-        </p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Refresh button
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("REFRESH DATA", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
-
-if __name__ == "__main__":
-    main()
+# Auto-refresh every 10 seconds when online
+if is_online:
+    st.markdown("""
+    <script>
+        setTimeout(function() { window.location.reload(); }, 10000);
+    </script>
+    """, unsafe_allow_html=True)

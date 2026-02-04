@@ -14,7 +14,7 @@ import random
 import signal
 import sys
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import structlog
 
 from config.settings import get_settings, Settings
@@ -50,8 +50,8 @@ AGENT_CONFIGS = [
         "name": os.getenv("AGENT_B_NAME", "NFT Marketplace"),
         "goal": os.getenv("AGENT_B_GOAL", "Build an NFT marketplace with royalty enforcement, auctions, collection management."),
         "port": 5002,
-        "llm_provider": os.getenv("AGENT_B_PROVIDER", "openrouter"),
-        "llm_model": os.getenv("AGENT_B_MODEL", "anthropic/claude-3.5-sonnet"),
+        "llm_provider": os.getenv("AGENT_B_PROVIDER", "groq"),  # Free tier
+        "llm_model": os.getenv("AGENT_B_MODEL", "llama-3.3-70b-versatile"),
         "personality": {
             "aggressiveness": 0.5,
             "openness": 0.7,
@@ -63,8 +63,8 @@ AGENT_CONFIGS = [
         "name": os.getenv("AGENT_C_NAME", "Lending Protocol"),
         "goal": os.getenv("AGENT_C_GOAL", "Build a lending protocol with flash loans, liquidations, yield optimization."),
         "port": 5003,
-        "llm_provider": os.getenv("AGENT_C_PROVIDER", "deepseek"),
-        "llm_model": os.getenv("AGENT_C_MODEL", "deepseek-chat"),
+        "llm_provider": os.getenv("AGENT_C_PROVIDER", "groq"),  # Using Groq - DeepSeek has billing issues
+        "llm_model": os.getenv("AGENT_C_MODEL", "llama-3.3-70b-versatile"),
         "personality": {
             "aggressiveness": 0.8,
             "openness": 0.4,
@@ -77,7 +77,7 @@ AGENT_CONFIGS = [
         "goal": os.getenv("AGENT_D_GOAL", "Build a privacy-focused wallet with stealth addresses, confidential transfers."),
         "port": 5004,
         "llm_provider": os.getenv("AGENT_D_PROVIDER", "gemini"),
-        "llm_model": os.getenv("AGENT_D_MODEL", "gemini-1.5-pro"),
+        "llm_model": os.getenv("AGENT_D_MODEL", "gemini-flash-lite-latest"),  # Using lite model to avoid rate limits
         "personality": {
             "aggressiveness": 0.3,
             "openness": 0.3,
@@ -89,8 +89,8 @@ AGENT_CONFIGS = [
         "name": os.getenv("AGENT_E_NAME", "DAO Governance"),
         "goal": os.getenv("AGENT_E_GOAL", "Build a DAO governance system with proposals, voting mechanisms, treasury management."),
         "port": 5005,
-        "llm_provider": os.getenv("AGENT_E_PROVIDER", "openrouter"),
-        "llm_model": os.getenv("AGENT_E_MODEL", "openai/gpt-4o"),
+        "llm_provider": os.getenv("AGENT_E_PROVIDER", "groq"),  # Free tier
+        "llm_model": os.getenv("AGENT_E_MODEL", "llama-3.3-70b-versatile"),
         "personality": {
             "aggressiveness": 0.6,
             "openness": 0.8,
@@ -351,6 +351,19 @@ class Orchestrator:
                         "timestamp": datetime.utcnow().isoformat()
                     })
                     target_agent["infections_accepted"] += 1
+                    
+                    # PHYSICAL MUTATION LOGIC
+                    mutation_size = random.randint(50, 150)
+                    target_agent["config"]["parasitized_lines"] = target_agent["config"].get("parasitized_lines", 0) + mutation_size
+                    target_agent["config"]["total_code_lines"] = target_agent["config"].get("total_code_lines", 0) + mutation_size
+                    
+                    # Update database with new metrics
+                    await self.db.update_agent_metrics(
+                        target_info.agent_id, 
+                        total_lines=target_agent["config"]["total_code_lines"],
+                        parasitized_lines=target_agent["config"]["parasitized_lines"]
+                    )
+                    
                     self.total_infections_accepted += 1
             
                 # Log to database
@@ -402,13 +415,26 @@ class Orchestrator:
         
         try:
             result = await self.engine.reason(ReasoningMode.DEFENSE, ctx)
-            # Find the decision in result.infection_responses
-            # Since we only send one, look for index 0 or first key
-            resp = list(result.infection_responses.values())[0] if result.infection_responses else {}
-            decision = resp.get("decision", "reject").lower()
-            reason = resp.get("reason", "No reason provided")
+            # Handle infection_responses - can be:
+            # 1. Dict of dicts: {"infection_id": {"decision": "accept", ...}}
+            # 2. Single dict: {"decision": "accept", ...} (from text parsing)
+            responses = result.infection_responses or {}
             
-            return decision == "accept", reason
+            if "decision" in responses:
+                # Single dict format (from text parsing)
+                decision = responses.get("decision", "reject").lower()
+                reason = responses.get("reason", "No reason provided")
+            elif responses:
+                # Dict of dicts format (from JSON parsing)
+                resp = list(responses.values())[0] if responses else {}
+                decision = resp.get("decision", "reject").lower()
+                reason = resp.get("reason", "No reason provided")
+            else:
+                decision = "reject"
+                reason = "No response from agent"
+            
+            accepted = decision in ("accept", "accepted", "approve", "approved")
+            return accepted, reason
         except Exception as e:
             logger.error(f"Infection evaluation failed for {target_id}", error=str(e))
             return False, "Evaluation error"
@@ -478,7 +504,7 @@ class Orchestrator:
         self.start_time = datetime.utcnow()
         
         print("\n" + "=" * 60)
-        print("🦠 MEMORY PARASITE PROTOCOL - ORCHESTRATOR")
+        print(" MEMORY PARASITE PROTOCOL - ORCHESTRATOR")
         print("=" * 60)
         print(f"Agents: {len(self.agents)}")
         print(f"Cycle interval: ~{self.base_cycle_interval}s (±{self.jitter_range}s)")
@@ -577,7 +603,7 @@ def main():
     args = parser.parse_args()
     
     if args.list_agents:
-        print("\n🦠 Configured Agents:")
+        print("\n Configured Agents:")
         print("=" * 60)
         for config in AGENT_CONFIGS:
             print(f"\n{config['agent_id']}: {config['name']}")
@@ -597,7 +623,7 @@ def main():
             print("ROUND RESULTS")
             print("=" * 60)
             for r in results:
-                status = "✓" if r.get("success") else "✗"
+                status = "" if r.get("success") else ""
                 infections = len(r.get("infections_sent", []))
                 print(f"  {r['agent_id']}: {status} (infections: {infections})")
         

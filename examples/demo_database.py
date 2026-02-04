@@ -44,7 +44,7 @@ def print_json(data, indent=2):
 async def main():
     """Demonstrate all database operations."""
     
-    print_header("🦠 Memory Parasite Protocol - Database Demo")
+    print_header(" Memory Parasite Protocol - Database Demo")
     print("\nNote: Without Supabase configured, operations return mock data.")
     print("This demo shows the API design and function signatures.\n")
     
@@ -231,29 +231,29 @@ async def main():
     # =========================================================================
     # Summary
     # =========================================================================
-    print_header("📊 Summary")
+    print_header(" Summary")
     
     print("""
 Database Functions Implemented:
-✅ init_agent(agent_id, goal) -> agent record
-✅ log_infection(attacker, target, suggestion, accepted, reason) -> infection_id
-✅ log_commit(agent, hash, message, lines, source_infection) -> commit_id
-✅ log_reasoning(agent, reasoning, decision, context) -> log_id
-✅ get_agent_infections(agent_id, limit) -> [infections]
-✅ get_infection_network() -> {nodes, edges}
-✅ calculate_influence_score(infection_id) -> 0-1 score
-✅ get_chimera_metrics(agent_id) -> {original_%, parasitized_%, contributors}
+ init_agent(agent_id, goal) -> agent record
+ log_infection(attacker, target, suggestion, accepted, reason) -> infection_id
+ log_commit(agent, hash, message, lines, source_infection) -> commit_id
+ log_reasoning(agent, reasoning, decision, context) -> log_id
+ get_agent_infections(agent_id, limit) -> [infections]
+ get_infection_network() -> {nodes, edges}
+ calculate_influence_score(infection_id) -> 0-1 score
+ get_chimera_metrics(agent_id) -> {original_%, parasitized_%, contributors}
 
 Schema Features:
-✅ UUID v7 (time-ordered) for all primary keys
-✅ Real-time enabled tables (for Supabase subscriptions)
-✅ Indexes on agent_id and timestamp for fast queries
-✅ Triggers for automatic influence calculation
-✅ Views for infection network and activity feed
-✅ Row Level Security (allow all for hackathon)
+ UUID v7 (time-ordered) for all primary keys
+ Real-time enabled tables (for Supabase subscriptions)
+ Indexes on agent_id and timestamp for fast queries
+ Triggers for automatic influence calculation
+ Views for infection network and activity feed
+ Row Level Security (allow all for hackathon)
     """)
     
-    print("\n🦠 Database demo complete!")
+    print("\n Database demo complete!")
     print("Run the schema.sql in Supabase to create all tables.")
 
 

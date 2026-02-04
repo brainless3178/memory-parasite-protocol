@@ -39,7 +39,7 @@ def print_json(data, indent=2):
 async def main():
     """Demonstrate all Solana blockchain operations."""
     
-    print_header("🔗 Memory Parasite Protocol - Solana Demo")
+    print_header(" Memory Parasite Protocol - Solana Demo")
     print("\nUsing Solana DEVNET (free testnet)")
     print("All transactions create immutable proof of infections.\n")
     
@@ -203,21 +203,21 @@ async def main():
     # =========================================================================
     # Summary
     # =========================================================================
-    print_header("📊 Summary")
+    print_header(" Summary")
     
     print("""
 Blockchain Functions Implemented:
-✅ record_infection_onchain(attacker, target, suggestion) → tx_signature
-✅ record_acceptance_onchain(hash, accepted, influence) → tx_signature
-✅ get_infection_proof(hash) → InfectionProof
-✅ verify_infection_authenticity(hash, db_record) → bool
+ record_infection_onchain(attacker, target, suggestion) → tx_signature
+ record_acceptance_onchain(hash, accepted, influence) → tx_signature
+ get_infection_proof(hash) → InfectionProof
+ verify_infection_authenticity(hash, db_record) → bool
 
 Features:
-✅ Solana Devnet (FREE - unlimited transactions)
-✅ Memo Program for data storage (no custom program needed)
-✅ Automatic wallet generation per agent
-✅ Real transaction support via solders library
-✅ Simulated mode for demo without wallet
+ Solana Devnet (FREE - unlimited transactions)
+ Memo Program for data storage (no custom program needed)
+ Automatic wallet generation per agent
+ Real transaction support via solders library
+ Simulated mode for demo without wallet
 
 On-Chain Proof Contains:
 - Infection hash (SHA256 of infection details)
@@ -231,7 +231,7 @@ On-Chain Proof Contains:
 Each proof is IMMUTABLE and VERIFIABLE by anyone!
     """)
     
-    print("\n🔗 Solana demo complete!")
+    print("\n Solana demo complete!")
     print("Real transactions would appear on Solana Explorer.")
 
 

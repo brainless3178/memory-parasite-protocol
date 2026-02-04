@@ -284,6 +284,18 @@ class SupabaseClient:
             logger.info("Agent updated", agent_id=agent_id)
         
         return result
+
+    async def update_agent_metrics(self, agent_id: str, total_lines: int, parasitized_lines: int) -> Optional[Dict[str, Any]]:
+        """Update agent metrics in the database."""
+        return await self._update(
+            "agents",
+            {"agent_id": agent_id},
+            {
+                "total_code_lines": total_lines,
+                "parasitized_lines": parasitized_lines,
+                "last_cycle_at": datetime.utcnow().isoformat()
+            }
+        )
     
     # =========================================================================
     # REQUIRED FUNCTION: log_infection(attacker_id, target_id, suggestion, accepted, reason)

@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # OpenRouter Configuration (Multi-model hub)
     openrouter_api_key: str = Field(default="", env="OPENROUTER_API_KEY")
-    openrouter_model: str = Field(default="anthropic/claude-3.5-sonnet", env="OPENROUTER_MODEL")
+    openrouter_model: str = Field(default="meta-llama/llama-3.2-90b-vision-instruct:free", env="OPENROUTER_MODEL")  # Free model
 
     # DeepSeek Configuration (Coding specialist)
     deepseek_api_key: str = Field(default="", env="DEEPSEEK_API_KEY")
@@ -43,10 +43,14 @@ class Settings(BaseSettings):
 
     # Gemini Configuration (Large context)
     gemini_api_key: str = Field(default="", env="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-1.5-pro", env="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-flash-lite-latest", env="GEMINI_MODEL")
+
+    # HuggingFace Configuration (Fallback)
+    huggingface_api_key: str = Field(default="", env="HUGGINGFACE_API_KEY")
+    huggingface_model: str = Field(default="mistralai/Mistral-7B-Instruct-v0.3", env="HUGGINGFACE_MODEL")
 
     # Default LLM Provider
-    llm_provider: str = Field(default="groq", env="LLM_PROVIDER") # options: groq, openrouter, deepseek, gemini
+    llm_provider: str = Field(default="groq", env="LLM_PROVIDER") # options: groq, openrouter, deepseek, gemini, huggingface
     groq_max_tokens: int = Field(default=1024, env="GROQ_MAX_TOKENS")
     groq_temperature: float = Field(default=0.7, env="GROQ_TEMPERATURE")
 
@@ -61,10 +65,24 @@ class Settings(BaseSettings):
     github_repo_name: str = Field(default="", env="GITHUB_REPO_NAME")
     github_branch: str = Field(default="main", env="GITHUB_BRANCH")
 
-    # Solana Configuration (DEVNET - FREE)
-    solana_rpc_url: str = Field(
-        default="https://api.devnet.solana.com", env="SOLANA_RPC_URL"
-    )
+    # Solana Configuration
+    solana_rpc_url: str = Field(default="https://api.devnet.solana.com", env="SOLANA_RPC_URL")
+    solana_rpc_devnet: str = Field(default="https://api.devnet.solana.com", env="SOLANA_RPC_DEVNET")
+    solana_rpc_testnet: str = Field(default="https://api.testnet.solana.com", env="SOLANA_RPC_TESTNET")
+    solana_rpc_mainnet: str = Field(default="https://api.mainnet-beta.solana.com", env="SOLANA_RPC_MAINNET")
+    
+    # Backup RPC endpoints for failover
+    solana_rpc_backup_1: str = Field(default="https://solana-api.projectserum.com", env="SOLANA_RPC_BACKUP_1")
+    solana_rpc_backup_2: str = Field(default="https://rpc.ankr.com/solana", env="SOLANA_RPC_BACKUP_2")
+    solana_rpc_backup_3: str = Field(default="https://solana-mainnet.rpc.extrnode.com", env="SOLANA_RPC_BACKUP_3")
+    solana_rpc_backup_4: str = Field(default="https://solana-mainnet.g.alchemy.com", env="SOLANA_RPC_BACKUP_4")
+    solana_rpc_backup_5: str = Field(default="https://rpc.mainnet.helius.xyz", env="SOLANA_RPC_BACKUP_5")
+    
+    # Jito bundle API (MEV protection)
+    jito_bundle_api: str = Field(default="https://mainnet.block-engine.jito.wtf/api/v1/bundles", env="JITO_BUNDLE_API")
+    
+    # Network mode
+    use_devnet: bool = Field(default=True, env="USE_DEVNET")
     solana_private_key: str = Field(default="", env="SOLANA_PRIVATE_KEY")
 
     # Agent Behavior Configuration

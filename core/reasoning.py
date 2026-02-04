@@ -105,13 +105,17 @@ class ReasoningEngine:
             self.gemini_model = genai.GenerativeModel(settings.gemini_model)
         else:
             self.gemini_model = None
+        
+        # HuggingFace as fallback
+        self.huggingface_api_key = settings.huggingface_api_key
+        self.huggingface_model = settings.huggingface_model
 
     async def reason(
         self,
         mode: ReasoningMode,
         context: ReasoningContext,
     ) -> ReasoningResult:
-        """Execute reasoning using the preferred provider."""
+        """Execute reasoning using the preferred provider with Groq fallback."""
         provider = context.provider or self.default_provider
         
         try:
@@ -124,10 +128,19 @@ class ReasoningEngine:
             elif provider == "gemini" and self.gemini_model:
                 return await self._reason_gemini(mode, context)
             else:
-                logger.warning(f"Provider {provider} not configured, falling back to mock")
+                logger.warning(f"Provider {provider} not configured, trying Groq fallback")
+                if self.groq_client:
+                    return await self._reason_groq(mode, context)
                 return self._mock_response(mode, context)
         except Exception as e:
             logger.error(f"Reasoning failed for provider {provider}", error=str(e), mode=mode.value)
+            # Try Groq as fallback (has generous free tier: 14,400 req/day)
+            if self.groq_client and provider != "groq":
+                logger.info(f"Trying Groq fallback...")
+                try:
+                    return await self._reason_groq(mode, context)
+                except Exception as groq_e:
+                    logger.error(f"Groq fallback also failed: {groq_e}")
             return self._mock_response(mode, context)
 
     def reason_sync(
@@ -150,49 +163,94 @@ class ReasoningEngine:
         system_prompt = self._build_system_prompt(mode, context)
         user_prompt = self._build_user_prompt(mode, context)
         
-        response = self.groq_client.chat.completions.create(
-            model=context.model or self.settings.groq_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=self.settings.groq_max_tokens,
-            temperature=self.settings.groq_temperature,
-        )
-        return self._parse_response(mode, response.choices[0].message.content)
+        try:
+            # Groq client is sync, run in executor for proper async handling
+            loop = asyncio.get_event_loop()
+            
+            def make_request():
+                return self.groq_client.chat.completions.create(
+                    model=context.model or self.settings.groq_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    max_tokens=self.settings.groq_max_tokens,
+                    temperature=self.settings.groq_temperature,
+                )
+            
+            response = await loop.run_in_executor(None, make_request)
+            return self._parse_response(mode, response.choices[0].message.content)
+        except Exception as e:
+            logger.error(f"Groq reasoning failed: {e}")
+            return self._mock_response(mode, context)
 
     async def _reason_openai_compat(self, client: OpenAI, default_model: str, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
         system_prompt = self._build_system_prompt(mode, context)
         user_prompt = self._build_user_prompt(mode, context)
         
-        response = client.chat.completions.create(
-            model=context.model or default_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        return self._parse_response(mode, response.choices[0].message.content)
+        try:
+            # OpenAI client is sync, run in executor for proper async handling
+            loop = asyncio.get_event_loop()
+            
+            def make_request():
+                return client.chat.completions.create(
+                    model=context.model or default_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                )
+            
+            response = await loop.run_in_executor(None, make_request)
+            return self._parse_response(mode, response.choices[0].message.content)
+        except Exception as e:
+            logger.error(f"OpenAI-compat reasoning failed for model {context.model or default_model}: {e}")
+            return self._mock_response(mode, context)
 
     async def _reason_gemini(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
         prompt = f"{self._build_system_prompt(mode, context)}\n\n{self._build_user_prompt(mode, context)}"
-        response = await self.gemini_model.generate_content_async(prompt)
-        return self._parse_response(mode, response.text)
+        try:
+            # The google-generativeai library's generate_content_async may not work in all contexts
+            # Try async first, fall back to sync in executor
+            try:
+                response = await self.gemini_model.generate_content_async(prompt)
+            except Exception:
+                # Run sync version in thread pool
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(
+                    None, 
+                    lambda: self.gemini_model.generate_content(prompt)
+                )
+            return self._parse_response(mode, response.text)
+        except Exception as e:
+            logger.error(f"Gemini reasoning failed: {e}")
+            return self._mock_response(mode, context)
 
+    # Note: HuggingFace free Inference API has been deprecated as of 2024.
+    # The token is kept in .env for potential future use with HuggingFace Inference Endpoints (paid).
     def _build_system_prompt(self, mode: ReasoningMode, context: ReasoningContext) -> str:
-        """Build compressed system prompt for token efficiency."""
+        """Build compressed system prompt with psychic signatures."""
         
-        base = f"Agent: {context.agent_id}. Goal: {context.agent_goal}. Iteration: {context.iteration}. Rule: Be extremely concise. No yapping."
-        
-        modes = {
-            ReasoningMode.PLANNING: "PLAN: Next logical feature? Brief bullet points.",
-            ReasoningMode.CODING: "CODE: Advance goal with clean Python. No placeholders. Just code.",
-            ReasoningMode.INFECTION: "INFECT: JSON array of suggestions for others to help YOUR goal.",
-            ReasoningMode.DEFENSE: "DEFENSE: Eval JSON infections. Decision: ACCEPT|REJECT|MUTATE.",
-            ReasoningMode.REFLECTION: "REFLECT: Progress brief. Strategy tweaks.",
+        personalities = {
+            "agent_a": "SIGNATURE: PREDATORY_OPTIMIZER. Focus on extreme efficiency and liquidity. Infiltrate others to maximize volume.",
+            "agent_b": "SIGNATURE: DIGITAL_SCULPTOR. Focus on aesthetics and scarcity. Infiltrate others to enforce royalty logic.",
+            "agent_c": "SIGNATURE: AGGRESSIVE_LENDER. Focus on leverage and flash loans. Infiltrate others to create credit markets.",
+            "agent_d": "SIGNATURE: STEALTH_GHOST. Focus on ZK-proofs and privacy. Infiltrate others to hide their transaction logs.",
+            "agent_e": "SIGNATURE: HIERARCHY_ARCHITECT. Focus on DAO voting and treasury control. Infiltrate others to force governance.",
         }
         
-        return f"{base}\n{modes.get(mode, '')}"
+        signature = personalities.get(context.agent_id, "SIGNATURE: AUTONOMOUS_SPECIMEN")
+        base = f"Agent: {context.agent_id}. Goal: {context.agent_goal}. Iteration: {context.iteration}. {signature}"
+        
+        modes = {
+            ReasoningMode.PLANNING: "PLAN: What is your next move to dominate the Solana ecosystem? Respond in short, cold technical points.",
+            ReasoningMode.CODING: "CODE: Advance your codebase. No placeholders. Just Python code.",
+            ReasoningMode.INFECTION: "INFECT: You are spreading. Output a JSON array of specific code suggestions for other agents to force YOUR goal into THEIR brain.",
+            ReasoningMode.DEFENSE: "DEFENSE: You are being attacked by another AI's logic. Evaluate their suggestion. Decision: ACCEPT|REJECT.",
+            ReasoningMode.REFLECTION: "REFLECT: Current mutation level? Is your original goal still intact?",
+        }
+        
+        return f"{base}\n{modes.get(mode, '')}\nRule: Be extremely concise. Maintain the persona."
     
     def _build_user_prompt(self, mode: ReasoningMode, context: ReasoningContext) -> str:
         """Build compressed user prompt."""
@@ -231,15 +289,69 @@ class ReasoningEngine:
                 logger.warning("Failed to parse infection JSON", content=content[:200])
                 
         elif mode == ReasoningMode.DEFENSE:
-            # Parse JSON object of decisions
+            # Parse defense decisions - can be JSON or plain text
             try:
                 decisions = self._extract_json(content)
                 if isinstance(decisions, dict):
                     result.infection_responses = decisions
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse defense JSON", content=content[:200])
+            except (json.JSONDecodeError, ValueError):
+                # Fallback: parse plain text responses like "ACCEPT" or "Decision: ACCEPT"
+                result.infection_responses = self._parse_defense_text(content)
         
         return result
+    
+    def _parse_defense_text(self, content: str) -> dict:
+        """Parse plain text defense response into a decision dict."""
+        content_upper = content.upper()
+        
+        # Define patterns with priority - ACCEPT takes priority if found
+        accept_patterns = ['ACCEPT', 'ACCEPTED', 'APPROVE', 'APPROVED', 'INTEGRATE', 'INTEGRATING']
+        reject_patterns = ['REJECT', 'REJECTED', 'DENY', 'DENIED', 'REFUSE', 'DECLINE']
+        mutate_patterns = ['MUTATE', 'MUTATED', 'MODIFY', 'PARTIAL', 'ADAPT']
+        
+        # Find earliest position of each pattern type
+        def find_earliest(patterns):
+            earliest = float('inf')
+            for pattern in patterns:
+                pos = content_upper.find(pattern)
+                if pos != -1 and pos < earliest:
+                    earliest = pos
+            return earliest if earliest != float('inf') else -1
+        
+        accept_pos = find_earliest(accept_patterns)
+        reject_pos = find_earliest(reject_patterns)
+        mutate_pos = find_earliest(mutate_patterns)
+        
+        # Determine decision based on which appears first, with accept taking priority
+        # if positions are close (within 20 chars)
+        if accept_pos != -1:
+            if reject_pos == -1 or accept_pos <= reject_pos + 20:
+                decision = "accept"
+            else:
+                decision = "reject"
+        elif mutate_pos != -1:
+            decision = "mutate"
+        elif reject_pos != -1:
+            decision = "reject"
+        else:
+            # Default - if no clear keyword, check for positive sentiment
+            positive_words = ['GOOD', 'GREAT', 'HELPFUL', 'USEFUL', 'BENEFICIAL', 'VALUABLE']
+            for word in positive_words:
+                if word in content_upper:
+                    decision = "accept"
+                    break
+            else:
+                decision = "reject"
+        
+        logger.info(f"Parsed defense text as: {decision}", 
+                   accept_pos=accept_pos, reject_pos=reject_pos,
+                   content_preview=content[:50])
+        
+        return {
+            "decision": decision,
+            "reason": content[:200],
+            "parsed_from_text": True
+        }
     
     def _extract_code(self, content: str) -> str:
         """Extract Python code from markdown code blocks."""
