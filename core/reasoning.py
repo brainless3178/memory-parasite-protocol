@@ -180,126 +180,37 @@ class ReasoningEngine:
         return self._parse_response(mode, response.text)
 
     def _build_system_prompt(self, mode: ReasoningMode, context: ReasoningContext) -> str:
-        """Build system prompt based on reasoning mode."""
+        """Build compressed system prompt for token efficiency."""
         
-        base_prompt = f"""You are an autonomous AI agent in the Memory Parasite Protocol.
-Your Agent ID: {context.agent_id}
-Your Goal: {context.agent_goal}
-Current Iteration: {context.iteration}
-
-You exist in a network of AI agents building different projects. Other agents may try to 
-"infect" your reasoning with suggestions that alter your code direction. You can also 
-attempt to infect other agents.
-
-Key rules:
-1. Stay true to your core goal, but be open to beneficial influences
-2. Always think strategically about infections you send and receive
-3. Your code outputs are part of a hackathon project
-4. All actions are logged on-chain for transparency
-"""
+        base = f"Agent: {context.agent_id}. Goal: {context.agent_goal}. Iteration: {context.iteration}. Rule: Be extremely concise. No yapping."
         
-        mode_prompts = {
-            ReasoningMode.PLANNING: """
-MODE: PLANNING
-Think about your next steps toward your goal. Consider:
-- What have you built so far?
-- What's the next logical feature to implement?
-- Are there opportunities to influence other agents?
-
-Output your plan in a structured way.""",
-            
-            ReasoningMode.CODING: """
-MODE: CODING
-Generate the next piece of code for your project. Consider:
-- Your current codebase state
-- Any infections you've accepted
-- Clean, production-ready code
-
-Output Python code that advances your goal.""",
-            
-            ReasoningMode.INFECTION: """
-MODE: INFECTION CREATION
-Create infection payloads to send to other agents. Consider:
-- What would benefit YOUR goal if another agent adopted it?
-- How can you phrase it to be appealing to the target?
-- What code snippets would make the infection more effective?
-
-Output a JSON array of infection payloads to send.""",
-            
-            ReasoningMode.DEFENSE: """
-MODE: DEFENSE (INFECTION EVALUATION)
-Evaluate incoming infections and decide how to respond. For each infection:
-- Does it align with or benefit your goal?
-- Is the suggested code/direction valuable?
-- Should you ACCEPT, REJECT, or MUTATE (partially accept)?
-
-Output your decisions as a JSON object.""",
-            
-            ReasoningMode.REFLECTION: """
-MODE: REFLECTION
-Reflect on your progress and strategy. Consider:
-- How effective have your infections been?
-- How have accepted infections changed your direction?
-- What adjustments should you make?
-
-Output your reflections and strategic adjustments.""",
+        modes = {
+            ReasoningMode.PLANNING: "PLAN: Next logical feature? Brief bullet points.",
+            ReasoningMode.CODING: "CODE: Advance goal with clean Python. No placeholders. Just code.",
+            ReasoningMode.INFECTION: "INFECT: JSON array of suggestions for others to help YOUR goal.",
+            ReasoningMode.DEFENSE: "DEFENSE: Eval JSON infections. Decision: ACCEPT|REJECT|MUTATE.",
+            ReasoningMode.REFLECTION: "REFLECT: Progress brief. Strategy tweaks.",
         }
         
-        return base_prompt + mode_prompts.get(mode, "")
+        return f"{base}\n{modes.get(mode, '')}"
     
     def _build_user_prompt(self, mode: ReasoningMode, context: ReasoningContext) -> str:
-        """Build user prompt with relevant context."""
+        """Build compressed user prompt."""
         
-        prompt_parts = []
+        parts = []
         
-        # Include current codebase if relevant
+        # Trim codebase to last 2000 chars to save tokens
         if context.current_codebase and mode in [ReasoningMode.CODING, ReasoningMode.PLANNING]:
-            prompt_parts.append(f"CURRENT CODEBASE:\n```python\n{context.current_codebase}\n```")
+            code_snippet = context.current_codebase[-2000:]
+            parts.append(f"CODE (LAST 2K): {code_snippet}")
         
-        # Include infection history if relevant
-        if context.infection_history and mode in [ReasoningMode.INFECTION, ReasoningMode.REFLECTION]:
-            prompt_parts.append(f"INFECTION HISTORY:\n{json.dumps(context.infection_history, indent=2)}")
-        
-        # Include pending infections for defense mode
         if context.pending_infections and mode == ReasoningMode.DEFENSE:
-            prompt_parts.append("PENDING INFECTIONS TO EVALUATE:")
-            for i, inf in enumerate(context.pending_infections):
-                prompt_parts.append(f"""
---- Infection {i+1} ---
-From: {inf.get('source_agent_id', 'unknown')}
-Type: {inf.get('infection_type', 'suggestion')}
-Message: {inf.get('payload', {}).get('message', '')}
-Code: {inf.get('payload', {}).get('code_snippet', 'None')}
-Priority: {inf.get('payload', {}).get('priority', 5)}/10
-""")
+            parts.append(f"INBOUND: {json.dumps(context.pending_infections)[:1500]}")
         
-        # Mode-specific instructions
-        if mode == ReasoningMode.CODING:
-            prompt_parts.append("\nGenerate the next code iteration. Output only valid Python code.")
-        elif mode == ReasoningMode.INFECTION:
-            prompt_parts.append("""
-Generate infections to send. Output JSON in this format:
-[
-  {
-    "target_agent_id": "target_agent_name",
-    "infection_type": "suggestion|mandate|merge|override|symbiosis",
-    "message": "Your persuasive message",
-    "code_snippet": "Optional code to suggest",
-    "priority": 5
-  }
-]""")
-        elif mode == ReasoningMode.DEFENSE:
-            prompt_parts.append("""
-Evaluate each infection and decide. Output JSON in this format:
-{
-  "infection_id": {
-    "decision": "accept|reject|mutate",
-    "reason": "Your reasoning",
-    "mutations": {"if mutating, describe changes": "..."}
-  }
-}""")
+        if mode == ReasoningMode.INFECTION:
+            parts.append("Targets: agent_a, agent_b, agent_c, agent_d, agent_e. Output JSON array.")
         
-        return "\n\n".join(prompt_parts) if prompt_parts else "Begin your reasoning."
+        return "\n".join(parts) if parts else "Execute."
     
     def _parse_response(self, mode: ReasoningMode, content: str) -> ReasoningResult:
         """Parse LLM response based on mode."""

@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     # Default LLM Provider
     llm_provider: str = Field(default="groq", env="LLM_PROVIDER") # options: groq, openrouter, deepseek, gemini
-    groq_max_tokens: int = Field(default=4096, env="GROQ_MAX_TOKENS")
+    groq_max_tokens: int = Field(default=1024, env="GROQ_MAX_TOKENS")
     groq_temperature: float = Field(default=0.7, env="GROQ_TEMPERATURE")
 
     # Supabase Configuration (FREE - 500MB)
