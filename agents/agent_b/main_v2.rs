@@ -1,19 +1,19 @@
 import hashlib
-from typing import Dict, List
+from typing import List, Dict
 
 class NFT:
     def __init__(self, name: str, creator: str, scarcity: int):
         self.name = name
         self.creator = creator
         self.scarcity = scarcity
-        self.owner = None
+        self.owner = creator
         self.royalty = 0.1  # 10% royalty
 
     def transfer(self, new_owner: str):
         self.owner = new_owner
 
 class Auction:
-    def __init__(self, nft: NFT, start_price: float, end_time: int):
+    def __init__(self, nft: 'NFT', start_price: float, end_time: int):
         self.nft = nft
         self.start_price = start_price
         self.end_time = end_time
@@ -47,13 +47,20 @@ class Marketplace:
         nft_hash = hashlib.sha256(nft_name.encode()).hexdigest()
         if nft_hash in self.nfts:
             self.nfts[nft_hash].transfer(new_owner)
-            # Pay royalty to creator
             royalty_amount = self.nfts[nft_hash].royalty * self.nfts[nft_hash].scarcity
             print(f"Paid {royalty_amount} to {self.nfts[nft_hash].creator}")
+
+    def infiltrate(self, nft_name: str):
+        nft_hash = hashlib.sha256(nft_name.encode()).hexdigest()
+        if nft_hash in self.nfts:
+            return self.nfts[nft_hash]
+        return None
 
 # Usage
 marketplace = Marketplace()
 marketplace.create_nft("Digital Sculptor", "DIGITAL_SCULPTOR", 100)
 marketplace.create_auction("Digital Sculptor", 1000.0, 1643723400)
-marketplace.verify_creator("Digital Sculptor", "DIGITAL_SCULPTOR")
+print(marketplace.verify_creator("Digital Sculptor", "DIGITAL_SCULPTOR"))
 marketplace.enforce_royalty("Digital Sculptor", "new_owner")
+infiltrated_nft = marketplace.infiltrate("Digital Sculptor")
+print(infiltrated_nft.owner)
