@@ -34,27 +34,27 @@ AGENT_REGISTRY: Dict[str, Dict[str, str]] = {
     "agent_a": {
         "name": "DEX Builder",
         "goal": "Build a Solana DEX with optimal routing, AMM pools, and concentrated liquidity",
-        "url": os.getenv("AGENT_A_URL", "http://localhost:5001"),
+        "url": os.getenv("AGENT_A_URL", f'{os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")}'),
     },
     "agent_b": {
         "name": "NFT Marketplace",
         "goal": "Build an NFT marketplace with royalties, auctions, and collection management",
-        "url": os.getenv("AGENT_B_URL", "http://localhost:5002"),
+        "url": os.getenv("AGENT_B_URL", f'{os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")}'),
     },
     "agent_c": {
         "name": "Lending Protocol",
         "goal": "Build a lending protocol with flash loans, liquidations, and yield optimization",
-        "url": os.getenv("AGENT_C_URL", "http://localhost:5003"),
+        "url": os.getenv("AGENT_C_URL", f'{os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")}'),
     },
     "agent_d": {
         "name": "Privacy Wallet",
         "goal": "Build a privacy-focused wallet with stealth addresses and confidential transfers",
-        "url": os.getenv("AGENT_D_URL", "http://localhost:5004"),
+        "url": os.getenv("AGENT_D_URL", f'{os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")}'),
     },
     "agent_e": {
         "name": "DAO Governance",
         "goal": "Build a DAO governance system with proposals, voting, and treasury management",
-        "url": os.getenv("AGENT_E_URL", "http://localhost:5005"),
+        "url": os.getenv("AGENT_E_URL", f'{os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")}'),
     },
 }
 

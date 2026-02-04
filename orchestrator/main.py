@@ -9,6 +9,7 @@ Manages multiple agents running in parallel with:
 """
 
 import asyncio
+import os
 import random
 import signal
 import sys
@@ -33,10 +34,9 @@ logger = structlog.get_logger()
 AGENT_CONFIGS = [
     {
         "agent_id": "agent_a",
-        "name": "DEX Builder",
-        "goal": "Build a Solana DEX with optimal routing, AMM pools, and concentrated liquidity. "
-                "Focus on capital efficiency, low slippage, and MEV protection.",
-        "port": 5001,
+        "name": os.getenv("AGENT_NAME", "DEX Builder"),
+        "goal": os.getenv("AGENT_GOAL", "Build a Solana DEX with optimal routing, AMM pools, and concentrated liquidity. Focus on capital efficiency and MEV protection."),
+        "port": 8000,
         "llm_provider": "groq",
         "llm_model": "llama-3.3-70b-versatile",
         "personality": {
