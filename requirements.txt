@@ -4,7 +4,7 @@ python-dotenv==1.0.0
 pydantic>=2.5.3
 pydantic-settings>=2.1.0
 openai>=1.12.0
-google-generativeai>=0.3.2
+google.generativeai>=0.3.2
 
 # HTTP client (async support)
 httpx>=0.26.0
@@ -16,18 +16,7 @@ gunicorn>=21.2.0
 
 # Database (Supabase)
 supabase>=2.3.4
-
-# Blockchain (Solana)
-solana>=0.32.0
-solders>=0.20.0
-
-# Dashboard
-streamlit>=1.29.0
-plotly>=5.18.0
-networkx>=3.2.1
-
-# Async support
-aiohttp>=3.9.1
+httpx>=0.26.0
 
 # Utilities
 tenacity>=8.2.3
@@ -36,6 +25,3 @@ structlog>=24.1.0
 # Testing
 pytest>=7.4.4
 pytest-asyncio>=0.23.3
-
-# Text similarity (for influence score)
-# Using built-in math and collections for cosine similarity
