@@ -223,10 +223,12 @@ def main():
     logger.info(f"Starting Flask server on {settings.api_host}:{settings.api_port}")
     
     # Run Flask (this blocks)
+    import os
+    port = int(os.environ.get("PORT", settings.api_port))
     app.run(
         host=settings.api_host,
-        port=settings.api_port,
-        debug=False,  # Debug mode doesn't work well with threads
+        port=port,
+        debug=False,
         use_reloader=False,
     )
 
