@@ -1,0 +1,20 @@
+# Streamlit Cloud Configuration
+# Deploy at: https://share.streamlit.io
+
+[theme]
+base = "dark"
+primaryColor = "#a371f7"
+backgroundColor = "#0a0a0f"
+secondaryBackgroundColor = "#161b22"
+textColor = "#f0f6fc"
+
+[server]
+headless = true
+port = 8501
+enableCORS = false
+
+[browser]
+gatherUsageStats = false
+
+[client]
+showErrorDetails = false

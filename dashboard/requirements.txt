@@ -1,0 +1,9 @@
+# Dashboard Requirements
+# Run: pip install -r dashboard/requirements.txt
+
+streamlit>=1.29.0
+plotly>=5.18.0
+networkx>=3.2.1
+pandas>=2.1.0
+httpx>=0.26.0
+structlog>=24.1.0
