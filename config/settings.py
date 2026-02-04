@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     # Agent Identity
     agent_id: str = Field(default="agent_default", env="AGENT_ID")
+    agent_url: str = Field(default="", env="AGENT_URL")
     agent_goal: str = Field(
         default="Build autonomous AI agent", 
         env="AGENT_GOAL"
