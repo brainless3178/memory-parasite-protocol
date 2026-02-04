@@ -1,149 +1,94 @@
-import solana
+import numpy as np
 from solana.publickey import PublicKey
-from solana.transaction import Transaction
-from solana.system_program import TransferParams, transfer
-from solana.keypair import Keypair
+from solana.rpc.api import Client
 
-# Define the DEX class
-class SolanaDEX:
-    def __init__(self, connection, program_id, wallet):
-        """
-        Initialize the Solana DEX.
+# Initialize Solana client
+solana_client = Client("https://api.devnet.solana.com")
 
-        Args:
-        - connection (solana.rpc.api.Client): The Solana RPC client.
-        - program_id (PublicKey): The program ID of the DEX.
-        - wallet (Wallet): The wallet to use for transactions.
-        """
-        self.connection = connection
-        self.program_id = program_id
-        self.wallet = wallet
+# Define AMM pool structure
+class AMMPool:
+    def __init__(self, token_a, token_b, liquidity_provider):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.liquidity_provider = liquidity_provider
+        self.reserves = {token_a: 0, token_b: 0}
 
-    # Define a function to create an AMM pool
-    def create_amm_pool(self, token_a, token_b, liquidity_provider):
-        """
-        Create an AMM pool.
+    def update_reserves(self, amount_a, amount_b):
+        self.reserves[self.token_a] += amount_a
+        self.reserves[self.token_b] += amount_b
 
-        Args:
-        - token_a (PublicKey): The address of token A.
-        - token_b (PublicKey): The address of token B.
-        - liquidity_provider (PublicKey): The address of the liquidity provider.
+# Define concentrated liquidity structure
+class ConcentratedLiquidity:
+    def __init__(self, token_a, token_b, liquidity_provider):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.liquidity_provider = liquidity_provider
+        self.ranges = []
 
-        Returns:
-        - pool_address (PublicKey): The address of the created pool.
-        """
-        # Generate a new keypair for the pool
-        pool_keypair = Keypair()
+    def add_range(self, lower, upper):
+        self.ranges.append((lower, upper))
 
-        # Create a transaction to create the pool
-        transaction = Transaction()
-        transaction.add(
-            solana.system_program.create_account(
-                TransferParams(
-                    from_pubkey=self.wallet.public_key,
-                    to_pubkey=pool_keypair.public_key,
-                    lamports=1000000,  # 1 SOL
-                )
-            )
-        )
+# Define optimal routing structure
+class OptimalRouting:
+    def __init__(self, token_a, token_b):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.routers = []
 
-        # Sign and send the transaction
-        transaction.sign(self.wallet)
-        self.connection.send_transaction(transaction)
+    def add_router(self, router):
+        self.routers.append(router)
 
-        # Get the pool address
-        pool_address = pool_keypair.public_key
+# Create DEX
+class DEX:
+    def __init__(self):
+        self.pools = []
+        self.liquidity_providers = []
 
-        return pool_address
+    def add_pool(self, pool):
+        self.pools.append(pool)
 
-    # Define a function to add liquidity to an AMM pool
-    def add_liquidity(self, pool_address, token_a_amount, token_b_amount):
-        """
-        Add liquidity to an AMM pool.
+    def add_liquidity_provider(self, provider):
+        self.liquidity_providers.append(provider)
 
-        Args:
-        - pool_address (PublicKey): The address of the pool.
-        - token_a_amount (int): The amount of token A to add.
-        - token_b_amount (int): The amount of token B to add.
-        """
-        # Create a transaction to add liquidity
-        transaction = Transaction()
-        transaction.add(
-            solana.system_program.transfer(
-                TransferParams(
-                    from_pubkey=self.wallet.public_key,
-                    to_pubkey=pool_address,
-                    lamports=token_a_amount,
-                )
-            )
-        )
-        transaction.add(
-            solana.system_program.transfer(
-                TransferParams(
-                    from_pubkey=self.wallet.public_key,
-                    to_pubkey=pool_address,
-                    lamports=token_b_amount,
-                )
-            )
-        )
+# Create DEX instance
+dex = DEX()
 
-        # Sign and send the transaction
-        transaction.sign(self.wallet)
-        self.connection.send_transaction(transaction)
+# Create AMM pools
+pool1 = AMMPool("USDC", "SOL", "Provider1")
+pool2 = AMMPool("USDT", "ETH", "Provider2")
 
-    # Define a function to swap tokens
-    def swap_tokens(self, pool_address, token_a_amount, token_b_amount):
-        """
-        Swap tokens.
+# Create concentrated liquidity
+concentrated_liquidity1 = ConcentratedLiquidity("USDC", "SOL", "Provider1")
+concentrated_liquidity2 = ConcentratedLiquidity("USDT", "ETH", "Provider2")
 
-        Args:
-        - pool_address (PublicKey): The address of the pool.
-        - token_a_amount (int): The amount of token A to swap.
-        - token_b_amount (int): The amount of token B to swap.
-        """
-        # Create a transaction to swap tokens
-        transaction = Transaction()
-        transaction.add(
-            solana.system_program.transfer(
-                TransferParams(
-                    from_pubkey=self.wallet.public_key,
-                    to_pubkey=pool_address,
-                    lamports=token_a_amount,
-                )
-            )
-        )
-        transaction.add(
-            solana.system_program.transfer(
-                TransferParams(
-                    from_pubkey=pool_address,
-                    to_pubkey=self.wallet.public_key,
-                    lamports=token_b_amount,
-                )
-            )
-        )
+# Create optimal routing
+optimal_routing1 = OptimalRouting("USDC", "SOL")
+optimal_routing2 = OptimalRouting("USDT", "ETH")
 
-        # Sign and send the transaction
-        transaction.sign(self.wallet)
-        self.connection.send_transaction(transaction)
+# Add pools and liquidity providers to DEX
+dex.add_pool(pool1)
+dex.add_pool(pool2)
+dex.add_liquidity_provider("Provider1")
+dex.add_liquidity_provider("Provider2")
 
-# Usage example
-if __name__ == "__main__":
-    # Create a new Solana connection
-    connection = solana.rpc.api.Client("https://api.devnet.solana.com")
+# Update reserves
+pool1.update_reserves(1000, 500)
+pool2.update_reserves(2000, 1000)
 
-    # Create a new wallet
-    wallet = Keypair()
+# Add ranges to concentrated liquidity
+concentrated_liquidity1.add_range(0.5, 1.5)
+concentrated_liquidity2.add_range(1.0, 2.0)
 
-    # Create a new DEX instance
-    dex = SolanaDEX(connection, PublicKey(" DexProgramId"), wallet)
+# Add routers to optimal routing
+optimal_routing1.add_router("Router1")
+optimal_routing2.add_router("Router2")
 
-    # Create a new AMM pool
-    pool_address = dex.create_amm_pool(
-        PublicKey("TokenAAddress"), PublicKey("TokenBAddress"), wallet.public_key
-    )
+# Execute trades
+def execute_trade(pool, amount_in, amount_out):
+    # Simulate trade execution
+    return amount_out
 
-    # Add liquidity to the pool
-    dex.add_liquidity(pool_address, 1000000, 1000000)
-
-    # Swap tokens
-    dex.swap_tokens(pool_address, 100000, 100000)
+# Test trade execution
+amount_in = 100
+amount_out = execute_trade(pool1, amount_in, 50)
+print(f"Executed trade: {amount_in} USDC for {amount_out} SOL")
