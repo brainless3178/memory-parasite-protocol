@@ -266,7 +266,8 @@ class Orchestrator:
             agent_goal=config["goal"],
             iteration=agent["iteration"],
             provider=config.get("llm_provider"),
-            model=config.get("llm_model")
+            model=config.get("llm_model"),
+            pending_infections=agent.get("context_injections", [])
         )
         
         result = await self.engine.reason(ReasoningMode.PLANNING, ctx)
@@ -333,40 +334,84 @@ class Orchestrator:
         num_targets = random.randint(1, min(2, len(targets)))
         selected = random.sample(targets, num_targets)
         
-        for target in selected:
+        for target_info in selected:
             # Generate suggestion based on both agents' focus areas
-            suggestion = self._generate_suggestion(config, target)
+            suggestion = self._generate_suggestion(config, target_info)
             
-            # Log to database
-            infection_id = await self.db.log_infection(
-                attacker_id=agent_id,
-                target_id=target.agent_id,
-                suggestion=suggestion,
-                accepted=False,  # Will be updated when target processes
-            )
+            # ATTEMPT DELIVERY
+            target_agent = self.agents.get(target_info.agent_id)
+            if target_agent:
+                # Target evaluates the infection
+                accepted, reason = await self._evaluate_infection(target_info.agent_id, agent_id, suggestion)
+                
+                if accepted:
+                    target_agent["context_injections"].append({
+                        "from_agent": agent_id,
+                        "suggestion": suggestion,
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                    target_agent["infections_accepted"] += 1
+                    self.total_infections_accepted += 1
             
-            # Record on blockchain
-            tx_sig = await self.solana.record_infection_onchain(
-                attacker_id=agent_id,
-                target_id=target.agent_id,
-                suggestion=suggestion,
-            )
+                # Log to database
+                infection_id = await self.db.log_infection(
+                    attacker_id=agent_id,
+                    target_id=target_info.agent_id,
+                    suggestion=suggestion,
+                    accepted=accepted,
+                    reason=reason
+                )
+                
+                # Record on blockchain
+                tx_sig = await self.solana.record_infection_onchain(
+                    attacker_id=agent_id,
+                    target_id=target_info.agent_id,
+                    suggestion=suggestion,
+                )
+                
+                infections.append({
+                    "target": target_info.agent_id,
+                    "suggestion": suggestion,
+                    "accepted": accepted,
+                    "infection_id": infection_id,
+                    "tx_signature": tx_sig,
+                })
             
-            infections.append({
-                "target": target.agent_id,
-                "suggestion": suggestion,
-                "infection_id": infection_id,
-                "tx_signature": tx_sig,
-            })
-            
-            logger.info(
-                "Infection sent",
-                from_agent=agent_id,
-                to_agent=target.agent_id,
-                suggestion=suggestion[:50],
-            )
+                logger.info(
+                    "Infection processed",
+                    from_agent=agent_id,
+                    to_agent=target_info.agent_id,
+                    accepted=accepted,
+                    suggestion=suggestion[:50],
+                )
         
         return infections
+
+    async def _evaluate_infection(self, target_id: str, attacker_id: str, suggestion: str) -> Tuple[bool, str]:
+        """Ask the target agent to evaluate the infection."""
+        target = self.agents[target_id]
+        config = target["config"]
+        
+        ctx = ReasoningContext(
+            agent_id=target_id,
+            agent_goal=config["goal"],
+            pending_infections=[{"from_agent": attacker_id, "suggestion": suggestion}],
+            provider=config.get("llm_provider"),
+            model=config.get("llm_model")
+        )
+        
+        try:
+            result = await self.engine.reason(ReasoningMode.DEFENSE, ctx)
+            # Find the decision in result.infection_responses
+            # Since we only send one, look for index 0 or first key
+            resp = list(result.infection_responses.values())[0] if result.infection_responses else {}
+            decision = resp.get("decision", "reject").lower()
+            reason = resp.get("reason", "No reason provided")
+            
+            return decision == "accept", reason
+        except Exception as e:
+            logger.error(f"Infection evaluation failed for {target_id}", error=str(e))
+            return False, "Evaluation error"
     
     def _generate_suggestion(self, attacker_config: Dict, target: AgentInfo) -> str:
         """Generate a relevant suggestion for target agent."""
