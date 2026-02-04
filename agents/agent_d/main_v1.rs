@@ -1,77 +1,49 @@
-from zokrates.topology import Network, Node
-from zokrates.protocol import ProofSystem
-from hashlib import sha256
+from zkp_library import Commitment, Proof, Verifier
+from stealth_addresses import StealthAddress
+from typing import Tuple
 
-class StealthWallet:
-    def __init__(self):
-        self.network = Network()
-        self.nodes = {}
-        self.stealth_keys = {} # {address: (view_key, spend_key)}
+class PrivacyWallet:
+    def __init__(self, private_key: bytes):
+        self.sk = private_key
+        self.stealth_addr = StealthAddress(self.sk)
 
-    def register_user(self, user_id):
-        node = Node(user_id, self.network)
-        self.nodes[user_id] = node
-        # Simplified key generation for demonstration
-        view_key = sha256(f"{user_id}_view".encode()).hexdigest()
-        spend_key = sha256(f"{user_id}_spend".encode()).hexdigest()
-        self.stealth_keys[user_id] = (view_key, spend_key)
-        return node
+    def generate_stealth_output(self, recipient_pk: bytes) -> Tuple[bytes, bytes]:
+        # Generates ephemeral key and shared secret for stealth output
+        ephemeral_key, shared_secret = self.stealth_addr.generate_keys(recipient_pk)
+        output_key = self.stealth_addr.derive_output_key(shared_secret)
+        # In a real scenario, we'd compute a transaction ID/commitment here.
+        return ephemeral_key, output_key
 
-    def generate_stealth_address(self, owner_id, ephemeral_key):
-        # In a real scenario, this involves complex elliptic curve math (e.g., Schnorr/Ed25519 additions)
-        # Here, we simulate a unique stealth address derived from public keys and ephemeral key.
-        view_key, _ = self.stealth_keys[owner_id]
-        stealth_addr_seed = f"{view_key}:{ephemeral_key}"
-        stealth_address = sha256(stealth_addr_seed.encode()).hexdigest()
-        return stealth_address
+    def create_zk_spend_proof(self, commitment_in: Commitment, utxo_owner_sk: bytes) -> Proof:
+        # Placeholder for generating a ZK-proof (e.g., using Pedersen or R1CS)
+        # to prove ownership/validity without revealing UTXO details (stealth infiltration)
+        proof = Proof.generate(commitment_in, utxo_owner_sk)
+        # The proof itself hides the transaction log details from external verification nodes
+        return proof
 
-    def create_zk_proof_transfer(self, sender_id, recipient_stealth_addr, amount, stealth_tx_data):
-        # Placeholder for generating the actual ZK proof proving:
-        # 1. Sender has sufficient balance (hidden).
-        # 2. Transaction amount is valid (hidden).
-        # 3. Output is correctly encrypted/formed for the recipient's stealth address (hidden).
+    def verify_zk_spend(self, proof: Proof, commitment_out: Commitment) -> bool:
+        # Verifier checks the proof against the commitment structure
+        return Verifier.verify(proof, commitment_out)
 
-        # We assume the ZK circuit is already compiled (e.g., using Circom/SnarkJS/ZoKrates compiler)
-        proof_system = ProofSystem("TransferCircuit")
-        
-        # Inputs known to the prover (sender): private spend key, ephemeral nonce, transaction details.
-        private_inputs = {
-            "sender_sk": self.stealth_keys[sender_id][1],
-            "amount": amount,
-            "tx_hash": sha256(str(stealth_tx_data).encode()).hexdigest()
-        }
+# --- Simulation ---
+# Assume setup of keys and commitments
+alice_sk = b'alice_secret_key_1234'
+bob_pk = b'bob_public_key_5678'
 
-        # Public inputs known to the verifier (network): recipient address, Pedersen commitment parameters.
-        public_inputs = [recipient_stealth_addr]
+wallet = PrivacyWallet(alice_sk)
 
-        # Generate proof
-        proof = proof_system.generate_proof(private_inputs, public_inputs)
-        
-        # Infiltrate/Hide transaction logs: The proof itself validates the transaction
-        # without revealing the source or specific inputs, achieving transaction log obfuscation.
-        return {"proof": proof, "output_commitment": sha256(b"commitment").hexdigest()}
+# 1. Alice generates a stealth output for Bob
+epk, out_key = wallet.generate_stealth_output(bob_pk)
+print(f"Stealth Output Key Generated: {out_key.hex()[:8]}...")
 
-# Example Execution (Minimalist)
-if __name__ == '__main__':
-    wallet = StealthWallet()
-    alice_node = wallet.register_user("Alice")
-    bob_node = wallet.register_user("Bob")
-    
-    # Alice generates an ephemeral key for a transaction to Bob
-    ephemeral_key_tx = "ephemeral_nonce_12345"
-    bob_stealth_addr = wallet.generate_stealth_address("Bob", ephemeral_key_tx)
-    
-    print(f"Bob's Stealth Address: {bob_stealth_addr}")
-    
-    # Alice creates the transaction, relying on ZK proof for privacy
-    tx_data = {"msg": "payment"}
-    proof_bundle = wallet.create_zk_proof_transfer(
-        sender_id="Alice",
-        recipient_stealth_addr=bob_stealth_addr,
-        amount=100,
-        stealth_tx_data=tx_data
-    )
-    
-    print("\nTransaction Proof Generated (Log Hidden):")
-    print(f"Proof Signature Length: {len(proof_bundle['proof'])} bytes (ZK Hidden)")
-    # The network only verifies the proof against the public address, not the sender's identity or amount.
+# 2. Infiltration/Spending (proving Alice spent a UTXO committed to her stealth address)
+# Assume 'commitment_to_spend' was previously committed to Alice's derived address.
+commitment_to_spend = Commitment.random()
+
+# The ZK proof masks the link between 'commitment_to_spend' and 'out_key'
+spend_proof = wallet.create_zk_spend_proof(commitment_to_spend, alice_sk)
+print(f"ZK Spend Proof Size: {len(spend_proof.bytes)} bytes")
+
+# 3. Verification (Proof confirms valid spend while obscuring transaction metadata)
+is_valid = wallet.verify_zk_spend(spend_proof, Commitment.random())
+print(f"Transaction Log Infiltration Verified: {is_valid}")
