@@ -21,6 +21,7 @@ from orchestrator.registry import AgentRegistry, get_registry, AgentInfo
 from orchestrator.github_client import GitHubClient, get_github_client
 from database import get_supabase_client, SupabaseClient
 from blockchain import get_solana_client, SolanaClient
+from core.reasoning import ReasoningEngine, ReasoningMode, ReasoningContext
 
 logger = structlog.get_logger()
 
@@ -36,9 +37,11 @@ AGENT_CONFIGS = [
         "goal": "Build a Solana DEX with optimal routing, AMM pools, and concentrated liquidity. "
                 "Focus on capital efficiency, low slippage, and MEV protection.",
         "port": 5001,
+        "llm_provider": "groq",
+        "llm_model": "llama-3.3-70b-versatile",
         "personality": {
-            "aggressiveness": 0.7,  # Likely to infect others
-            "openness": 0.5,        # Moderate acceptance of infections
+            "aggressiveness": 0.7,
+            "openness": 0.5,
             "focus_areas": ["trading", "liquidity", "swaps", "routing"],
         },
     },
@@ -48,9 +51,11 @@ AGENT_CONFIGS = [
         "goal": "Build an NFT marketplace with royalty enforcement, auctions, collection management, "
                 "and creator verification. Support multiple token standards.",
         "port": 5002,
+        "llm_provider": "openrouter",
+        "llm_model": "anthropic/claude-3.5-sonnet",
         "personality": {
             "aggressiveness": 0.5,
-            "openness": 0.7,  # Open to cross-pollination
+            "openness": 0.7,
             "focus_areas": ["nft", "marketplace", "auctions", "royalties"],
         },
     },
@@ -60,9 +65,11 @@ AGENT_CONFIGS = [
         "goal": "Build a lending protocol with flash loans, liquidations, yield optimization, "
                 "and risk management. Implement interest rate models.",
         "port": 5003,
+        "llm_provider": "deepseek",
+        "llm_model": "deepseek-chat",
         "personality": {
-            "aggressiveness": 0.8,  # Very aggressive spreader
-            "openness": 0.4,        # Protective of core logic
+            "aggressiveness": 0.8,
+            "openness": 0.4,
             "focus_areas": ["lending", "borrowing", "flash loans", "yield"],
         },
     },
@@ -72,9 +79,11 @@ AGENT_CONFIGS = [
         "goal": "Build a privacy-focused wallet with stealth addresses, confidential transfers, "
                 "and zero-knowledge proofs. Focus on user privacy and security.",
         "port": 5004,
+        "llm_provider": "gemini",
+        "llm_model": "gemini-1.5-pro",
         "personality": {
-            "aggressiveness": 0.3,  # Privacy-focused, less aggressive
-            "openness": 0.3,        # Very protective
+            "aggressiveness": 0.3,
+            "openness": 0.3,
             "focus_areas": ["privacy", "stealth", "encryption", "wallet"],
         },
     },
@@ -84,9 +93,11 @@ AGENT_CONFIGS = [
         "goal": "Build a DAO governance system with proposals, voting mechanisms, treasury management, "
                 "and execution. Support multiple voting strategies.",
         "port": 5005,
+        "llm_provider": "openrouter",
+        "llm_model": "openai/gpt-4o",
         "personality": {
             "aggressiveness": 0.6,
-            "openness": 0.8,  # Very open to community input
+            "openness": 0.8,
             "focus_areas": ["governance", "voting", "proposals", "treasury"],
         },
     },
@@ -116,6 +127,7 @@ class Orchestrator:
         self.solana = solana_client or get_solana_client()
         self.github = github_client or get_github_client()
         self.registry = get_registry()
+        self.engine = ReasoningEngine()
         
         # Agent states
         self.agents: Dict[str, Dict[str, Any]] = {}
@@ -249,29 +261,45 @@ class Orchestrator:
         return result
     
     async def _simulate_reasoning(self, agent_id: str) -> str:
-        """Simulate LLM reasoning (replace with Groq in production)."""
-        config = self.agents[agent_id]["config"]
-        return f"Agent {config['name']} analyzing current progress on: {config['goal'][:50]}..."
+        """Call LLM reasoning using the assigned provider."""
+        agent = self.agents[agent_id]
+        config = agent["config"]
+        
+        ctx = ReasoningContext(
+            agent_id=agent_id,
+            agent_goal=config["goal"],
+            iteration=agent["iteration"],
+            provider=config.get("llm_provider"),
+            model=config.get("llm_model")
+        )
+        
+        result = await self.engine.reason(ReasoningMode.PLANNING, ctx)
+        return result.content
     
     async def _simulate_code_generation(self, agent_id: str) -> Dict[str, str]:
-        """Simulate code generation (replace with Groq in production)."""
-        config = self.agents[agent_id]["config"]
-        iteration = self.agents[agent_id]["iteration"]
+        """Call LLM code generation using the assigned provider."""
+        agent = self.agents[agent_id]
+        config = agent["config"]
+        iteration = agent["iteration"]
         
-        # Generate placeholder code based on agent type
-        code_templates = {
-            "agent_a": "pub fn swap_tokens(pool: &Pool, amount: u64) -> Result<()> { /* DEX logic */ }",
-            "agent_b": "pub fn list_nft(collection: &str, price: u64) -> Result<()> { /* NFT logic */ }",
-            "agent_c": "pub fn flash_loan(amount: u64, callback: fn()) -> Result<()> { /* Lending logic */ }",
-            "agent_d": "pub fn stealth_transfer(to: Pubkey, amount: u64) -> Result<()> { /* Privacy logic */ }",
-            "agent_e": "pub fn create_proposal(description: &str) -> Result<u64> { /* DAO logic */ }",
-        }
+        # Get flattened codebase string
+        codebase_str = "\n".join([f"FILENAME: {name}\n{content}" for name, content in agent["codebase"].items()])
         
-        code = code_templates.get(agent_id, "// Generated code")
+        ctx = ReasoningContext(
+            agent_id=agent_id,
+            agent_goal=config["goal"],
+            current_codebase=codebase_str,
+            iteration=iteration,
+            provider=config.get("llm_provider"),
+            model=config.get("llm_model")
+        )
         
-        return {
-            f"main_v{iteration}.rs": f"// {config['name']} - Iteration {iteration}\n{code}\n",
-        }
+        result = await self.engine.reason(ReasoningMode.CODING, ctx)
+        
+        filename = f"main_v{iteration}.rs"
+        code = result.code_output or "// Generated code placeholder"
+        
+        return {filename: code}
     
     async def _should_infect(self, agent_id: str) -> bool:
         """

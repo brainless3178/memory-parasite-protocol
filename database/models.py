@@ -207,14 +207,16 @@ class ReasoningLogRecord(BaseModel):
     
     def to_insert_dict(self) -> Dict[str, Any]:
         """Convert to dict for Supabase insert."""
-        return {
+        data = {
             "agent_id": self.agent_id,
             "reasoning_text": self.reasoning_text,
             "decision": self.decision,
             "context_snapshot": self.context_snapshot,
             "iteration": self.iteration,
-            "influenced_by": self.influenced_by,
         }
+        if self.influenced_by:
+            data["influenced_by"] = self.influenced_by
+        return data
 
 
 class NetworkSnapshotRecord(BaseModel):

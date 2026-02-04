@@ -31,6 +31,21 @@ class Settings(BaseSettings):
         default="https://api.groq.com/openai/v1/chat/completions",
         env="GROQ_API_URL"
     )
+
+    # OpenRouter Configuration (Multi-model hub)
+    openrouter_api_key: str = Field(default="", env="OPENROUTER_API_KEY")
+    openrouter_model: str = Field(default="anthropic/claude-3.5-sonnet", env="OPENROUTER_MODEL")
+
+    # DeepSeek Configuration (Coding specialist)
+    deepseek_api_key: str = Field(default="", env="DEEPSEEK_API_KEY")
+    deepseek_model: str = Field(default="deepseek-chat", env="DEEPSEEK_MODEL")
+
+    # Gemini Configuration (Large context)
+    gemini_api_key: str = Field(default="", env="GEMINI_API_KEY")
+    gemini_model: str = Field(default="gemini-1.5-pro", env="GEMINI_MODEL")
+
+    # Default LLM Provider
+    llm_provider: str = Field(default="groq", env="LLM_PROVIDER") # options: groq, openrouter, deepseek, gemini
     groq_max_tokens: int = Field(default=4096, env="GROQ_MAX_TOKENS")
     groq_temperature: float = Field(default=0.7, env="GROQ_TEMPERATURE")
 

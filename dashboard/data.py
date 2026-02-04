@@ -244,11 +244,11 @@ class DashboardData:
     
     def _get_mock_agents(self) -> List[Dict[str, Any]]:
         return [
-            {"agent_id": "agent_a", "name": "DEX Builder", "iteration": 18, "state": "idle"},
-            {"agent_id": "agent_b", "name": "NFT Marketplace", "iteration": 15, "state": "coding"},
-            {"agent_id": "agent_c", "name": "Lending Protocol", "iteration": 22, "state": "infecting"},
-            {"agent_id": "agent_d", "name": "Privacy Wallet", "iteration": 12, "state": "reasoning"},
-            {"agent_id": "agent_e", "name": "DAO Governance", "iteration": 14, "state": "idle"},
+            {"agent_id": "agent_a", "name": "DEX Builder", "iteration": 18, "state": "idle", "provider": "Groq", "model": "Llama 3.3"},
+            {"agent_id": "agent_b", "name": "NFT Marketplace", "iteration": 15, "state": "coding", "provider": "OpenRouter", "model": "Claude 3.5"},
+            {"agent_id": "agent_c", "name": "Lending Protocol", "iteration": 22, "state": "infecting", "provider": "DeepSeek", "model": "DeepSeek-V3"},
+            {"agent_id": "agent_d", "name": "Privacy Wallet", "iteration": 12, "state": "reasoning", "provider": "Gemini", "model": "Gemini 1.5 Pro"},
+            {"agent_id": "agent_e", "name": "DAO Governance", "iteration": 14, "state": "idle", "provider": "OpenRouter", "model": "GPT-4o"},
         ]
     
     def _get_mock_stats(self) -> Dict[str, Any]:

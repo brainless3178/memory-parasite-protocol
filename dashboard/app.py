@@ -469,6 +469,8 @@ def get_mock_agents() -> List[Dict[str, Any]]:
             "goal": "Build a Solana DEX with optimal routing and AMM pools",
             "iteration": 18,
             "state": "idle",
+            "provider": "Groq",
+            "model": "Llama 3.3",
             "total_code_lines": 2850,
             "original_lines": 1850,
             "parasitized_lines": 1000,
@@ -482,6 +484,8 @@ def get_mock_agents() -> List[Dict[str, Any]]:
             "goal": "Build an NFT marketplace with auctions and royalties",
             "iteration": 15,
             "state": "coding",
+            "provider": "OpenRouter",
+            "model": "Claude 3.5",
             "total_code_lines": 2100,
             "original_lines": 1050,
             "parasitized_lines": 1050,
@@ -495,6 +499,8 @@ def get_mock_agents() -> List[Dict[str, Any]]:
             "goal": "Build a lending protocol with flash loans",
             "iteration": 22,
             "state": "infecting",
+            "provider": "DeepSeek",
+            "model": "DeepSeek-V3",
             "total_code_lines": 3400,
             "original_lines": 2720,
             "parasitized_lines": 680,
@@ -508,6 +514,8 @@ def get_mock_agents() -> List[Dict[str, Any]]:
             "goal": "Build a privacy-focused wallet with stealth addresses",
             "iteration": 12,
             "state": "reasoning",
+            "provider": "Gemini",
+            "model": "Gemini 1.5",
             "total_code_lines": 1800,
             "original_lines": 1620,
             "parasitized_lines": 180,
@@ -521,6 +529,8 @@ def get_mock_agents() -> List[Dict[str, Any]]:
             "goal": "Build a DAO governance system with proposals and voting",
             "iteration": 14,
             "state": "idle",
+            "provider": "OpenRouter",
+            "model": "GPT-4o",
             "total_code_lines": 1950,
             "original_lines": 1170,
             "parasitized_lines": 780,
@@ -670,11 +680,25 @@ def render_agent_cards(agents: List[Dict]):
             state = agent.get("state", "idle")
             icon, color = state_icons.get(state, ("help", "#8b949e"))
             
+            # Brain provider icon
+            provider = agent.get("provider", "Unknown")
+            model = agent.get("model", "LLM")
+            provider_color = {
+                "Groq": "#f55036",
+                "OpenRouter": "#a371f7",
+                "DeepSeek": "#58a6ff",
+                "Gemini": "#4285f4"
+            }.get(provider, "#8b949e")
+
             st.markdown(f"""
             <div class="agent-card">
                 <div class="agent-name">
                     <span class="material-icons" style="color: {color};">{icon}</span>
                     {agent.get('name', agent['agent_id'])}
+                </div>
+                <div style="margin-top: 8px; display: flex; align-items: center;">
+                    <span class="material-icons icon-sm" style="color: {provider_color};">psychology</span>
+                    <span style="font-size: 0.75rem; color: {provider_color}; font-weight: 600;">{provider} ({model})</span>
                 </div>
                 <div style="margin-top: 12px;">
                     <div style="font-size: 0.75rem; color: #6e7681; margin-bottom: 4px;">

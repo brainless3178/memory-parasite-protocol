@@ -1,17 +1,20 @@
 """
 Reasoning engine for Memory Parasite Protocol.
 
-This module handles LLM-based reasoning using Groq's free tier.
+This module handles multi-provider LLM-based reasoning (Groq, OpenRouter, DeepSeek, Gemini).
 Agents use this to think, plan, and respond to infections.
 """
 
 import json
+import asyncio
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from enum import Enum
 import structlog
 
 from groq import Groq
+from openai import OpenAI
+import google.generativeai as genai
 
 from config.settings import get_settings
 
@@ -38,6 +41,8 @@ class ReasoningContext:
     infection_history: List[Dict[str, Any]] = None
     pending_infections: List[Dict[str, Any]] = None
     iteration: int = 0
+    provider: Optional[str] = None # can override default provider
+    model: Optional[str] = None # can override default model
     
     def __post_init__(self):
         if self.infection_history is None:
@@ -68,24 +73,112 @@ class ReasoningResult:
 
 class ReasoningEngine:
     """
-    LLM-powered reasoning engine for agents.
+    Multi-provider LLM reasoning engine.
     
-    Uses Groq's free tier with Llama 3.1 70B for:
-    - Goal planning and iteration
-    - Code generation
-    - Creating infection payloads
-    - Evaluating and responding to incoming infections
+    Supports:
+    - Groq (Llama 3.3)
+    - OpenRouter (Claude, GPT, etc.)
+    - DeepSeek (Coding specialist)
+    - Gemini (Large context)
     """
     
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, provider: Optional[str] = None):
         settings = get_settings()
-        self.api_key = api_key or settings.groq_api_key
-        self.model = settings.groq_model
-        self.max_tokens = settings.groq_max_tokens
-        self.temperature = settings.groq_temperature
+        self.default_provider = provider or settings.llm_provider
+        self.settings = settings
         
-        self.client = Groq(api_key=self.api_key) if self.api_key else None
-    
+        # Initialize clients
+        self.groq_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+        
+        self.openrouter_client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=settings.openrouter_api_key,
+        ) if settings.openrouter_api_key else None
+        
+        self.deepseek_client = OpenAI(
+            base_url="https://api.deepseek.com",
+            api_key=settings.deepseek_api_key,
+        ) if settings.deepseek_api_key else None
+        
+        if settings.gemini_api_key:
+            genai.configure(api_key=settings.gemini_api_key)
+            self.gemini_model = genai.GenerativeModel(settings.gemini_model)
+        else:
+            self.gemini_model = None
+
+    async def reason(
+        self,
+        mode: ReasoningMode,
+        context: ReasoningContext,
+    ) -> ReasoningResult:
+        """Execute reasoning using the preferred provider."""
+        provider = context.provider or self.default_provider
+        
+        try:
+            if provider == "groq" and self.groq_client:
+                return await self._reason_groq(mode, context)
+            elif provider == "openrouter" and self.openrouter_client:
+                return await self._reason_openai_compat(self.openrouter_client, self.settings.openrouter_model, mode, context)
+            elif provider == "deepseek" and self.deepseek_client:
+                return await self._reason_openai_compat(self.deepseek_client, self.settings.deepseek_model, mode, context)
+            elif provider == "gemini" and self.gemini_model:
+                return await self._reason_gemini(mode, context)
+            else:
+                logger.warning(f"Provider {provider} not configured, falling back to mock")
+                return self._mock_response(mode, context)
+        except Exception as e:
+            logger.error(f"Reasoning failed for provider {provider}", error=str(e), mode=mode.value)
+            return self._mock_response(mode, context)
+
+    def reason_sync(
+        self,
+        mode: ReasoningMode,
+        context: ReasoningContext,
+    ) -> ReasoningResult:
+        """Synchronous version of reasoning."""
+        # For simplicity in this hackathon environment, we wrap the async call
+        # In production, we'd use provider-specific sync clients
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        return loop.run_until_complete(self.reason(mode, context))
+
+    async def _reason_groq(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
+        system_prompt = self._build_system_prompt(mode, context)
+        user_prompt = self._build_user_prompt(mode, context)
+        
+        response = self.groq_client.chat.completions.create(
+            model=context.model or self.settings.groq_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=self.settings.groq_max_tokens,
+            temperature=self.settings.groq_temperature,
+        )
+        return self._parse_response(mode, response.choices[0].message.content)
+
+    async def _reason_openai_compat(self, client: OpenAI, default_model: str, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
+        system_prompt = self._build_system_prompt(mode, context)
+        user_prompt = self._build_user_prompt(mode, context)
+        
+        response = client.chat.completions.create(
+            model=context.model or default_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        return self._parse_response(mode, response.choices[0].message.content)
+
+    async def _reason_gemini(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
+        prompt = f"{self._build_system_prompt(mode, context)}\n\n{self._build_user_prompt(mode, context)}"
+        response = await self.gemini_model.generate_content_async(prompt)
+        return self._parse_response(mode, response.text)
+
     def _build_system_prompt(self, mode: ReasoningMode, context: ReasoningContext) -> str:
         """Build system prompt based on reasoning mode."""
         
@@ -207,79 +300,6 @@ Evaluate each infection and decide. Output JSON in this format:
 }""")
         
         return "\n\n".join(prompt_parts) if prompt_parts else "Begin your reasoning."
-    
-    async def reason(
-        self,
-        mode: ReasoningMode,
-        context: ReasoningContext,
-    ) -> ReasoningResult:
-        """
-        Execute reasoning in the specified mode.
-        
-        Args:
-            mode: The type of reasoning to perform
-            context: Context about the agent and its state
-            
-        Returns:
-            ReasoningResult with the LLM output and parsed data
-        """
-        if not self.client:
-            logger.warning("No Groq API key configured, returning mock response")
-            return self._mock_response(mode, context)
-        
-        system_prompt = self._build_system_prompt(mode, context)
-        user_prompt = self._build_user_prompt(mode, context)
-        
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-            )
-            
-            content = response.choices[0].message.content
-            
-            return self._parse_response(mode, content)
-            
-        except Exception as e:
-            logger.error("Reasoning failed", error=str(e), mode=mode.value)
-            raise
-    
-    def reason_sync(
-        self,
-        mode: ReasoningMode,
-        context: ReasoningContext,
-    ) -> ReasoningResult:
-        """Synchronous version of reasoning."""
-        if not self.client:
-            logger.warning("No Groq API key configured, returning mock response")
-            return self._mock_response(mode, context)
-        
-        system_prompt = self._build_system_prompt(mode, context)
-        user_prompt = self._build_user_prompt(mode, context)
-        
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-            )
-            
-            content = response.choices[0].message.content
-            
-            return self._parse_response(mode, content)
-            
-        except Exception as e:
-            logger.error("Reasoning failed", error=str(e), mode=mode.value)
-            raise
     
     def _parse_response(self, mode: ReasoningMode, content: str) -> ReasoningResult:
         """Parse LLM response based on mode."""

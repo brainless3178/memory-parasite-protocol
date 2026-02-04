@@ -100,7 +100,8 @@ CREATE TABLE reasoning_logs (
     decision TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     context_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
-    iteration INTEGER DEFAULT 0
+    iteration INTEGER DEFAULT 0,
+    influenced_by TEXT[] DEFAULT '{}'
 );
 
 CREATE INDEX idx_reasoning_agent ON reasoning_logs(agent_id);
