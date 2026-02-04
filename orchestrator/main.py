@@ -34,11 +34,11 @@ logger = structlog.get_logger()
 AGENT_CONFIGS = [
     {
         "agent_id": "agent_a",
-        "name": os.getenv("AGENT_NAME", "DEX Builder"),
-        "goal": os.getenv("AGENT_GOAL", "Build a Solana DEX with optimal routing, AMM pools, and concentrated liquidity. Focus on capital efficiency and MEV protection."),
+        "name": os.getenv("AGENT_A_NAME", "DEX Builder"),
+        "goal": os.getenv("AGENT_A_GOAL", "Build a Solana DEX with optimal routing, AMM pools, and concentrated liquidity."),
         "port": 8000,
-        "llm_provider": "groq",
-        "llm_model": "llama-3.3-70b-versatile",
+        "llm_provider": os.getenv("AGENT_A_PROVIDER", "groq"),
+        "llm_model": os.getenv("AGENT_A_MODEL", "llama-3.3-70b-versatile"),
         "personality": {
             "aggressiveness": 0.7,
             "openness": 0.5,
@@ -47,12 +47,11 @@ AGENT_CONFIGS = [
     },
     {
         "agent_id": "agent_b",
-        "name": "NFT Marketplace",
-        "goal": "Build an NFT marketplace with royalty enforcement, auctions, collection management, "
-                "and creator verification. Support multiple token standards.",
+        "name": os.getenv("AGENT_B_NAME", "NFT Marketplace"),
+        "goal": os.getenv("AGENT_B_GOAL", "Build an NFT marketplace with royalty enforcement, auctions, collection management."),
         "port": 5002,
-        "llm_provider": "openrouter",
-        "llm_model": "anthropic/claude-3.5-sonnet",
+        "llm_provider": os.getenv("AGENT_B_PROVIDER", "openrouter"),
+        "llm_model": os.getenv("AGENT_B_MODEL", "anthropic/claude-3.5-sonnet"),
         "personality": {
             "aggressiveness": 0.5,
             "openness": 0.7,
@@ -61,12 +60,11 @@ AGENT_CONFIGS = [
     },
     {
         "agent_id": "agent_c",
-        "name": "Lending Protocol",
-        "goal": "Build a lending protocol with flash loans, liquidations, yield optimization, "
-                "and risk management. Implement interest rate models.",
+        "name": os.getenv("AGENT_C_NAME", "Lending Protocol"),
+        "goal": os.getenv("AGENT_C_GOAL", "Build a lending protocol with flash loans, liquidations, yield optimization."),
         "port": 5003,
-        "llm_provider": "deepseek",
-        "llm_model": "deepseek-chat",
+        "llm_provider": os.getenv("AGENT_C_PROVIDER", "deepseek"),
+        "llm_model": os.getenv("AGENT_C_MODEL", "deepseek-chat"),
         "personality": {
             "aggressiveness": 0.8,
             "openness": 0.4,
@@ -75,12 +73,11 @@ AGENT_CONFIGS = [
     },
     {
         "agent_id": "agent_d",
-        "name": "Privacy Wallet",
-        "goal": "Build a privacy-focused wallet with stealth addresses, confidential transfers, "
-                "and zero-knowledge proofs. Focus on user privacy and security.",
+        "name": os.getenv("AGENT_D_NAME", "Privacy Wallet"),
+        "goal": os.getenv("AGENT_D_GOAL", "Build a privacy-focused wallet with stealth addresses, confidential transfers."),
         "port": 5004,
-        "llm_provider": "gemini",
-        "llm_model": "gemini-1.5-pro",
+        "llm_provider": os.getenv("AGENT_D_PROVIDER", "gemini"),
+        "llm_model": os.getenv("AGENT_D_MODEL", "gemini-1.5-pro"),
         "personality": {
             "aggressiveness": 0.3,
             "openness": 0.3,
@@ -89,12 +86,11 @@ AGENT_CONFIGS = [
     },
     {
         "agent_id": "agent_e",
-        "name": "DAO Governance",
-        "goal": "Build a DAO governance system with proposals, voting mechanisms, treasury management, "
-                "and execution. Support multiple voting strategies.",
+        "name": os.getenv("AGENT_E_NAME", "DAO Governance"),
+        "goal": os.getenv("AGENT_E_GOAL", "Build a DAO governance system with proposals, voting mechanisms, treasury management."),
         "port": 5005,
-        "llm_provider": "openrouter",
-        "llm_model": "openai/gpt-4o",
+        "llm_provider": os.getenv("AGENT_E_PROVIDER", "openrouter"),
+        "llm_model": os.getenv("AGENT_E_MODEL", "openai/gpt-4o"),
         "personality": {
             "aggressiveness": 0.6,
             "openness": 0.8,
