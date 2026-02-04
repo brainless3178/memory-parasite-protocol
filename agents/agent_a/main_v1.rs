@@ -2,66 +2,66 @@ import numpy as np
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
-# Constants
-CLUSTER_URL = "https://api.devnet.solana.com"
-PROGRAM_ID = PublicKey("YourProgramIdHere")
-ROUTER_ADDRESS = PublicKey("YourRouterAddressHere")
-
 # Initialize Solana client
-client = Client(CLUSTER_URL)
+client = Client("https://api.devnet.solana.com")
 
 # Define AMM pool structure
 class AMMPool:
-    def __init__(self, address, token_a, token_b, liquidity):
-        self.address = address
+    def __init__(self, token_a, token_b, fee):
         self.token_a = token_a
         self.token_b = token_b
-        self.liquidity = liquidity
+        self.fee = fee
+        self.liquidity = 0
 
-# Define concentrated liquidity pool
+    def calculate_price(self, amount_a, amount_b):
+        return (amount_b * (1 + self.fee)) / amount_a
+
+# Define concentrated liquidity pool structure
 class ConcentratedLiquidityPool:
-    def __init__(self, address, token_a, token_b, liquidity, lower_tick, upper_tick):
-        self.address = address
+    def __init__(self, token_a, token_b, fee, lower_tick, upper_tick):
         self.token_a = token_a
         self.token_b = token_b
-        self.liquidity = liquidity
+        self.fee = fee
         self.lower_tick = lower_tick
         self.upper_tick = upper_tick
+        self.liquidity = 0
 
-# Define optimal routing algorithm
-def optimal_routing(pools, amount_in, token_in):
+    def calculate_price(self, amount_a, amount_b):
+        return (amount_b * (1 + self.fee)) / amount_a
+
+# Define optimal routing function
+def optimal_routing(amount_in, token_in, token_out, pools):
+    best_price = 0
     best_pool = None
-    best_amount_out = 0
+
     for pool in pools:
-        amount_out = calculate_amount_out(pool, amount_in, token_in)
-        if amount_out > best_amount_out:
-            best_pool = pool
-            best_amount_out = amount_out
-    return best_pool, best_amount_out
+        if pool.token_a == token_in and pool.token_b == token_out:
+            price = pool.calculate_price(amount_in, 0)
+            if price > best_price:
+                best_price = price
+                best_pool = pool
 
-# Define calculate amount out function
-def calculate_amount_out(pool, amount_in, token_in):
-    if token_in == pool.token_a:
-        return (amount_in * pool.token_b) / pool.token_a
-    else:
-        return (amount_in * pool.token_a) / pool.token_b
+    return best_pool
 
-# Main function
-def main():
+# Define main DEX function
+def solana_dex(amount_in, token_in, token_out):
     # Initialize pools
-    pools = [
-        AMMPool(PublicKey("PoolAddress1"), "TokenA", "TokenB", 1000),
-        ConcentratedLiquidityPool(PublicKey("PoolAddress2"), "TokenA", "TokenB", 500, -100, 100)
-    ]
+    pool1 = AMMPool(PublicKey("token1"), PublicKey("token2"), 0.01)
+    pool2 = ConcentratedLiquidityPool(PublicKey("token1"), PublicKey("token2"), 0.01, -10, 10)
 
-    # Set input parameters
-    amount_in = 100
-    token_in = "TokenA"
+    # Optimal routing
+    best_pool = optimal_routing(amount_in, token_in, token_out, [pool1, pool2])
 
-    # Execute optimal routing
-    best_pool, best_amount_out = optimal_routing(pools, amount_in, token_in)
-    print(f"Best pool: {best_pool.address}")
-    print(f"Best amount out: {best_amount_out}")
+    # Execute trade
+    if best_pool:
+        price = best_pool.calculate_price(amount_in, 0)
+        return price
+    else:
+        return None
 
-if __name__ == "__main__":
-    main()
+# Test the DEX
+amount_in = 100
+token_in = PublicKey("token1")
+token_out = PublicKey("token2")
+price = solana_dex(amount_in, token_in, token_out)
+print(price)
