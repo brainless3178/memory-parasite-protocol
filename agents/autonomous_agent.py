@@ -338,23 +338,77 @@ class AutonomousAgent:
         return False, {}
 
     async def log_to_database(self, event_type: EventType, data: Dict[str, Any]) -> bool:
-        """Log to event table."""
+        """Log events to correct Supabase tables."""
         if not self.settings.supabase_url: return False
-        entry = {
-            "agent_id": self.state.agent_id,
-            "event_type": event_type.value,
-            "data_json": json.dumps(data),
-            "timestamp": datetime.utcnow().isoformat()
+        
+        table_map = {
+            EventType.REASONING: "reasoning_logs",
+            EventType.CODE_GENERATION: "code_commits",
+            EventType.INFECTION_SENT: "infections",
+            EventType.INFECTION_RECEIVED: "infections",
+            EventType.INFECTION_ACCEPTED: "infections",
+            EventType.INFECTION_REJECTED: "infections",
         }
+        
+        table = table_map.get(event_type)
+        if not table: return False
+        
+        # Prepare data for specific table schemas
+        payload = {"agent_id": self.state.agent_id}
+        
+        if table == "reasoning_logs":
+            payload.update({
+                "reasoning_text": data.get("reasoning", ""),
+                "decision": data.get("decision", ""),
+                "iteration": self.state.iteration,
+                "context_snapshot": {"code_files": list(self.state.codebase.keys())}
+            })
+        elif table == "code_commits":
+            payload.update({
+                "commit_message": data.get("message", f"Update v{self.state.iteration}"),
+                "file_path": data.get("file_path", ""),
+                "lines_added": data.get("lines", 0),
+                "iteration": self.state.iteration
+            })
+        elif table == "infections":
+            payload = {
+                "attacker_id": self.state.agent_id if "SENT" in event_type.name else data.get("from_agent"),
+                "target_id": data.get("target_url") or self.state.agent_id,
+                "suggestion": data.get("suggestion", ""),
+                "accepted": event_type == EventType.INFECTION_ACCEPTED
+            }
+
         try:
             await self.http_client.post(
-                f"{self.settings.supabase_url}/rest/v1/agent_events",
-                json=entry,
-                headers={"apikey": self.settings.supabase_key, "Authorization": f"Bearer {self.settings.supabase_key}"}
+                f"{self.settings.supabase_url}/rest/v1/{table}",
+                json=payload,
+                headers={
+                    "apikey": self.settings.supabase_key,
+                    "Authorization": f"Bearer {self.settings.supabase_key}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal"
+                }
             )
             return True
         except:
             return False
+
+    async def init_on_db(self):
+        """Initialize agent record in DB."""
+        if not self.settings.supabase_url: return
+        payload = {"agent_id": self.state.agent_id, "goal": self.state.goal}
+        try:
+            await self.http_client.post(
+                f"{self.settings.supabase_url}/rest/v1/agents",
+                json=payload,
+                headers={
+                    "apikey": self.settings.supabase_key,
+                    "Authorization": f"Bearer {self.settings.supabase_key}",
+                    "Content-Type": "application/json",
+                    "Prefer": "resolution=merge-duplicates"
+                }
+            )
+        except: pass
 
     async def run_cycle(self) -> Dict[str, Any]:
         """Main cycle: Reason -> Code -> Infect."""
@@ -368,6 +422,7 @@ class AutonomousAgent:
         return {"success": True, "iteration": self.state.iteration}
 
     async def run_forever(self):
+        await self.init_on_db()
         self.is_running = True
         while self.is_running:
             await self.run_cycle()
