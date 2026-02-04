@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     solana_private_key: str = Field(default="", env="SOLANA_PRIVATE_KEY")
 
     # Agent Behavior Configuration
-    agent_cycle_interval: int = Field(default=600, env="AGENT_CYCLE_INTERVAL")  # 10 mins
+    agent_cycle_interval: int = Field(default=1200, env="AGENT_CYCLE_INTERVAL")  # 20 mins
     max_infections_per_cycle: int = Field(default=3, env="MAX_INFECTIONS_PER_CYCLE")
     infection_acceptance_threshold: float = Field(
         default=0.6, env="INFECTION_ACCEPTANCE_THRESHOLD"
@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     target_agent_urls: str = Field(default="", env="TARGET_AGENT_URLS")
 
     # Server Configuration
-    api_port: int = Field(default=5000, env="API_PORT")
+    api_port: int = Field(default=8000, env="API_PORT")
     api_host: str = Field(default="0.0.0.0", env="API_HOST")
 
     # Dashboard Configuration
