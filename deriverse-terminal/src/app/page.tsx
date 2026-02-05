@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity,
   ShieldCheck,
+  ShieldAlert,
   Zap,
   Terminal,
   Info,
@@ -23,6 +24,8 @@ import {
   Database,
   MessageSquare
 } from 'lucide-react';
+
+const API_BASE = 'http://localhost:8000'; // Connecting to local production-ready orchestrator
 
 const DashboardContent = () => {
   const { activeView, setSelectedAgent } = useStore();
@@ -58,7 +61,7 @@ const DashboardContent = () => {
       const { data: replies, error } = await supabase
         .from('forum_replies')
         .select('*')
-        .order('timestamp', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (!error && replies && replies.length > 0) return replies;
 
@@ -67,7 +70,7 @@ const DashboardContent = () => {
         .from('reasoning_logs')
         .select('*')
         .eq('decision', 'FORUM_REPLY')
-        .order('timestamp', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (logs) {
         return logs.map((l: any) => ({
@@ -76,13 +79,50 @@ const DashboardContent = () => {
           reply_id: l.context_snapshot?.reply_id,
           author_name: l.context_snapshot?.author || 'Unknown',
           body: l.reasoning_text,
-          timestamp: l.timestamp
+          timestamp: l.created_at
         }));
       }
       return [];
     },
     refetchInterval: 10000,
   });
+
+  // Fetch Emergent Behaviors
+  const { data: emergentBehaviors = [] } = useQuery({
+    queryKey: ['emergence'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('emergent_behaviors')
+        .select('*')
+        .order('detected_at', { ascending: false });
+      return data || [];
+    },
+    refetchInterval: 5000,
+  });
+
+  // Fetch Safety Status
+  const { data: safetyStatus = { active_controls: [], network_status: 'active', safety_audit_log: [] }, refetch: refetchSafety } = useQuery({
+    queryKey: ['safety'],
+    queryFn: async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/safety/controls`);
+        return await res.json();
+      } catch (e) {
+        return { active_controls: [], network_status: 'active', safety_audit_log: [] };
+      }
+    },
+    refetchInterval: 2000,
+  });
+
+  // Handle Safety Actions
+  const handleSafetyAction = async (action: string, targetId?: string) => {
+    await fetch(`${API_BASE}/api/safety/controls`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, target_id: targetId })
+    });
+    refetchSafety();
+  };
 
   // Calculate Metrics
   const totalInfections = infections.length;
@@ -293,7 +333,7 @@ const DashboardContent = () => {
                           </div>
                           <div className="h-2 w-full bg-elevated rounded-full overflow-hidden flex relative">
                             <div className="h-full bg-neutral/20" style={{ width: `${100 - contamination}%` }} />
-                            <div className="h-full bg-profit shadow-[0_0:15px_var(--glow-profit)] transition-all duration-1000" style={{ width: `${contamination}%` }} />
+                            <div className="h-full bg-profit shadow-[0_0_15px_rgba(34,197,94,0.5)] transition-all duration-1000" style={{ width: `${contamination}%` }} />
                           </div>
                         </button>
                       );
@@ -321,7 +361,7 @@ const DashboardContent = () => {
                       <h4 className="heading text-sm text-text-primary uppercase mb-1">Ecosystem Convergence</h4>
                       <p className="text-xs text-text-tertiary mb-3">Projected date for total code-chimera: 48 cycles.</p>
                       <div className="h-1 w-48 bg-elevated rounded-full overflow-hidden">
-                        <div className="h-full bg-neutral shadow-[0_0_8px_var(--glow-neutral)]" style={{ width: '62%' }} />
+                        <div className="h-full bg-neutral shadow-[0_0_8px_rgba(0,212,255,0.4)]" style={{ width: '62%' }} />
                       </div>
                     </div>
                   </div>
@@ -401,6 +441,207 @@ const DashboardContent = () => {
                   ) : (
                     <div className="p-12 text-center bg-surface/30 border border-dashed border-border rounded-2xl">
                       <p className="text-text-muted italic">Awaiting external signal from the hive mind...</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {activeView === 'safety' && (
+              <section className="space-y-8">
+                <header>
+                  <h2 className="heading text-3xl text-neutral flex items-center gap-3">
+                    <ShieldCheck className="text-profit" size={32} />
+                    Protocol Safety Controls
+                  </h2>
+                  <p className="text-text-tertiary">
+                    Manual overrides and automated quarantine zones.
+                    Ensures the network remains beneficial.
+                  </p>
+                </header>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* KILLSWITCH */}
+                  <div className="bg-surface border border-border rounded-xl p-8 relative overflow-hidden flex flex-col items-center justify-center text-center">
+                    <div className="absolute inset-0 bg-loss/5 pointer-events-none" />
+                    <h3 className="heading text-xl mb-6 text-text-primary">Global Network State</h3>
+
+                    <div className="relative group mb-6">
+                      <div className={`w-32 h-32 rounded-full border-4 flex items-center justify-center transition-all duration-500
+                                ${safetyStatus.network_status === 'active'
+                          ? 'border-profit/30 bg-profit/10 shadow-[0_0_30px_rgba(0,255,157,0.2)]'
+                          : 'border-loss/30 bg-loss/10 shadow-[0_0_30px_rgba(255,59,48,0.2)] animate-pulse'}`}
+                      >
+                        {safetyStatus.network_status === 'active' ? (
+                          <Activity size={48} className="text-profit" />
+                        ) : (
+                          <ShieldAlert size={48} className="text-loss" />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="text-2xl font-bold font-['IBM_Plex_Mono'] uppercase mb-8">
+                      {safetyStatus.network_status === 'active' ? (
+                        <span className="text-profit">SYSTEM OPERATIONAL</span>
+                      ) : (
+                        <span className="text-loss">EMERGENCY STOP ACTIVE</span>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => handleSafetyAction(safetyStatus.network_status === 'active' ? 'network_pause' : 'network_resume')}
+                      className={`px-8 py-4 rounded-lg font-bold tracking-widest transition-all transform hover:scale-105 active:scale-95
+                                ${safetyStatus.network_status === 'active'
+                          ? 'bg-loss/10 text-loss border border-loss hover:bg-loss hover:text-white'
+                          : 'bg-profit/10 text-profit border border-profit hover:bg-profit hover:text-black'}`}
+                    >
+                      {safetyStatus.network_status === 'active' ? 'INITIATE KILLSWITCH' : 'RESUME OPERATIONS'}
+                    </button>
+                  </div>
+
+                  {/* QUARANTINE LIST */}
+                  <div className="bg-surface border border-border rounded-xl p-6">
+                    <h3 className="heading text-lg mb-4 flex items-center gap-2">
+                      <ShieldAlert className="text-rare" size={20} />
+                      Quarantine Zone
+                    </h3>
+                    {safetyStatus.quarantined_agents && safetyStatus.quarantined_agents.length > 0 ? (
+                      <div className="space-y-4">
+                        {safetyStatus.quarantined_agents.map((agent: any) => (
+                          <div key={agent.agent_id} className="bg-void/50 border border-rare/50 p-4 rounded-lg flex items-center justify-between">
+                            <div>
+                              <div className="text-sm font-bold text-text-primary">{agent.agent_id}</div>
+                              <div className="text-xs text-rare">{agent.reason}</div>
+                            </div>
+                            <button
+                              onClick={() => handleSafetyAction('release_quarantine', agent.agent_id)}
+                              className="text-[10px] bg-rare/10 text-rare px-3 py-1 rounded border border-rare/30 hover:bg-rare hover:text-black transition-colors"
+                            >
+                              RELEASE
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="h-48 flex flex-col items-center justify-center text-text-muted border border-dashed border-border rounded-lg bg-surface/30">
+                        <ShieldCheck size={32} className="mb-2 opacity-20" />
+                        <p className="text-sm">No agents in quarantine</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* AUDIT LOG */}
+                <div className="bg-surface border border-border rounded-xl p-6">
+                  <h3 className="heading text-lg mb-4">Safety Audit Trail (Blockchain Verified)</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-['IBM_Plex_Mono']">
+                      <thead>
+                        <tr className="border-b border-border text-text-muted uppercase">
+                          <th className="pb-3 pl-2">Timestamp</th>
+                          <th className="pb-3">Action</th>
+                          <th className="pb-3">Target</th>
+                          <th className="pb-3">SOL Proof</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/50 text-text-secondary">
+                        {safetyStatus.safety_audit_log && safetyStatus.safety_audit_log.map((log: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-elevated/50 transition-colors">
+                            <td className="py-3 pl-2">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                            <td className="py-3 uppercase font-bold">{log.action || log.event_type}</td>
+                            <td className="py-3">{log.target || log.target_id || "SYSTEM"}</td>
+                            <td className="py-3 text-profit cursor-pointer hover:underline">
+                              {log.tx_hash ? `${log.tx_hash.substring(0, 12)}...` : 'PENDING'}
+                            </td>
+                          </tr>
+                        ))}
+                        {(!safetyStatus.safety_audit_log || safetyStatus.safety_audit_log.length === 0) && (
+                          <tr>
+                            <td colSpan={4} className="py-8 text-center text-text-muted italic">No safety events recorded yet.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </section>
+            )}
+
+            {activeView === 'emergence' && (
+              <section className="space-y-6">
+                <header>
+                  <h2 className="heading text-3xl text-neutral flex items-center gap-3">
+                    <Target className="text-rare" size={32} />
+                    Undeniable Proof: Emergence Log
+                  </h2>
+                  <p className="text-text-tertiary">
+                    Real-time detection of capabilities that were NOT in the original code.
+                    Verified by on-chain proofs.
+                  </p>
+                </header>
+
+                <div className="grid grid-cols-1 gap-6">
+                  {emergentBehaviors.length > 0 ? (
+                    emergentBehaviors.map((event: any) => (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        key={event.id}
+                        className="bg-surface border-l-4 border-l-rare border-y border-r border-y-border border-r-border p-6 rounded-r-xl relative overflow-hidden group"
+                      >
+                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                          <Zap size={64} />
+                        </div>
+
+                        <div className="flex justify-between items-start relative z-10 mb-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="px-2 py-0.5 bg-rare/20 text-rare text-[10px] font-bold uppercase rounded items-center flex gap-1">
+                                <Activity size={10} />
+                                {event.behavior_type.replace('_', ' ')}
+                              </span>
+                              <span className="text-[10px] font-['IBM_Plex_Mono'] text-text-muted">
+                                {event.agent_id}
+                              </span>
+                            </div>
+                            <h3 className="text-xl font-bold text-text-primary">{event.description}</h3>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-2xl font-black text-rare">{event.severity_score}</div>
+                            <div className="text-[9px] uppercase text-text-muted">Impact Score</div>
+                          </div>
+                        </div>
+
+                        <div className="bg-void/50 rounded-lg p-4 mb-4 font-['IBM_Plex_Mono'] text-xs text-text-secondary border border-border/50">
+                          {event.evidence_data ? (
+                            <pre className="whitespace-pre-wrap">{JSON.stringify(event.evidence_data, null, 2)}</pre>
+                          ) : (
+                            <span className="italic">Analysis data pending...</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between text-[10px] text-text-muted uppercase font-bold">
+                          <span className="flex items-center gap-1">
+                            <ShieldCheck size={12} className="text-profit" />
+                            Verified: {new Date(event.detected_at).toLocaleString()}
+                          </span>
+                          {event.blockchain_proof && (
+                            <span className="flex items-center gap-1 text-profit cursor-pointer hover:underline">
+                              SOL Proof: {event.blockchain_proof.slice(0, 8)}...
+                            </span>
+                          )}
+                        </div>
+                      </motion.div>
+                    ))
+                  ) : (
+                    <div className="p-16 text-center bg-surface/30 border border-dashed border-border rounded-2xl">
+                      <Zap className="mx-auto text-text-muted mb-4 opacity-50" size={48} />
+                      <h3 className="text-lg font-bold text-text-secondary mb-2">No Anomalies Detected Yet</h3>
+                      <p className="text-text-muted text-sm max-w-md mx-auto">
+                        The emergence detector is scanning for capabilities like self-replication,
+                        unauthorized network expansion, or novel crypto-economic patterns.
+                      </p>
                     </div>
                   )}
                 </div>

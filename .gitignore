@@ -61,3 +61,12 @@ __pycache__/
 
 # Local Netlify folder
 .netlify
+
+# Local state files
+activity.json
+balance.json
+clodds_responses.json
+sidex_responses.json
+own_responses.json
+orchestrator.log
+*.log

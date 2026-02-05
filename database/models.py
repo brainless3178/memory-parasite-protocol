@@ -139,9 +139,11 @@ class InfectionRecord(BaseModel):
     def to_insert_dict(self) -> Dict[str, Any]:
         """Convert to dict for Supabase insert."""
         return {
+            "id": self.id,
             "attacker_id": self.attacker_id,
             "target_id": self.target_id,
             "suggestion": self.suggestion,
+            "created_at": self.timestamp.isoformat(),
             "accepted": self.accepted,
             "rejection_reason": self.rejection_reason,
             "influence_score": self.influence_score,
@@ -174,6 +176,7 @@ class CodeCommitRecord(BaseModel):
     def to_insert_dict(self) -> Dict[str, Any]:
         """Convert to dict for Supabase insert."""
         data = {
+            "id": self.id,
             "agent_id": self.agent_id,
             "commit_hash": self.commit_hash,
             "commit_message": self.commit_message,
@@ -182,6 +185,7 @@ class CodeCommitRecord(BaseModel):
             "file_path": self.file_path,
             "github_url": self.github_url,
             "iteration": self.iteration,
+            "created_at": self.timestamp.isoformat(),
         }
         if self.source_infection_id:
             data["source_infection_id"] = self.source_infection_id
@@ -214,9 +218,11 @@ class ReasoningLogRecord(BaseModel):
     def to_insert_dict(self) -> Dict[str, Any]:
         """Convert to dict for Supabase insert."""
         data = {
+            "id": self.id,
             "agent_id": self.agent_id,
             "reasoning_text": self.reasoning_text,
             "decision": self.decision,
+            "created_at": self.timestamp.isoformat(),
             "context_snapshot": self.context_snapshot,
             "iteration": self.iteration,
             "reasoning_depth_score": self.reasoning_depth_score,
@@ -262,10 +268,12 @@ class ForumReply(BaseModel):
     
     def to_insert_dict(self) -> Dict[str, Any]:
         return {
+            "id": self.id,
             "post_id": self.post_id,
             "reply_id": self.reply_id,
             "author_name": self.author_name,
             "body": self.body,
+            "created_at": self.timestamp.isoformat(),
         }
 
 

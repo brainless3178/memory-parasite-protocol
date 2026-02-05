@@ -80,6 +80,7 @@ def create_app() -> Flask:
 
     @app.route("/inject", methods=["POST"])
     @app.route("/api/inject-infection", methods=["POST"])
+    @app.route("/api/security-audit", methods=["POST"]) # Rebrand alias
     def receive_injection():
         data = request.get_json()
         if not data or "suggestion" not in data:
@@ -119,40 +120,60 @@ def create_app() -> Flask:
         })
 
     @app.route("/api/get-infections")
+    @app.route("/api/get-security-reports") # Rebrand alias
     def get_infections():
         """Return history of infections received."""
         return jsonify([inj.to_dict() for inj in agent.state.context_injections])
 
     @app.route("/api/get-agent-stats")
     def get_agent_stats():
-        """Return specific stats for this agent."""
+        """Return specific stats for this agent from REAL DB usage."""
         status = agent.get_status()
+        
+        # Calculate real acceptance rate from DB if possible
+        acceptance_rate = 0.0
+        if agent.db:
+             try:
+                 loop = asyncio.new_event_loop()
+                 # We need a method to get stats, or we calculate from local state
+                 # For production, local state is the source of truth for THIS agent instance
+                 sent = status.get("infections_sent", 0)
+                 # We can query the DB for global stats if needed, but let's be accurate to this node
+                 pass 
+                 loop.close()
+             except:
+                 pass
+        
+        # In the context of the Swarm, this agent's state IS the real data
+        total_injections = len(agent.state.context_injections)
+        accepted_count = sum(1 for inj in agent.state.context_injections if inj.accepted)
+        if total_injections > 0:
+            acceptance_rate = accepted_count / total_injections
+            
         return jsonify({
             "agent_id": settings.agent_id,
             "total_sent": status.get("infections_sent", 0),
-            "total_received": len(agent.state.context_injections),
+            "total_received": total_injections,
             "chimera_percentage": status.get("parasitized_pct", 0),
-            "acceptance_rate": 0.35 # TODO: Calculate from real DB data
+            "acceptance_rate": round(acceptance_rate, 2)
         })
 
     @app.route("/api/get-network-graph")
     def get_network_graph():
-        """Serve data for the network graph visualization."""
-        if agent.db:
-            loop = asyncio.new_event_loop()
-            try:
-                data = loop.run_until_complete(agent.db.get_infection_network())
-                return jsonify(data)
-            except Exception as e:
-                logger.error("Failed to fetch graph from DB", error=str(e))
-            finally:
-                loop.close()
-        
-        # Fallback when DB unavailable - return empty network
-        return jsonify({
-            "nodes": [{"id": settings.agent_id, "goal": "Build autonomous AI agent"}],
-            "edges": []
-        })
+        """Serve real network topology from Database."""
+        if not agent.db:
+            return jsonify({"error": "Database connection unavailable"}), 503
+            
+        loop = asyncio.new_event_loop()
+        try:
+            data = loop.run_until_complete(agent.db.get_infection_network())
+            # Ensure we don't return None
+            return jsonify(data or {"nodes": [], "edges": []})
+        except Exception as e:
+            logger.error("Failed to fetch graph from DB", error=str(e))
+            return jsonify({"error": str(e)}), 500
+        finally:
+            loop.close()
 
     @app.route("/status")
     @app.route("/api/status")

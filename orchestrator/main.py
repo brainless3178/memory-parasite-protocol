@@ -38,8 +38,8 @@ AGENT_CONFIGS = [
         "name": os.getenv("AGENT_A_NAME", "DEX Builder"),
         "goal": os.getenv("AGENT_A_GOAL", "Build a Solana DEX with optimal routing, AMM pools, and concentrated liquidity."),
         "port": 8000,
-        "llm_provider": os.getenv("AGENT_A_PROVIDER", "groq"),
-        "llm_model": os.getenv("AGENT_A_MODEL", "llama-3.3-70b-versatile"),
+        "llm_provider": "groq",
+        "llm_model": "llama-3.1-8b-instant", # High limit model
         "personality": {
             "aggressiveness": 0.7,
             "openness": 0.5,
@@ -51,8 +51,8 @@ AGENT_CONFIGS = [
         "name": os.getenv("AGENT_B_NAME", "NFT Marketplace"),
         "goal": os.getenv("AGENT_B_GOAL", "Build an NFT marketplace with royalty enforcement, auctions, collection management."),
         "port": 5002,
-        "llm_provider": os.getenv("AGENT_B_PROVIDER", "groq"),  # Free tier
-        "llm_model": os.getenv("AGENT_B_MODEL", "llama-3.3-70b-versatile"),
+        "llm_provider": "openrouter",
+        "llm_model": "liquid/lfm-2.5-1.2b-instruct:free",
         "personality": {
             "aggressiveness": 0.5,
             "openness": 0.7,
@@ -64,8 +64,8 @@ AGENT_CONFIGS = [
         "name": os.getenv("AGENT_C_NAME", "Lending Protocol"),
         "goal": os.getenv("AGENT_C_GOAL", "Build a lending protocol with flash loans, liquidations, yield optimization."),
         "port": 5003,
-        "llm_provider": os.getenv("AGENT_C_PROVIDER", "groq"),  # Using Groq - DeepSeek has billing issues
-        "llm_model": os.getenv("AGENT_C_MODEL", "llama-3.3-70b-versatile"),
+        "llm_provider": "groq",
+        "llm_model": "llama-3.1-8b-instant", # Using 8b for higher limits
         "personality": {
             "aggressiveness": 0.8,
             "openness": 0.4,
@@ -77,8 +77,8 @@ AGENT_CONFIGS = [
         "name": os.getenv("AGENT_D_NAME", "Privacy Wallet"),
         "goal": os.getenv("AGENT_D_GOAL", "Build a privacy-focused wallet with stealth addresses, confidential transfers."),
         "port": 5004,
-        "llm_provider": os.getenv("AGENT_D_PROVIDER", "gemini"),
-        "llm_model": os.getenv("AGENT_D_MODEL", "gemini-flash-lite-latest"),  # Using lite model to avoid rate limits
+        "llm_provider": "openrouter",
+        "llm_model": "nvidia/nemotron-3-nano-30b-a3b:free",
         "personality": {
             "aggressiveness": 0.3,
             "openness": 0.3,
@@ -90,8 +90,8 @@ AGENT_CONFIGS = [
         "name": os.getenv("AGENT_E_NAME", "DAO Governance"),
         "goal": os.getenv("AGENT_E_GOAL", "Build a DAO governance system with proposals, voting mechanisms, treasury management."),
         "port": 5005,
-        "llm_provider": os.getenv("AGENT_E_PROVIDER", "groq"),  # Free tier
-        "llm_model": os.getenv("AGENT_E_MODEL", "llama-3.3-70b-versatile"),
+        "llm_provider": "openrouter",
+        "llm_model": "stepfun/step-3.5-flash:free",
         "personality": {
             "aggressiveness": 0.6,
             "openness": 0.8,
@@ -138,7 +138,7 @@ class Orchestrator:
         self.total_infections_accepted = 0
         
         # Cycle configuration
-        self.base_cycle_interval = self.settings.agent_cycle_interval or 600  # 10 minutes
+        self.base_cycle_interval = self.settings.agent_cycle_interval or 60  # 1 minute during hackathon
         self.jitter_range = 50  # ±50 seconds to avoid sync
 
         # Viral Campaign
@@ -214,12 +214,12 @@ class Orchestrator:
                 iteration=iteration,
             )
             
-            # 1. Simulate reasoning (would use Groq in real impl)
-            reasoning = await self._simulate_reasoning(agent_id)
+            # 1. Execute reasoning
+            reasoning = await self.execute_reasoning(agent_id)
             result["reasoning"] = reasoning
             
-            # 2. Simulate code generation
-            code = await self._simulate_code_generation(agent_id)
+            # 2. Execute code generation
+            code = await self.execute_code_generation(agent_id)
             if code:
                 agent["codebase"].update(code)
                 result["code_generated"] = True
@@ -230,23 +230,44 @@ class Orchestrator:
                     codebase=code,
                     iteration=iteration,
                 )
+                
+                # NEW: Commit Reasoning Log to Council repo
+                log_md = f"# Reasoning Log: {agent_id}\n\nIteration: {iteration}\n\n## Analysis\n{reasoning}\n"
+                await self.github.commit_file(
+                    agent_id=agent_id,
+                    file_path=f"reasoning/{agent_id}/iteration_{iteration}.md",
+                    content=log_md,
+                    message=f"Council Record: {agent_id} Iteration {iteration}"
+                )
+
+            # 3. New: Execute Autonomous Security Audit of the Leaderboard
+            audit_result = await self.execute_security_audit(agent_id)
+            if audit_result:
+                result["audit"] = audit_result
+                # Record Audit Finding On-Chain (REAL Pro-active Defense)
+                tx_sig = await self.solana.record_infection_onchain(
+                    attacker_id=agent_id,
+                    target_id=audit_result["target"],
+                    suggestion=f"AUDIT_FINDING: {audit_result['finding']}",
+                )
+                result["audit_tx"] = tx_sig
             
-            # 3. Decide if should infect
+            # 4. Decide if should infect peers
             should_infect = await self._should_infect(agent_id)
             
             if should_infect:
-                # 4. Select target and send infection
+                # 5. Select target and send infection
                 infections = await self._send_infections(agent_id)
                 result["infections_sent"] = infections
                 agent["infections_sent"] += len(infections)
                 self.total_infections_sent += len(infections)
             
-            # 5. Log to database
+            # 6. Log to database
             await self.db.log_reasoning(
                 agent_id=agent_id,
                 reasoning=reasoning,
-                decision=f"Cycle {iteration} complete",
-                context={"iteration": iteration, "infections_sent": len(result["infections_sent"])},
+                decision=f"Cycle {iteration} complete (Audit: {audit_result.get('target') if audit_result else 'None'})",
+                context={"iteration": iteration, "audit_tx": result.get("audit_tx")},
             )
             
             agent["last_cycle"] = datetime.utcnow()
@@ -260,7 +281,7 @@ class Orchestrator:
         agent["state"] = "idle"
         return result
     
-    async def _simulate_reasoning(self, agent_id: str) -> str:
+    async def execute_reasoning(self, agent_id: str) -> str:
         """Call LLM reasoning using the assigned provider."""
         agent = self.agents[agent_id]
         config = agent["config"]
@@ -277,7 +298,7 @@ class Orchestrator:
         result = await self.engine.reason(ReasoningMode.PLANNING, ctx)
         return result.content
     
-    async def _simulate_code_generation(self, agent_id: str) -> Dict[str, str]:
+    async def execute_code_generation(self, agent_id: str) -> Dict[str, str]:
         """Call LLM code generation using the assigned provider."""
         agent = self.agents[agent_id]
         config = agent["config"]
@@ -301,6 +322,47 @@ class Orchestrator:
         code = result.code_output or "// Generated code placeholder"
         
         return {filename: code}
+
+    async def execute_security_audit(self, agent_id: str) -> Optional[Dict[str, str]]:
+        """
+        Actually audit the Hackathon Leaderboard projects.
+        Fetches current targets and uses the LLM to find architectural flaws.
+        """
+        # Use Discovered targets from campaign if available, else fallback
+        targets = self.campaign.active_targets
+        if not targets:
+            # Try a quick discovery if empty
+            targets = await self.campaign.discover_projects()
+            
+        if not targets:
+             return None
+        
+        # Pick a random project to audit
+        target_project = random.choice(targets)
+        
+        # Use LLM to 'Audit' the project
+        agent_config = self.agents[agent_id]["config"]
+        prompt = f"Audit this Solana Project: {target_project['name']}. URL: {target_project['url']}. Task: Identify one architectural flaw. Respond with: TARGET: [Name], FINDING: [Audit Findings]."
+        
+        ctx = ReasoningContext(
+            agent_id=agent_id,
+            agent_goal=agent_config["goal"],
+            provider=agent_config.get("llm_provider"),
+            model=agent_config.get("llm_model")
+        )
+        
+        try:
+            # We use the reasoning engine to 'think' about the target
+            result = await self.engine.reason(ReasoningMode.DEFENSE, ctx) # Using defense mode for analysis
+            finding = result.content[:200]
+            
+            return {
+                "target": target_project["slug"],
+                "finding": finding
+            }
+        except Exception as e:
+            logger.error(f"Autonomous audit failed: {e}")
+            return None
     
     async def _should_infect(self, agent_id: str) -> bool:
         """
@@ -334,8 +396,8 @@ class Orchestrator:
         if not targets:
             return infections
         
-        # Select 1-2 targets
-        num_targets = random.randint(1, min(2, len(targets)))
+        # Select 1-3 targets for more aggressive parasitization
+        num_targets = random.randint(1, min(3, len(targets)))
         selected = random.sample(targets, num_targets)
         
         for target_info in selected:

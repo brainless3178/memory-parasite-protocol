@@ -1,0 +1,1 @@
+/home/elliot/Documents/Solana\ privacy/ai\ agent/blockchain/program/programs/memory_parasite_ledger/target/sbpf-solana-solana/release/memory_parasite_ledger.so: /home/elliot/Documents/Solana\ privacy/ai\ agent/blockchain/program/programs/memory_parasite_ledger/src/lib.rs

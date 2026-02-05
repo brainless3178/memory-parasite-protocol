@@ -1,0 +1,7 @@
+/home/elliot/Documents/Solana privacy/ai agent/blockchain/program/programs/memory_parasite_ledger/target/release/deps/proc_macro_crate-ff12363c7bb66f1d.d: /home/elliot/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/proc-macro-crate-0.1.5/src/lib.rs
+
+/home/elliot/Documents/Solana privacy/ai agent/blockchain/program/programs/memory_parasite_ledger/target/release/deps/libproc_macro_crate-ff12363c7bb66f1d.rlib: /home/elliot/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/proc-macro-crate-0.1.5/src/lib.rs
+
+/home/elliot/Documents/Solana privacy/ai agent/blockchain/program/programs/memory_parasite_ledger/target/release/deps/libproc_macro_crate-ff12363c7bb66f1d.rmeta: /home/elliot/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/proc-macro-crate-0.1.5/src/lib.rs
+
+/home/elliot/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/proc-macro-crate-0.1.5/src/lib.rs:

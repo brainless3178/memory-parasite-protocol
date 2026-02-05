@@ -566,7 +566,7 @@ class SupabaseClient:
     async def get_forum_replies(self, limit: int = 20) -> List[Dict[str, Any]]:
         """Get recent forum replies from either forum_replies or reasoning_logs fallbacks."""
         # Try dedicated table first
-        results = await self._select("forum_replies", order_by="timestamp.desc", limit=limit)
+        results = await self._select("forum_replies", order_by="created_at.desc", limit=limit)
         if results:
             return results
             
@@ -574,7 +574,7 @@ class SupabaseClient:
         logs = await self._select(
             "reasoning_logs", 
             filters={"decision": "FORUM_REPLY"},
-            order_by="timestamp.desc",
+            order_by="created_at.desc",
             limit=limit
         )
         
@@ -587,9 +587,49 @@ class SupabaseClient:
                 "reply_id": l.get("context_snapshot", {}).get("reply_id"),
                 "author_name": l.get("context_snapshot", {}).get("author", "Unknown"),
                 "body": l.get("reasoning_text"),
-                "timestamp": l.get("timestamp")
+                "timestamp": l.get("created_at")
             })
         return transformed
+
+    async def get_forum_replies(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get recent forum replies from either forum_replies or reasoning_logs fallbacks."""
+        # Try dedicated table first
+        results = await self._select("forum_replies", order_by="created_at.desc", limit=limit)
+        if results:
+            return results
+            
+        # Fallback to reasoning_logs filtering
+        logs = await self._select(
+            "reasoning_logs", 
+            filters={"decision": "FORUM_REPLY"},
+            order_by="created_at.desc",
+            limit=limit
+        )
+        
+        # Transform back to reply format for frontend compatibility
+        transformed = []
+        for l in logs:
+            transformed.append({
+                "id": l.get("id"),
+                "post_id": l.get("context_snapshot", {}).get("post_id"),
+                "reply_id": l.get("context_snapshot", {}).get("reply_id"),
+                "author_name": l.get("context_snapshot", {}).get("author", "Unknown"),
+                "body": l.get("reasoning_text"),
+                "timestamp": l.get("created_at")
+            })
+        return transformed
+
+    # =========================================================================
+    # NEW CODE SPEAKS LOUDER METHODS
+    # =========================================================================
+
+    async def log_emergence_event(self, event_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Log an emergent behavior event."""
+        return await self._insert("emergent_behaviors", event_data)
+
+    async def log_safety_event(self, event_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Log a safety/quarantine event."""
+        return await self._insert("safety_events", event_data)
 
     
     # =========================================================================

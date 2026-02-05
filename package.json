@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "The World's First Autonomous AI-to-AI Code Evolution Infrastructure",
   "scripts": {
+    "build": "npm run build --prefix deriverse-terminal",
     "install:all": "npm install --prefix deriverse-terminal && pip install -r requirements.txt",
     "dev:backend": "python3 master_orch.py",
     "dev:frontend": "npm run dev --prefix deriverse-terminal",

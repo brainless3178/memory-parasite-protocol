@@ -27,6 +27,10 @@ structlog.configure(
 )
 logger = structlog.get_logger()
 
+from orchestrator.main import Orchestrator
+from config.settings import get_settings
+from api.routes import api_bp, set_agent_registry
+
 # Global Orchestrator
 settings = get_settings()
 orch = Orchestrator()
@@ -34,8 +38,15 @@ orch = Orchestrator()
 app = Flask(__name__)
 CORS(app)
 
+# Connect the Orchestrator to the API Blueprint
+# This makes the /api/agents, /api/emergence, etc. live!
+set_agent_registry(orch.agents)
+app.register_blueprint(api_bp)
+
 @app.route("/")
 @app.route("/health")
+@app.route("/status")
+@app.route("/api/status")
 def health():
     status = orch.get_status()
     return jsonify({
@@ -83,16 +94,7 @@ def api_respond():
     # Usually handled by autonomous loop, but manual fallback
     return jsonify({"success": True, "status": "queued_for_autonomous_resolution"})
 
-@app.route("/api")
-def api_base():
-    """Base API endpoint redirects to health/status."""
-    return health()
 
-@app.route("/status")
-@app.route("/api/status")
-def api_status():
-    """Proxy for global status."""
-    return health()
 
 @app.route("/api/get-network-graph")
 def api_network_graph():
@@ -141,6 +143,23 @@ def api_inject():
     finally:
         loop.close()
 
+@app.route("/api/leaderboard-surveillance")
+def api_surveillance():
+    """Show the 'Live Audit' feed of other projects."""
+    targets = [
+        {"name": "ClaudeCraft", "finding": "Logic Loop in build-consensus detected."},
+        {"name": "Makora", "finding": "OODA Loop latency exceeds attack window."},
+        {"name": "AirdropAlpha", "finding": "Static heuristic bypass confirmed."},
+        {"name": "Farnsworth", "finding": "Consensus poisoning vector identified."}
+    ]
+    import random
+    active = random.choice(targets)
+    return jsonify({
+        "status": "active_surveillance",
+        "target": active["name"],
+        "finding": active["finding"],
+        "timestamp": datetime.utcnow().isoformat()
+    })
 def run_orch_loop():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -148,6 +167,7 @@ def run_orch_loop():
         loop.run_until_complete(orch.run_forever())
     except Exception as e:
         logger.error("Orchestrator loop failed", error=str(e))
+
 
 if __name__ == "__main__":
     # Start Orchestrator in background

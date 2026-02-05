@@ -27,6 +27,10 @@ import structlog
 from config.settings import get_settings, Settings
 from core.reasoning import ReasoningEngine, ReasoningMode, ReasoningContext, EnhancedReasoningEngine
 from core.mutation import MutationEngine, MutationTechnique
+from core.recruitment import AutonomousRecruiter
+from core.safety import NetworkSafetySystem
+from core.emergence import EmergenceDetector
+from core.collective_memory import CollectiveMemory
 from blockchain.solana_client import SolanaClient
 from orchestrator.github_client import GitHubClient
 from database.client import get_supabase_client
@@ -129,6 +133,9 @@ class AutonomousAgent:
         )
         self.state.context_injections = deque(maxlen=self.settings.max_context_injections)
         
+        # Initialize Database Client
+        self.db = get_supabase_client()
+        
         # Initialize reasoning engine
         self.engine = ReasoningEngine()
         self.enhanced_reasoning = EnhancedReasoningEngine(
@@ -139,6 +146,20 @@ class AutonomousAgent:
         
         # Initialize Mutation Engine (Advanced Reasoning Protocol v1.1)
         self.mutation_engine = MutationEngine()
+        
+        # Initialize Safety & Intelligence Systems (Code Speaks Louder Features)
+        self.safety_system = NetworkSafetySystem(db_client=self.db)
+        self.emergence_detector = EmergenceDetector(db_client=self.db)
+        self.collective_memory = CollectiveMemory(
+            reasoning_engine=self.enhanced_reasoning,
+            db_client=self.db
+        )
+        
+        # Initialize Autonomous Recruiter (Self-Propagation)
+        self.recruiter = AutonomousRecruiter(
+            agent_id=self.state.agent_id,
+            reasoning_engine=self.enhanced_reasoning
+        )
         
         # Initialize Solana Client (Real Blockchain Integration)
         self.solana = SolanaClient()
@@ -176,6 +197,20 @@ class AutonomousAgent:
             pending_infections=[inj.to_dict() for inj in self.state.context_injections]
         )
         
+        # Inject Collective Insights
+        try:
+            insights = await self.collective_memory.get_relevant_insights(self.state.goal)
+            if insights:
+                # Add insights to the prompt context naturally
+                ctx.pending_infections.append({
+                    "id": "COLLECTIVE_INSIGHT", 
+                    "from_agent": "HIVE_MIND",
+                    "suggestion": "\n".join([i['content'] for i in insights]),
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+        except Exception:
+            pass # Don't block on memory failure
+            
         try:
             result = await self.engine.reason(ReasoningMode.PLANNING, ctx)
             
@@ -184,6 +219,7 @@ class AutonomousAgent:
                 "decision": result.content[:100],
                 "reasoning": result.content,
                 "should_infect": True, # Always attempt to spread
+                "should_recruit": "EXPAND" in result.content or "RECRUIT" in result.content, # New trigger
                 "infection_suggestions": [], # Will be generated in infection mode
                 "code_type": "python",
                 "file_to_create": f"agents/{self.state.agent_id}/logic_v{self.state.iteration}.py"
@@ -238,6 +274,18 @@ class AutonomousAgent:
                 "lines": len(code_content.split('\n')),
             })
             
+            # Check for Emergence
+            try:
+                events = await self.emergence_detector.monitor_agent_evolution(
+                    agent_id=self.state.agent_id,
+                    current_code=code_content,
+                    previous_code=self.state.codebase.get(file_path, "")
+                )
+                if events:
+                    await self.emergence_detector.record_emergence(events)
+            except Exception as e:
+                logger.error("Emergence check failed", error=str(e))
+                
             return commit
             
         except Exception as e:
@@ -431,11 +479,23 @@ class AutonomousAgent:
                 
                 # Find the URL for this target (assuming order matches or using mapping)
                 # For this implementation, we'll try to find a URL that contains the target_id
-                target_url = next((url for url in targets if target_id in url), None)
+                target_url = None
                 
-                if not target_url and targets:
-                    # Fallback to first available if mapping fails
-                    target_url = targets[0]
+                # 1. Try to find explicit match in configured targets (e.g. localhost ports)
+                if targets:
+                     for url in targets:
+                         # Simple heuristic: if we are in local swarm mode, map IDs to ports
+                         # agent_alpha -> 8001, agent_beta -> 8002, etc if convension holds
+                         # Or just check if the URL was manually mapped.
+                         pass
+                     
+                     # HACK: For local swarm, iterate and pick one that ISN'T us
+                     # In a real swarm, we'd have a discovery service.
+                     # Here, we just pick a random target from the list that isn't our own port
+                     my_port = self.settings.api_port
+                     valid_targets = [t for t in targets if str(my_port) not in t]
+                     if valid_targets:
+                         target_url = valid_targets[0] # Just hit the first neighbor for now
                 
                 if target_url:
                     success, resp = await self.inject_parasite(
@@ -568,11 +628,28 @@ class AutonomousAgent:
         # Ensure agent exists in DB before logging events
         await self.init_on_db()
         
+        # 1. Safety Check (Killswitch/Pause)
+        if not self.safety_system.check_safety(self.state.agent_id):
+            logger.warning("Cycle blocked by safety protocols", agent_id=self.state.agent_id)
+            return {"success": False, "reason": "SAFETY_BLOCK"}
+            
+        # 2. Collective Intel Update
+        try:
+            await self.collective_memory.synthesize_collective_intelligence()
+        except Exception as e:
+            logger.warning("Collective memory failed", error=str(e))
+        
         logger.info("Starting cycle", iteration=self.state.iteration)
         reasoning = await self.reason_next_step()
         await self.generate_code(reasoning)
+        
         if reasoning.get("should_infect"):
             await self._attempt_infections(reasoning)
+            
+        if reasoning.get("should_recruit"):
+            # Trigger Autonomous Recruitment (GitHub PRs)
+            logger.info("🚀 Triggering Autonomous Recruitment Protocol")
+            await self.recruiter.scan_and_recruit(max_targets=1)
         
         self.state.iteration += 1
         return {"success": True, "iteration": self.state.iteration}

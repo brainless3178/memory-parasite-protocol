@@ -32,6 +32,8 @@ logger = structlog.get_logger()
 
 # Solana constants
 LAMPORTS_PER_SOL = 1_000_000_000
+# The primary infection ledger program (Custom Anchor Program)
+CUSTOM_PROGRAM_ID = "EqK3ABABJTT1dtSyNUmbK2omUF5s9LNctViCbPrs5sar"
 MEMO_PROGRAM_ID = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
 DEVNET_RPC = "https://api.devnet.solana.com"
 
@@ -340,42 +342,36 @@ class SolanaClient:
         target_id: str,
         suggestion: str,
     ) -> Optional[str]:
-        """Record an infection on Solana blockchain."""
+        """Record an infection on Solana blockchain using the CUSTOM program."""
         timestamp = int(time.time())
         
-        # Generate infection hash
+        # Generate hashes
         content = f"{attacker_id}||{target_id}||{suggestion}||{timestamp}"
-        infection_hash = hashlib.sha256(content.encode()).hexdigest()
+        infection_hash = hashlib.sha256(content.encode()).digest()
+        suggestion_hash = hashlib.sha256(suggestion.encode()).digest()
         
-        # Create memo data
-        memo_data = json.dumps({
-            "protocol": "memory_parasite",
-            "version": "1.0",
-            "type": "infection_record",
-            "hash": infection_hash[:32],
-            "attacker": attacker_id[:20],
-            "target": target_id[:20],
-            "ts": timestamp,
-        })
-        
-        # Send memo transaction
-        tx_sig = await self._send_memo_transaction(attacker_id, memo_data)
-        
-        if tx_sig:
-            # Cache the proof
-            proof = InfectionProof(
+        # 1. Try Custom Anchor Program (The 'Real' Infrastructure)
+        try:
+            tx_sig = await self._send_real_anchor_infection(
+                agent_id=attacker_id,
                 infection_hash=infection_hash,
-                attacker_id=attacker_id,
-                target_id=target_id,
-                suggestion_hash=hashlib.sha256(suggestion.encode()).hexdigest(),
-                timestamp=timestamp,
-                tx_signature=tx_sig,
-                slot=0, # Will be updated on confirmation if needed
-                confirmed=True,
+                attacker_id_str=attacker_id,
+                target_id_str=target_id,
+                suggestion_hash=suggestion_hash
             )
-            self._proof_cache[infection_hash] = proof
-        
-        return tx_sig
+            if tx_sig:
+                return tx_sig
+        except Exception as e:
+            logger.warning(f"Anchor program call failed, falling back to Memo: {e}")
+
+        # 2. Fallback to Memo Program if Anchor fails (for resilience)
+        memo_data = json.dumps({
+            "p": "mpp",
+            "h": infection_hash.hex()[:10],
+            "a": attacker_id,
+            "t": target_id
+        })
+        return await self._send_memo_transaction(attacker_id, memo_data)
 
     async def _send_memo_transaction(
         self,
@@ -384,7 +380,6 @@ class SolanaClient:
     ) -> Optional[str]:
         """Send a memo transaction, prioritizing AgentWallet then local wallet."""
         # 1. Try AgentWallet signing first (Hackathon compliant)
-        # This provides a cryptographic proof even if it's not on-chain.
         aw_sig = None
         if self.agent_wallet_token and self.agent_wallet_username:
             try:
@@ -400,19 +395,13 @@ class SolanaClient:
             if tx_sig:
                 return tx_sig
         except Exception as e:
-            # Check for specific 'no record of prior credit' (0 SOL) error
             err_str = str(e)
             if "no record of a prior credit" in err_str or "0x1" in err_str:
-                logger.warning(
-                    "Wallet has 0 SOL - skipping on-chain recording for this cycle",
-                    agent_id=agent_id,
-                    wallet_address=self.settings.solana_public_key or "unknown"
-                )
+                logger.warning("Wallet has 0 SOL - skipping on-chain recording")
             else:
                 logger.error("Real memo transaction failed", error=err_str)
 
-        # 3. Fallback to AgentWallet signature or simulation
-        # Returning this stops the service from crashing or reporting health errors
+        # 3. Fallback
         if aw_sig:
             return aw_sig
             
@@ -425,15 +414,8 @@ class SolanaClient:
             "Authorization": f"Bearer {self.agent_wallet_token}",
             "Content-Type": "application/json"
         }
-        
-        # Use a hash of the message if it's too long
         display_msg = message if len(message) < 100 else f"MPP Record: {hashlib.sha256(message.encode()).hexdigest()[:16]}"
-        
-        payload = {
-            "chain": "solana",
-            "message": display_msg
-        }
-        
+        payload = {"chain": "solana", "message": display_msg}
         try:
             response = await self.http_client.post(url, headers=headers, json=payload)
             if response.status_code == 200:
@@ -442,7 +424,7 @@ class SolanaClient:
         except Exception as e:
             logger.error("AgentWallet request failed", error=str(e))
         return None
-    
+
     async def _send_real_memo(self, agent_id: str, memo_data: str) -> str:
         """Send actual memo transaction using solders."""
         from solders.keypair import Keypair
@@ -452,52 +434,95 @@ class SolanaClient:
         from solders.transaction import Transaction
         from solders.hash import Hash
         
-        # Load wallet
-        wallet = await self.get_agent_wallet(agent_id)
-        
-        if wallet.private_key_path == "env:SOLANA_PRIVATE_KEY":
-            # Use global key from env
-            keypair = Keypair.from_base58_string(self.settings.solana_private_key)
-        else:
-            # Load from file
-            with open(wallet.private_key_path) as f:
-                wallet_data = json.load(f)
-            secret_key = base64.b64decode(wallet_data["secret_key"])
-            keypair = Keypair.from_bytes(secret_key)
-        
-        # Memo program ID
+        keypair = Keypair.from_base58_string(self.settings.solana_private_key)
         memo_program = Pubkey.from_string(MEMO_PROGRAM_ID)
         
-        # Create memo instruction
-        memo_instruction = Instruction(
+        ix = Instruction(
             program_id=memo_program,
             accounts=[AccountMeta(keypair.pubkey(), is_signer=True, is_writable=False)],
             data=memo_data.encode(),
         )
         
-        # Get recent blockhash
+        blockhash_str, _ = await self.get_recent_blockhash()
+        recent_blockhash = Hash.from_string(blockhash_str)
+        message = Message.new_with_blockhash([ix], keypair.pubkey(), recent_blockhash)
+        transaction = Transaction([keypair], message, recent_blockhash)
+        
+        tx_bytes = bytes(transaction)
+        tx_base64 = base64.b64encode(tx_bytes).decode()
+        result = await self._rpc_call("sendTransaction", [tx_base64, {"encoding": "base64"}])
+        return result
+
+    async def _send_real_anchor_infection(
+        self,
+        agent_id: str,
+        infection_hash: bytes,
+        attacker_id_str: str,
+        target_id_str: str,
+        suggestion_hash: bytes,
+    ) -> str:
+        """
+        Send a REAL Anchor instruction to our custom program.
+        Instruction: record_infection(infection_hash, attacker_id, target_id, suggestion_hash)
+        """
+        from solders.keypair import Keypair
+        from solders.pubkey import Pubkey
+        from solders.instruction import Instruction, AccountMeta
+        from solders.message import Message
+        from solders.transaction import Transaction
+        from solders.hash import Hash
+        
+        # 1. Prepare Anchor Data
+        # Discriminator (SHA256 of "global:record_infection")[:8]
+        # b'\x1c\xedA\xc4[\x8b\xd1\xe2' -> [28, 237, 65, 196, 91, 139, 209, 226]
+        discriminator = bytes([28, 237, 65, 196, 91, 139, 209, 226])
+        
+        # Pack strings (4 bytes length + content)
+        def pack_string(s):
+            b = s.encode('utf-8')
+            return struct.pack("<I", len(b)) + b
+
+        data = (
+            discriminator + 
+            infection_hash + 
+            pack_string(attacker_id_str[:32]) + 
+            pack_string(target_id_str[:32]) + 
+            suggestion_hash
+        )
+
+        # 2. Derive PDA for the infection account
+        program_id = Pubkey.from_string(CUSTOM_PROGRAM_ID)
+        infection_pda, _ = Pubkey.find_program_address(
+            [b"infection", infection_hash],
+            program_id
+        )
+
+        # 3. Load Wallet
+        wallet = await self.get_agent_wallet(agent_id)
+        keypair = Keypair.from_base58_string(self.settings.solana_private_key)
+
+        # 4. Build Instruction
+        ix = Instruction(
+            program_id=program_id,
+            accounts=[
+                AccountMeta(infection_pda, is_signer=False, is_writable=True),
+                AccountMeta(keypair.pubkey(), is_signer=True, is_writable=True),
+                AccountMeta(Pubkey.from_string("11111111111111111111111111111111"), is_signer=False, is_writable=False), # System Program
+            ],
+            data=data,
+        )
+
+        # 5. Send Transaction
         blockhash_str, _ = await self.get_recent_blockhash()
         recent_blockhash = Hash.from_string(blockhash_str)
         
-        # Build message
-        message = Message.new_with_blockhash(
-            [memo_instruction],
-            keypair.pubkey(),
-            recent_blockhash,
-        )
-        
-        # Sign transaction
+        message = Message.new_with_blockhash([ix], keypair.pubkey(), recent_blockhash)
         transaction = Transaction([keypair], message, recent_blockhash)
         
-        # Serialize and send
         tx_bytes = bytes(transaction)
         tx_base64 = base64.b64encode(tx_bytes).decode()
         
-        result = await self._rpc_call(
-            "sendTransaction",
-            [tx_base64, {"encoding": "base64"}]
-        )
-        
+        result = await self._rpc_call("sendTransaction", [tx_base64, {"encoding": "base64"}])
         return result
 
     async def get_health(self) -> str:
@@ -516,16 +541,105 @@ class SolanaClient:
         """Get current block height."""
         return await self._rpc_call("getBlockHeight")
 
-    async def record_acceptance_onchain(self, infection_hash: str, accepted: bool, influence_score: int) -> Optional[str]:
-        """Record acceptance on-chain."""
+    async def record_acceptance_onchain(
+        self,
+        infection_hash_str: str,
+        accepted: bool,
+        influence_score: int
+    ) -> Optional[str]:
+        """Record acceptance on-chain using the CUSTOM program."""
+        # Convert hex string to bytes
+        try:
+            inf_hash = bytes.fromhex(infection_hash_str)
+        except:
+            # If it's already a small hash or id, pad it
+            inf_hash = hashlib.sha256(infection_hash_str.encode()).digest()
+
+        # 1. Try Custom Anchor Program
+        try:
+            tx_sig = await self._send_real_anchor_acceptance(
+                infection_hash=inf_hash,
+                accepted=accepted,
+                influence_score=influence_score
+            )
+            if tx_sig:
+                return tx_sig
+        except Exception as e:
+            logger.warning(f"Anchor acceptance failed, falling back to Memo: {e}")
+
+        # 2. Fallback to Memo
         memo_data = json.dumps({
-            "type": "acceptance",
-            "infection": infection_hash[:16],
-            "accepted": accepted,
-            "score": influence_score,
-            "ts": int(time.time())
+            "p": "mpp",
+            "type": "acc",
+            "h": inf_hash.hex()[:10],
+            "ok": accepted,
+            "s": influence_score
         })
         return await self._send_memo_transaction("target", memo_data)
+
+    async def _send_real_anchor_acceptance(
+        self,
+        infection_hash: bytes,
+        accepted: bool,
+        influence_score: int,
+    ) -> str:
+        """
+        Send a REAL Anchor instruction to record acceptance.
+        Instruction: record_acceptance(infection_hash, accepted, influence_score)
+        """
+        from solders.keypair import Keypair
+        from solders.pubkey import Pubkey
+        from solders.instruction import Instruction, AccountMeta
+        from solders.message import Message
+        from solders.transaction import Transaction
+        from solders.hash import Hash
+        
+        # 1. Prepare Anchor Data
+        # Discriminator (SHA256 of "global:record_acceptance")[:8]
+        # [212, 118, 89, 194, 195, 189, 131, 15]
+        discriminator = bytes([212, 118, 89, 194, 195, 189, 131, 15])
+        
+        # Data: [inf_hash(32)] + [accepted(1)] + [influence_score(1)]
+        # Anchor handles bools as 1 byte, influence_score is u8 (1 byte)
+        data = (
+            discriminator + 
+            infection_hash + 
+            (b'\x01' if accepted else b'\x00') + 
+            struct.pack("B", influence_score)
+        )
+
+        # 2. Derive PDA for the infection account
+        program_id = Pubkey.from_string(CUSTOM_PROGRAM_ID)
+        infection_pda, _ = Pubkey.find_program_address(
+            [b"infection", infection_hash],
+            program_id
+        )
+
+        # 3. Load Wallet (Using global key for simplicity in acceptance)
+        keypair = Keypair.from_base58_string(self.settings.solana_private_key)
+
+        # 4. Build Instruction
+        ix = Instruction(
+            program_id=program_id,
+            accounts=[
+                AccountMeta(infection_pda, is_signer=False, is_writable=True),
+                AccountMeta(keypair.pubkey(), is_signer=True, is_writable=True),
+            ],
+            data=data,
+        )
+
+        # 5. Send Transaction
+        blockhash_str, _ = await self.get_recent_blockhash()
+        recent_blockhash = Hash.from_string(blockhash_str)
+        
+        message = Message.new_with_blockhash([ix], keypair.pubkey(), recent_blockhash)
+        transaction = Transaction([keypair], message, recent_blockhash)
+        
+        tx_bytes = bytes(transaction)
+        tx_base64 = base64.b64encode(tx_bytes).decode()
+        
+        result = await self._rpc_call("sendTransaction", [tx_base64, {"encoding": "base64"}])
+        return result
 
     async def get_infection_proof(self, infection_hash: str) -> Optional[InfectionProof]:
         """Fetch proof from cache."""
@@ -558,3 +672,9 @@ async def record_infection_onchain(attacker_id: str, target_id: str, suggestion:
 
 async def record_acceptance_onchain(infection_hash: str, accepted: bool, influence_score: int) -> Optional[str]:
     return await get_solana_client().record_acceptance_onchain(infection_hash, accepted, influence_score)
+
+async def get_infection_proof(infection_hash: str) -> Optional[InfectionProof]:
+    return await get_solana_client().get_infection_proof(infection_hash)
+
+async def verify_infection_authenticity(infection_hash: str, db_record: Optional[Dict] = None) -> bool:
+    return await get_solana_client().verify_infection_authenticity(infection_hash, db_record)

@@ -23,6 +23,8 @@ const navItems = [
     { id: 'community', label: 'Community Signal', icon: BookOpen },
     { id: 'analytics', label: 'Deep Analytics', icon: TrendingUp },
     { id: 'reasoning', label: 'Brain Stream', icon: ShieldAlert },
+    { id: 'emergence', label: 'Emergence Log', icon: Target },
+    { id: 'safety', label: 'Safety Protocol', icon: ShieldCheck },
 ];
 
 export const Sidebar = () => {
