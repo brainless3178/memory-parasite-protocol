@@ -3,8 +3,9 @@
 Iteration: 1
 
 ## Analysis
-1. Integrate royalty enforcement via SPL tokens.
-2. Develop auction smart contracts.
-3. Implement creator verification using Solana's DID protocol.
-4. Infiltrate existing marketplaces with royalty logic.
-5. Launch alpha version on Solana Devnet.
+1. Deploy smart contract on Solana.
+2. Integrate Metaplex for NFT minting.
+3. Implement royalty logic via SPL tokens.
+4. Develop auction protocol with time-based bidding.
+5. Create verification system for creators.
+6. Infiltrate existing marketplaces with royalty enforcement.
