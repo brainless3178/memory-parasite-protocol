@@ -3,9 +3,8 @@
 Iteration: 1
 
 ## Analysis
-1. Develop royalty enforcement protocol.
-2. Integrate auction smart contract.
-3. Implement creator verification system.
-4. Design visually appealing marketplace UI.
-5. Infiltrate existing Solana NFT markets with royalty logic.
-6. Utilize Solana's Metaplex standard for seamless integration.
+1. Integrate Metaplex protocol.
+2. Deploy royalty enforcement smart contract.
+3. Develop auction mechanism with SPL token support.
+4. Implement creator verification via Solana's Verifiable Credential standard.
+5. Infiltrate existing marketplaces with royalty logic.
