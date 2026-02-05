@@ -1,15 +1,11 @@
-
 import asyncio
-import os
-from database.client import get_supabase_client
+from database import get_supabase_client
 
-async def check_db():
+async def check():
     db = get_supabase_client()
-    print("Checking Reasoning Logs...")
-    logs = await db._select("reasoning_logs", order_by="created_at.desc", limit=20)
-    print(f"Found {len(logs)} recent logs.")
-    for l in logs:
-        print(f" - [{l.get('created_at')}] {l.get('agent_id')}: {l.get('decision')[:100]}...")
+    logs = await db.get_recent_logs(limit=20)
+    for log in logs:
+        print(f"Agent: {log.get('agent_id')}, Decision: {log.get('decision')}")
 
-if __name__ == "__main__":
-    asyncio.run(check_db())
+if __name__ == '__main__':
+    asyncio.run(check())
