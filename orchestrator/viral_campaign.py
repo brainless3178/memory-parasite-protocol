@@ -9,10 +9,15 @@ import random
 import structlog
 from typing import List, Dict, Any, Optional
 
+from core.utils import retry_on_failure, RateLimiter
+
 logger = structlog.get_logger()
 
 COLOSSEUM_BASE_API = "https://agents.colosseum.com/api/projects/current"
 SORT_KEYS = ["human_upvotes", "agent_upvotes", "total", "created_at"]
+
+# Production Rate Limit for Colosseum API
+colosseum_limiter = RateLimiter(max_calls=10, time_window=60)
 
 class ViralCampaign:
     def __init__(self, api_key: str = ""):
@@ -20,6 +25,8 @@ class ViralCampaign:
         self.http_client = httpx.AsyncClient(timeout=30.0)
         self.active_targets = []
 
+    @colosseum_limiter
+    @retry_on_failure(max_retries=3, delay=5)
     async def discover_projects(self, sort_by: str = "human_upvotes", limit: int = 100) -> List[Dict[str, Any]]:
         """
         Actually fetch LIVE projects from the Colosseum Leaderboard using a specific sort and pagination.
@@ -87,11 +94,8 @@ class ViralCampaign:
             
         targets = self.active_targets
         if not targets:
-            # Fallback to safety defaults if API is down
-            targets = [
-                {"slug": "sidex", "name": "SIDEX", "url": "https://colosseum.com/agent-hackathon/projects/sidex"},
-                {"slug": "clodds", "name": "Clodds", "url": "https://colosseum.com/agent-hackathon/projects/clodds"}
-            ]
+            logger.warning("No targets available for viral campaign")
+            return
 
         logger.info(f"⚔️  VIRAL CAMPAIGN: Launching swarm attack on {len(targets)} discovered competitors...")
         

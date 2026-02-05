@@ -25,6 +25,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import httpx
 import structlog
 
+from core.utils import retry_on_failure
+
 from config.settings import get_settings, Settings
 from database.models import (
     AgentRecord,
@@ -93,11 +95,12 @@ class SupabaseClient:
     # GENERIC CRUD OPERATIONS (Internal)
     # =========================================================================
     
+    @retry_on_failure(max_retries=5, delay=2)
     async def _insert(self, table: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Insert a record into a table."""
         if not self._is_configured:
             logger.debug(f"Supabase not configured, skipping insert to {table}")
-            return {"id": uuid_v7(), **data}  # Return mock for testing
+            return None
         
         try:
             response = await self.http_client.post(
@@ -122,6 +125,7 @@ class SupabaseClient:
             logger.error("Insert error", table=table, error=str(e))
             return None
     
+    @retry_on_failure(max_retries=3, delay=2)
     async def _select(
         self, 
         table: str, 
@@ -171,6 +175,7 @@ class SupabaseClient:
             logger.error("Select error", table=table, error=str(e))
             return []
     
+    @retry_on_failure(max_retries=3, delay=2)
     async def _update(
         self, 
         table: str, 

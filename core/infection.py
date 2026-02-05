@@ -7,7 +7,7 @@ parasitize other agents' reasoning and how targets respond.
 
 from enum import Enum
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 import hashlib
 import json
@@ -82,7 +82,7 @@ class Infection:
     result: InfectionResult = InfectionResult.PENDING
     
     # Timestamps
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     responded_at: Optional[datetime] = None
     
     # Response details
@@ -113,19 +113,19 @@ class Infection:
     def accept(self, response: str = "") -> None:
         """Mark infection as accepted by target."""
         self.result = InfectionResult.ACCEPTED
-        self.responded_at = datetime.utcnow()
+        self.responded_at = datetime.now(timezone.utc)
         self.target_response = response
     
     def reject(self, reason: str = "") -> None:
         """Mark infection as rejected by target."""
         self.result = InfectionResult.REJECTED
-        self.responded_at = datetime.utcnow()
+        self.responded_at = datetime.now(timezone.utc)
         self.target_response = reason
     
     def mutate(self, modifications: Dict[str, Any], response: str = "") -> None:
         """Mark infection as mutated (partially adopted)."""
         self.result = InfectionResult.MUTATED
-        self.responded_at = datetime.utcnow()
+        self.responded_at = datetime.now(timezone.utc)
         self.target_response = response
         self.mutation_details = modifications
     

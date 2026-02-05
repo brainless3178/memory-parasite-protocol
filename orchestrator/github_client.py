@@ -9,14 +9,18 @@ import base64
 import hashlib
 import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import httpx
 import structlog
+from core.utils import retry_on_failure, RateLimiter
 
 from config.settings import get_settings
 
 logger = structlog.get_logger()
+
+# GitHub API Rate Limits: 5000/hr (authenticated). 
+github_limiter = RateLimiter(max_calls=30, time_window=60)
 
 
 class GitHubClient:
@@ -63,10 +67,12 @@ class GitHubClient:
     async def close(self):
         await self.http_client.aclose()
     
+    @github_limiter
+    @retry_on_failure(max_retries=3, delay=2)
     async def get_repo_info(self) -> Optional[Dict[str, Any]]:
         """Get repository information."""
         if not self._is_configured:
-            return None
+             raise Exception("GitHub client not configured")
         
         try:
             response = await self.http_client.get(
@@ -108,6 +114,7 @@ class GitHubClient:
         except:
             return None
     
+    @github_limiter
     async def commit_file(
         self,
         agent_id: str,
@@ -118,44 +125,9 @@ class GitHubClient:
         source_agent: Optional[str] = None,
         branch: str = "main",
     ) -> Optional[Dict[str, Any]]:
-        """
-        Commit a file to the repository.
-        
-        Message format:
-        - If infected: "[agent_id] message (infected by source_agent: #infection_id)"
-        - If pure: "[agent_id] message (pure)"
-        
-        Args:
-            agent_id: The agent making the commit
-            file_path: Path in the repo (e.g., "src/amm.rs")
-            content: File content to commit
-            message: Base commit message
-            source_infection_id: If code was influenced by infection
-            source_agent: Agent that sent the infection
-            branch: Target branch
-            
-        Returns:
-            Commit info dict or None
-        """
+        """Commit a file to GitHub."""
         if not self._is_configured:
-            # Simulated commit
-            sim_sha = hashlib.sha256(
-                f"{agent_id}:{file_path}:{datetime.utcnow().isoformat()}".encode()
-            ).hexdigest()[:40]
-            
-            logger.info(
-                "Simulated commit",
-                agent=agent_id,
-                file=file_path,
-                sha=sim_sha[:8],
-            )
-            
-            return {
-                "sha": sim_sha,
-                "html_url": f"https://github.com/simulated/{agent_id}/commit/{sim_sha}",
-                "message": message,
-                "simulated": True,
-            }
+             raise Exception("GitHub client not configured - cannot commit")
         
         # Build commit message with attribution
         if source_infection_id and source_agent:
@@ -287,7 +259,7 @@ class GitHubClient:
             "accepted": accepted,
             "onchain_proof": onchain_proof,
             "rejection_reason": reason,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         
         if onchain_proof:
@@ -313,14 +285,12 @@ class GitHubClient:
     # AUTONOMOUS RECRUITMENT FEATURES (Code Speaks Louder)
     # ===============================================
     
+    @github_limiter
+    @retry_on_failure(max_retries=3, delay=5)
     async def search_repositories(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Search GitHub for repositories matching a query."""
         if not self._is_configured:
-            # Mock results for demo
-            return [
-                {"full_name": "demo/ai-agent-framework", "description": "A simple agent framework"},
-                {"full_name": "test/autonomous-bot", "description": "Python bot for testing"}
-            ]
+             raise Exception("GitHub client not configured")
             
         try:
             params = {"q": query, "sort": "updated", "per_page": limit}

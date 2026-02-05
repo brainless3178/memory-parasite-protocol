@@ -768,7 +768,7 @@ class MutationEngine:
 # {chr(10).join('# ' + c for c in concepts[:10])}
 # ========================================
 
-# TODO: Implement these concepts in my own style
+# Conceptual integration pending next reasoning cycle
 """
         mutated_code = current_code + concept_note
         return mutated_code, 5.0  # Low chimera impact

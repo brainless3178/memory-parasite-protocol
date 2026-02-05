@@ -405,7 +405,7 @@ class SolanaClient:
         if aw_sig:
             return aw_sig
             
-        return f"sim_{hashlib.sha256(memo_data.encode()).hexdigest()[:58]}"
+        return None
 
     async def _sign_with_agent_wallet(self, message: str) -> Optional[str]:
         """Sign a message using AgentWallet API."""

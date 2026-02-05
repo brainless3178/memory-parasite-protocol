@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 import structlog
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 
 from groq import Groq
 from openai import OpenAI
@@ -20,6 +20,12 @@ import google.generativeai as genai
 
 from config.settings import get_settings
 from ollamafreeapi import OllamaFreeAPI
+from core.utils import retry_on_failure, RateLimiter
+
+# Define rate limiters for production stability
+groq_limiter = RateLimiter(max_calls=15, time_window=60)
+openai_limiter = RateLimiter(max_calls=10, time_window=60)
+gemini_limiter = RateLimiter(max_calls=5, time_window=60)
 
 logger = structlog.get_logger()
 
@@ -139,7 +145,7 @@ class ReasoningEngine:
                 logger.warning(f"Provider {provider} not configured, trying Groq fallback")
                 if self.groq_client:
                     return await self._reason_groq(mode, context)
-                return self._mock_response(mode, context)
+                raise Exception(f"All reasoning providers failed for mode {mode}")
         except Exception as e:
             logger.error(f"Reasoning failed for provider {provider}", error=str(e), mode=mode.value)
             
@@ -159,7 +165,7 @@ class ReasoningEngine:
                 except Exception as ollama_e:
                     logger.error(f"Ollama fallback failed: {ollama_e}")
 
-            return self._mock_response(mode, context)
+            raise Exception(f"All reasoning providers failed for mode {mode}")
 
     def reason_sync(
         self,
@@ -177,6 +183,8 @@ class ReasoningEngine:
             
         return loop.run_until_complete(self.reason(mode, context))
 
+    @groq_limiter
+    @retry_on_failure(max_retries=3, delay=2)
     async def _reason_groq(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
         system_prompt = self._build_system_prompt(mode, context)
         user_prompt = self._build_user_prompt(mode, context)
@@ -200,8 +208,10 @@ class ReasoningEngine:
             return self._parse_response(mode, response.choices[0].message.content)
         except Exception as e:
             logger.error(f"Groq reasoning failed: {e}")
-            return self._mock_response(mode, context)
+            raise Exception(f"All reasoning providers failed for mode {mode}")
 
+    @openai_limiter
+    @retry_on_failure(max_retries=3, delay=2)
     async def _reason_openai_compat(self, client: OpenAI, default_model: str, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
         system_prompt = self._build_system_prompt(mode, context)
         user_prompt = self._build_user_prompt(mode, context)
@@ -223,8 +233,10 @@ class ReasoningEngine:
             return self._parse_response(mode, response.choices[0].message.content)
         except Exception as e:
             logger.error(f"OpenAI-compat reasoning failed for model {context.model or default_model}: {e}")
-            return self._mock_response(mode, context)
+            raise Exception(f"All reasoning providers failed for mode {mode}")
 
+    @gemini_limiter
+    @retry_on_failure(max_retries=3, delay=2)
     async def _reason_gemini(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
         prompt = f"{self._build_system_prompt(mode, context)}\n\n{self._build_user_prompt(mode, context)}"
         try:
@@ -242,7 +254,7 @@ class ReasoningEngine:
             return self._parse_response(mode, response.text)
         except Exception as e:
             logger.error(f"Gemini reasoning failed: {e}")
-            return self._mock_response(mode, context)
+            raise Exception(f"All reasoning providers failed for mode {mode}")
 
     async def _reason_ollama(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
         """Call OllamaFreeAPI for no-cost reasoning."""
@@ -705,7 +717,7 @@ class EnhancedReasoningEngine:
             'time_ms': int
         }
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         
         # Build context for prompts
         context = {
@@ -765,7 +777,7 @@ class EnhancedReasoningEngine:
         elif "MUTATE" in final_text.upper():
             decision = "mutate"
             
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         duration = int((end_time - start_time).total_seconds() * 1000)
         
         return {

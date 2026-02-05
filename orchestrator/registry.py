@@ -70,20 +70,39 @@ class AgentRegistry:
     - check_health(agent_id) - Check if agent is online
     """
     
-    def __init__(self):
+    def __init__(self, db_client=None):
         self.agents: Dict[str, AgentInfo] = {}
         self.http_client = httpx.AsyncClient(timeout=10.0)
+        self.db = db_client
         self._load_registry()
     
     def _load_registry(self):
-        """Load agents from hardcoded registry."""
+        """Load agents, prioritizing database then fallback config."""
+        # 1. Fallback from config
         for agent_id, info in AGENT_REGISTRY.items():
             self.agents[agent_id] = AgentInfo(
                 agent_id=agent_id,
                 goal=info["goal"],
                 url=info["url"],
             )
-        logger.info(f"Loaded {len(self.agents)} agents into registry")
+
+        # 2. Try to sync from DB if available
+        if self.db:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                db_agents = loop.run_until_complete(self.db._select("agents"))
+                for agent in db_agents:
+                    aid = agent["agent_id"]
+                    self.agents[aid] = AgentInfo(
+                        agent_id=aid,
+                        goal=agent["goal"],
+                        url=agent.get("url", self.agents.get(aid, {}).url if aid in self.agents else "http://localhost:8000"),
+                        is_online=agent.get("is_active", True)
+                    )
+                logger.info(f"Synced {len(db_agents)} agents from database")
+            except Exception as e:
+                logger.warning(f"Could not load agents from database: {e}")
     
     def get_all_agents(self) -> List[AgentInfo]:
         """Get all registered agents."""
@@ -195,11 +214,11 @@ class AgentRegistry:
 _registry: Optional[AgentRegistry] = None
 
 
-def get_registry() -> AgentRegistry:
+def get_registry(db_client=None) -> AgentRegistry:
     """Get the agent registry singleton."""
     global _registry
     if _registry is None:
-        _registry = AgentRegistry()
+        _registry = AgentRegistry(db_client=db_client)
     return _registry
 
 

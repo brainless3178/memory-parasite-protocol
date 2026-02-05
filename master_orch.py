@@ -29,7 +29,8 @@ logger = structlog.get_logger()
 
 from orchestrator.main import Orchestrator
 from config.settings import get_settings
-from api.routes import api_bp, set_agent_registry
+from api.routes import api_bp, set_agent_registry, set_db_client
+from core.utils import validate_environment
 
 # Global Orchestrator
 settings = get_settings()
@@ -41,6 +42,7 @@ CORS(app)
 # Connect the Orchestrator to the API Blueprint
 # This makes the /api/agents, /api/emergence, etc. live!
 set_agent_registry(orch.agents)
+set_db_client(orch.db)
 app.register_blueprint(api_bp)
 
 @app.route("/")
@@ -49,12 +51,21 @@ app.register_blueprint(api_bp)
 @app.route("/api/status")
 def health():
     status = orch.get_status()
+    issues = []
+    
+    # Simple health logic
+    if status.get("total_cycles", 0) == 0 and orch.is_running:
+         # Optional: add logic to check if agents are stuck
+         pass
+         
     return jsonify({
-        "status": "online",
+        "status": "healthy" if not issues else "degraded",
+        "issues": issues,
         "mode": "orchestrator",
         "active_agents": len(status.get("agents", {})),
         "total_cycles": status.get("total_cycles", 0),
         "total_infections": status.get("total_infections", 0),
+        "uptime_seconds": (asyncio.get_event_loop().time() if orch.is_running else 0),
         "agents": status.get("agents", {})
     })
 
@@ -234,11 +245,28 @@ def run_orch_loop():
         logger.error("Orchestrator loop failed", error=str(e))
 
 
+def graceful_shutdown(signum, frame):
+    """Handle shutdown signals."""
+    logger.info(f"Received signal {signum}, shutting down...")
+    # In a full impl, we would stop the orch loop
+    sys.exit(0)
+
 if __name__ == "__main__":
-    # Start Orchestrator in background
+    # 0. Validate Environment
+    try:
+        validate_environment()
+    except EnvironmentError as e:
+        logger.error(f"Startup failed: {e}")
+        sys.exit(1)
+
+    # 1. Register Shutdown Handlers
+    signal.signal(signal.SIGINT, graceful_shutdown)
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+
+    # 2. Start Orchestrator in background
     thread = threading.Thread(target=run_orch_loop, daemon=True)
     thread.start()
     
-    # Run Web Server
+    # 3. Run Web Server
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)

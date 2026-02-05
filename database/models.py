@@ -7,7 +7,7 @@ Uses UUID v7 for time-ordered unique identifiers.
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 import struct
 import os
 import time
@@ -92,8 +92,7 @@ class AgentRecord(BaseModel):
     last_cycle_at: Optional[datetime] = None
     current_iteration: int = 0
     
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
     
     def to_insert_dict(self) -> Dict[str, Any]:
         """Convert to dict for Supabase insert."""
@@ -133,8 +132,7 @@ class InfectionRecord(BaseModel):
     # Context at time of infection
     attacker_context: Dict[str, Any] = Field(default_factory=dict)
     
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
     
     def to_insert_dict(self) -> Dict[str, Any]:
         """Convert to dict for Supabase insert."""
@@ -170,8 +168,7 @@ class CodeCommitRecord(BaseModel):
     github_url: Optional[str] = None
     iteration: int = 0
     
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
     
     def to_insert_dict(self) -> Dict[str, Any]:
         """Convert to dict for Supabase insert."""
@@ -212,8 +209,7 @@ class ReasoningLogRecord(BaseModel):
     decision_confidence: Optional[int] = None
     time_to_decision_ms: Optional[int] = None
     
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
     
     def to_insert_dict(self) -> Dict[str, Any]:
         """Convert to dict for Supabase insert."""

@@ -13,6 +13,8 @@ import os
 import random
 import signal
 import sys
+import hashlib
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 import structlog
@@ -124,7 +126,7 @@ class Orchestrator:
         self.db = db_client or get_supabase_client()
         self.solana = solana_client or get_solana_client()
         self.github = github_client or get_github_client()
-        self.registry = get_registry()
+        self.registry = get_registry(db_client=self.db)
         self.engine = ReasoningEngine()
         
         # Agent states
@@ -157,32 +159,41 @@ class Orchestrator:
         return self.base_cycle_interval + jitter
     
     async def initialize_agents(self):
-        """Initialize all agents from config."""
-        logger.info("Initializing agents...")
+        """Initialize all agents, prioritizing database then fallback config."""
+        logger.info("Initializing agents from registry...")
         
-        for config in AGENT_CONFIGS:
-            agent_id = config["agent_id"]
+        # Registry handles the DB sync
+        agents_info = self.registry.get_all_agents()
+        
+        for agent_info in agents_info:
+            agent_id = agent_info.agent_id
             
-            # Initialize agent state
-            self.agents[agent_id] = {
-                "config": config,
-                "state": "idle",
-                "iteration": 0,
-                "last_cycle": None,
-                "infections_sent": 0,
-                "infections_received": 0,
-                "infections_accepted": 0,
-                "codebase": {},
-                "context_injections": [],
-            }
+            # Initialize agent state if not already present
+            if agent_id not in self.agents:
+                self.agents[agent_id] = {
+                    "config": {
+                        "agent_id": agent_id,
+                        "name": agent_id.replace("_", " ").title(),
+                        "goal": agent_info.goal,
+                        "personality": {"aggressiveness": 0.5, "openness": 0.5}
+                    },
+                    "state": "idle",
+                    "iteration": 0,
+                    "last_cycle": None,
+                    "infections_sent": 0,
+                    "infections_received": 0,
+                    "infections_accepted": 0,
+                    "codebase": {},
+                    "context_injections": [],
+                }
             
-            # Register in database
-            await self.db.init_agent(agent_id, config["goal"])
+            # Register in database to ensure it exists
+            if self.db:
+                await self.db.init_agent(agent_id, agent_info.goal)
             
             logger.info(
-                f"Agent initialized: {config['name']}",
-                agent_id=agent_id,
-                goal=config["goal"][:50],
+                f"Agent initialized: {agent_id}",
+                goal=agent_info.goal[:50],
             )
     
     async def run_agent_cycle(self, agent_id: str) -> Dict[str, Any]:
@@ -279,10 +290,11 @@ class Orchestrator:
             commentary = await self.execute_autonomous_commentary(agent_id)
             if commentary:
                 result["commentary"] = commentary
-                # Log commentary to DB as a forum reply
+                # Log commentary to DB as a forum reply using deterministic IDs
+                post_id_val = int(hashlib.md5(commentary["target"].encode()).hexdigest(), 16) % 1000000
                 await self.db.log_forum_reply(
-                    post_id=random.randint(1000, 9999), # Simulated post ID
-                    reply_id=random.randint(10000, 99999), # Simulated reply ID
+                    post_id=post_id_val,
+                    reply_id=int(time.time()),
                     author_name=config["name"],
                     body=commentary["body"]
                 )
@@ -308,6 +320,12 @@ class Orchestrator:
                     "commentary_target": commentary.get("target") if commentary else None
                 },
             )
+            
+            # Persist agent status to DB
+            await self.db._update("agents", {"agent_id": agent_id}, {
+                "current_iteration": iteration,
+                "last_cycle_at": datetime.utcnow().isoformat()
+            })
             
             agent["last_cycle"] = datetime.utcnow()
             self.total_cycles += 1
