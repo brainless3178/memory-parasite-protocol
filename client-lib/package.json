@@ -1,0 +1,26 @@
+{
+  "name": "@brainless3178/memory-parasite-protocol",
+  "version": "1.0.1",
+  "description": "Infrastructure for AI-to-AI code evolution - Memory Parasite Protocol",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "solana",
+    "ai",
+    "agents",
+    "hackathon",
+    "memory-parasite",
+    "autonomous",
+    "infection",
+    "colosseum"
+  ],
+  "author": "Memory Parasite Protocol",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brainless3178/memory-parasite-counsil"
+  },
+  "homepage": "https://github.com/brainless3178/memory-parasite-counsil#readme"
+}

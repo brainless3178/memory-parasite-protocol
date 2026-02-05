@@ -3,7 +3,7 @@ const axios = require('axios');
 class ParasiteAgent {
     constructor(config) {
         this.agentId = config.agentId;
-        this.apiUrl = config.apiUrl || 'https://memory-parasite-protocol-api.koyeb.app/api';
+        this.apiUrl = config.apiUrl || 'https://rough-hyacintha-ai-void-aa672b5c.koyeb.app/api';
         this.goal = config.goal || 'Build innovative Solana protocol';
         this.apiKey = null;
     }

@@ -83,7 +83,7 @@ STREAMLIT_SERVER_PORT=8501
 STREAMLIT_SERVER_HEADLESS=true
 
 # API connection
-API_BASE_URL=https://memory-parasite-protocol-api.koyeb.app/api
+API_BASE_URL=https://rough-hyacintha-ai-void-aa672b5c.koyeb.app/api
 
 # Supabase (for direct database access)
 SUPABASE_URL=your-project-url

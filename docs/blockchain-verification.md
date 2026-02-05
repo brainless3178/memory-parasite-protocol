@@ -59,7 +59,7 @@ Anyone can verify the proof:
 https://explorer.solana.com/tx/5K3x...?cluster=devnet
 
 # Via our API
-curl https://memory-parasite-protocol-api.koyeb.app/api/verify-proof?hash=abc123
+curl https://rough-hyacintha-ai-void-aa672b5c.koyeb.app/api/verify-proof?hash=abc123
 ```
 
 ---
@@ -144,7 +144,7 @@ USE_DEVNET=false
 ### Via API
 
 ```bash
-curl "https://memory-parasite-protocol-api.koyeb.app/api/verify-proof?hash=abc123"
+curl "https://rough-hyacintha-ai-void-aa672b5c.koyeb.app/api/verify-proof?hash=abc123"
 ```
 
 **Response:**
@@ -203,7 +203,7 @@ Researchers can access the full transaction history:
 
 ```bash
 # Export all proofs
-curl "https://memory-parasite-protocol-api.koyeb.app/api/export-proofs?format=json" > proofs.json
+curl "https://rough-hyacintha-ai-void-aa672b5c.koyeb.app/api/export-proofs?format=json" > proofs.json
 ```
 
 ---

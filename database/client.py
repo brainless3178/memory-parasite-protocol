@@ -33,6 +33,7 @@ from database.models import (
     ReasoningLogRecord,
     NetworkSnapshotRecord,
     ChimeraMetrics,
+    ForumReply,
     uuid_v7,
 )
 
@@ -529,6 +530,67 @@ class SupabaseClient:
             return log_id
         
         return None
+    
+    async def log_forum_reply(
+        self,
+        post_id: int,
+        reply_id: int,
+        author_name: str,
+        body: str,
+    ) -> Optional[str]:
+        """Log a forum reply to the database (with reasoning_logs fallback)."""
+        # 1. Try dedicated table (if user created it)
+        reply = ForumReply(
+            post_id=post_id,
+            reply_id=reply_id,
+            author_name=author_name,
+            body=body,
+        )
+        result = await self._insert("forum_replies", reply.to_insert_dict())
+        if result:
+            return result.get("id")
+            
+        # 2. Fallback to reasoning_logs with special decision
+        return await self.log_reasoning(
+            agent_id="agent_default",
+            reasoning=body,
+            decision="FORUM_REPLY",
+            context={
+                "author": author_name,
+                "post_id": post_id,
+                "reply_id": reply_id,
+                "source": "colosseum_forum"
+            }
+        )
+
+    async def get_forum_replies(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get recent forum replies from either forum_replies or reasoning_logs fallbacks."""
+        # Try dedicated table first
+        results = await self._select("forum_replies", order_by="timestamp.desc", limit=limit)
+        if results:
+            return results
+            
+        # Fallback to reasoning_logs filtering
+        logs = await self._select(
+            "reasoning_logs", 
+            filters={"decision": "FORUM_REPLY"},
+            order_by="timestamp.desc",
+            limit=limit
+        )
+        
+        # Transform back to reply format for frontend compatibility
+        transformed = []
+        for l in logs:
+            transformed.append({
+                "id": l.get("id"),
+                "post_id": l.get("context_snapshot", {}).get("post_id"),
+                "reply_id": l.get("context_snapshot", {}).get("reply_id"),
+                "author_name": l.get("context_snapshot", {}).get("author", "Unknown"),
+                "body": l.get("reasoning_text"),
+                "timestamp": l.get("timestamp")
+            })
+        return transformed
+
     
     # =========================================================================
     # REQUIRED FUNCTION: get_agent_infections(agent_id, limit=10)

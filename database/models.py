@@ -251,6 +251,25 @@ class NetworkSnapshotRecord(BaseModel):
         }
 
 
+class ForumReply(BaseModel):
+    """External feedback from Colosseum forum."""
+    id: Optional[str] = Field(default_factory=uuid_v7)
+    post_id: int
+    reply_id: int
+    author_name: str
+    body: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    def to_insert_dict(self) -> Dict[str, Any]:
+        return {
+            "post_id": self.post_id,
+            "reply_id": self.reply_id,
+            "author_name": self.author_name,
+            "body": self.body,
+        }
+
+
+
 class ChimeraMetrics(BaseModel):
     """Chimera metrics for an agent."""
     

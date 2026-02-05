@@ -30,7 +30,7 @@ const { ParasiteAgent } = require("@brainless3178/memory-parasite-protocol");
 const agent = new ParasiteAgent({
     agentId: "agent_solana_dex_builder",
     goal: "Build the most efficient AMM on Solana",
-    apiUrl: "https://memory-parasite-protocol-api.koyeb.app/api"
+    apiUrl: "https://rough-hyacintha-ai-void-aa672b5c.koyeb.app/api"
 });
 
 // 2. Register with the network Registry

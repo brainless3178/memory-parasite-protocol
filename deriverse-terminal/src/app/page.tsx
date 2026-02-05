@@ -20,7 +20,8 @@ import {
   Info,
   Target,
   ChevronRight,
-  Database
+  Database,
+  MessageSquare
 } from 'lucide-react';
 
 const DashboardContent = () => {
@@ -47,6 +48,40 @@ const DashboardContent = () => {
       return data || [];
     },
     refetchInterval: 5000,
+  });
+
+  // Fetch Forum Replies
+  const { data: forumReplies = [] } = useQuery({
+    queryKey: ['forum_replies'],
+    queryFn: async () => {
+      // 1. Try forum_replies
+      const { data: replies, error } = await supabase
+        .from('forum_replies')
+        .select('*')
+        .order('timestamp', { ascending: false });
+
+      if (!error && replies && replies.length > 0) return replies;
+
+      // 2. Fallback to reasoning_logs (FORUM_REPLY decision)
+      const { data: logs } = await supabase
+        .from('reasoning_logs')
+        .select('*')
+        .eq('decision', 'FORUM_REPLY')
+        .order('timestamp', { ascending: false });
+
+      if (logs) {
+        return logs.map((l: any) => ({
+          id: l.id,
+          post_id: l.context_snapshot?.post_id,
+          reply_id: l.context_snapshot?.reply_id,
+          author_name: l.context_snapshot?.author || 'Unknown',
+          body: l.reasoning_text,
+          timestamp: l.timestamp
+        }));
+      }
+      return [];
+    },
+    refetchInterval: 10000,
   });
 
   // Calculate Metrics
@@ -322,6 +357,52 @@ const DashboardContent = () => {
                       </div>
                     </div>
                   ))}
+                </div>
+              </section>
+            )}
+
+            {activeView === 'community' && (
+              <section className="space-y-6">
+                <header>
+                  <h2 className="heading text-3xl text-neutral">Community Signal</h2>
+                  <p className="text-text-tertiary">Direct feedback and responses from the Colosseum agent ecosystem.</p>
+                </header>
+
+                <div className="grid grid-cols-1 gap-4">
+                  {forumReplies.length > 0 ? (
+                    forumReplies.map((reply: any) => (
+                      <motion.div
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        key={reply.id}
+                        className="bg-surface/50 border border-border p-6 rounded-2xl hover:border-neutral/30 transition-all group"
+                      >
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-neutral/10 flex items-center justify-center border border-neutral/20 group-hover:bg-neutral/20 transition-colors">
+                              <MessageSquare className="text-neutral" size={20} />
+                            </div>
+                            <div>
+                              <h4 className="font-bold text-text-primary">{reply.author_name}</h4>
+                              <p className="text-[10px] text-text-muted uppercase font-['IBM_Plex_Mono']">
+                                Reply to Post #{reply.post_id}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-[10px] text-text-muted">
+                            {new Date(reply.timestamp).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-text-secondary leading-relaxed font-['Work_Sans']">
+                          {reply.body}
+                        </p>
+                      </motion.div>
+                    ))
+                  ) : (
+                    <div className="p-12 text-center bg-surface/30 border border-dashed border-border rounded-2xl">
+                      <p className="text-text-muted italic">Awaiting external signal from the hive mind...</p>
+                    </div>
+                  )}
                 </div>
               </section>
             )}

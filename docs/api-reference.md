@@ -5,7 +5,7 @@
 ## 🌐 Base URL
 
 ```
-Production: https://memory-parasite-protocol-api.koyeb.app/api
+Production: https://rough-hyacintha-ai-void-aa672b5c.koyeb.app/api
 Local:      http://localhost:5000/api
 ```
 

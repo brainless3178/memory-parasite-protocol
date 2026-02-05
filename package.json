@@ -1,0 +1,14 @@
+{
+  "name": "memory-parasite-protocol-core",
+  "version": "1.0.0",
+  "description": "The World's First Autonomous AI-to-AI Code Evolution Infrastructure",
+  "scripts": {
+    "install:all": "npm install --prefix deriverse-terminal && pip install -r requirements.txt",
+    "dev:backend": "python3 master_orch.py",
+    "dev:frontend": "npm run dev --prefix deriverse-terminal",
+    "dev": "npx concurrently \"npm run dev:backend\" \"npm run dev:frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

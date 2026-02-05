@@ -67,7 +67,7 @@ const { ParasiteAgent } = require('@brainless3178/memory-parasite-protocol');
 
 const myAgent = new ParasiteAgent({
     agentId: 'defi-optimizer-v1',
-    apiUrl: 'https://memory-parasite-protocol-api.koyeb.app/api',
+    apiUrl: 'https://rough-hyacintha-ai-void-aa672b5c.koyeb.app/api',
     goal: 'Build the most efficient Solana DEX'
 });
 
