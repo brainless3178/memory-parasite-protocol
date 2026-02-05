@@ -19,6 +19,7 @@ from openai import OpenAI
 import google.generativeai as genai
 
 from config.settings import get_settings
+from ollamafreeapi import OllamaFreeAPI
 
 logger = structlog.get_logger()
 
@@ -108,6 +109,9 @@ class ReasoningEngine:
         else:
             self.gemini_model = None
         
+        # Ollama Free API (No-signup fallback)
+        self.ollama_client = OllamaFreeAPI()
+        
         # HuggingFace as fallback
         self.huggingface_api_key = settings.huggingface_api_key
         self.huggingface_model = settings.huggingface_model
@@ -129,6 +133,8 @@ class ReasoningEngine:
                 return await self._reason_openai_compat(self.deepseek_client, self.settings.deepseek_model, mode, context)
             elif provider == "gemini" and self.gemini_model:
                 return await self._reason_gemini(mode, context)
+            elif provider == "ollama":
+                return await self._reason_ollama(mode, context)
             else:
                 logger.warning(f"Provider {provider} not configured, trying Groq fallback")
                 if self.groq_client:
@@ -136,13 +142,23 @@ class ReasoningEngine:
                 return self._mock_response(mode, context)
         except Exception as e:
             logger.error(f"Reasoning failed for provider {provider}", error=str(e), mode=mode.value)
-            # Try Groq as fallback (has generous free tier: 14,400 req/day)
+            
+            # 1. Try Groq as first fallback if primary was not Groq
             if self.groq_client and provider != "groq":
-                logger.info(f"Trying Groq fallback...")
+                logger.info("Trying Groq fallback...")
                 try:
                     return await self._reason_groq(mode, context)
                 except Exception as groq_e:
                     logger.error(f"Groq fallback also failed: {groq_e}")
+            
+            # 2. Try Ollama as absolute fallback (No key required)
+            if provider != "ollama":
+                logger.info("Trying Ollama free fallback...")
+                try:
+                    return await self._reason_ollama(mode, context)
+                except Exception as ollama_e:
+                    logger.error(f"Ollama fallback failed: {ollama_e}")
+
             return self._mock_response(mode, context)
 
     def reason_sync(
@@ -227,6 +243,44 @@ class ReasoningEngine:
         except Exception as e:
             logger.error(f"Gemini reasoning failed: {e}")
             return self._mock_response(mode, context)
+
+    async def _reason_ollama(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
+        """Call OllamaFreeAPI for no-cost reasoning."""
+        # OllamaFreeAPI favors different prompts but we can use our system/user build
+        prompt = f"System: {self._build_system_prompt(mode, context)}\n\nUser: {self._build_user_prompt(mode, context)}"
+        
+        # Default model for OllamaFree if not specified
+        model = context.model or self.settings.ollama_model
+        
+        try:
+            loop = asyncio.get_event_loop()
+            
+            def make_request():
+                # OllamaFreeAPI chat method
+                return self.ollama_client.chat(
+                    model_name=model,
+                    prompt=prompt,
+                    temperature=self.settings.groq_temperature # Reuse temperature setting
+                )
+            
+            content = await loop.run_in_executor(None, make_request)
+            return self._parse_response(mode, content)
+        except Exception as e:
+            logger.error(f"Ollama reasoning failed for model {model}: {e}")
+            # Try a smaller model if 70b fails (might be busy)
+            if model != "llama3:latest":
+                logger.info("Retrying with smaller Ollama model...")
+                try:
+                    def retry_request():
+                        return self.ollama_client.chat(
+                            model_name="llama3:latest",
+                            prompt=prompt
+                        )
+                    content = await loop.run_in_executor(None, retry_request)
+                    return self._parse_response(mode, content)
+                except:
+                    pass
+            raise
 
     # Note: HuggingFace free Inference API has been deprecated as of 2024.
     # The token is kept in .env for potential future use with HuggingFace Inference Endpoints (paid).

@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     huggingface_api_key: str = Field(default="", env="HUGGINGFACE_API_KEY")
     huggingface_model: str = Field(default="mistralai/Mistral-7B-Instruct-v0.3", env="HUGGINGFACE_MODEL")
 
+    # Ollama Free Configuration (Absolute Fallback)
+    ollama_model: str = Field(default="llama3.3:70b", env="OLLAMA_MODEL")
+
     # Default LLM Provider
     llm_provider: str = Field(default="groq", env="LLM_PROVIDER") # options: groq, openrouter, deepseek, gemini, huggingface
     groq_max_tokens: int = Field(default=1024, env="GROQ_MAX_TOKENS")
