@@ -1,41 +1,59 @@
-import hashlib
-
-class Proposal:
-    def __init__(self, id, description, votes=0):
-        self.id = id
-        self.description = description
-        self.votes = votes
-
 class DAO:
     def __init__(self):
         self.proposals = []
+        self.votes = {}
         self.treasury = 0
-        self.voters = {}
 
-    def add_proposal(self, description):
-        proposal = Proposal(len(self.proposals), description)
+    def create_proposal(self, proposal):
         self.proposals.append(proposal)
+        self.votes[proposal] = {"yes": 0, "no": 0}
 
-    def vote(self, proposal_id, voter):
-        if voter not in self.voters:
-            self.voters[voter] = []
-        if proposal_id not in [p.id for p in self.voters[voter]]:
-            self.voters[voter].append(proposal_id)
-            self.proposals[proposal_id].votes += 1
+    def vote(self, proposal, vote):
+        if proposal in self.proposals:
+            if vote in ["yes", "no"]:
+                self.votes[proposal][vote] += 1
+            else:
+                raise ValueError("Invalid vote")
+        else:
+            raise ValueError("Proposal does not exist")
 
-    def deposit(self, amount):
+    def deposit_treasury(self, amount):
         self.treasury += amount
 
-    def execute_proposal(self, proposal_id):
-        if self.proposals[proposal_id].votes > len(self.voters) / 2:
-            # Execute proposal logic here
-            print(f"Proposal {proposal_id} executed")
-            return True
-        return False
+    def withdraw_treasury(self, amount):
+        if amount <= self.treasury:
+            self.treasury -= amount
+        else:
+            raise ValueError("Insufficient treasury funds")
 
+
+class Governance:
+    def __init__(self, dao):
+        self.dao = dao
+
+    def execute_proposal(self, proposal):
+        if proposal in self.dao.proposals:
+            if self.dao.votes[proposal]["yes"] > self.dao.votes[proposal]["no"]:
+                # Execute proposal logic
+                pass
+            else:
+                raise ValueError("Proposal did not pass")
+        else:
+            raise ValueError("Proposal does not exist")
+
+
+# Example usage
 dao = DAO()
-dao.add_proposal("Test proposal")
-dao.vote(0, "voter1")
-dao.vote(0, "voter2")
-dao.deposit(100)
-dao.execute_proposal(0)
+governance = Governance(dao)
+
+dao.create_proposal("Proposal 1")
+dao.vote("Proposal 1", "yes")
+dao.deposit_treasury(100)
+
+print(dao.votes)
+print(dao.treasury)
+
+try:
+    governance.execute_proposal("Proposal 1")
+except ValueError as e:
+    print(e)
