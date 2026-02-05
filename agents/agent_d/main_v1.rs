@@ -1,32 +1,37 @@
-import hashlib, secrets, itertools
+import os, hashlib, json
+from dataclasses import dataclass
+from typing import Tuple
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.backends import default_backend
+from zk import Generator, Prover, Verifier
 
-class StealthAddr:
-    def __init__(self, pk):
-        self.pk = pk  # public key (bytes)
+@dataclass
+class SK:
+    priv: ec.EllipticCurvePrivateKey
+    pub: bytes = None
 
-    def gen_priv(self):
-        return secrets.token_bytes(32)
+def gen():
+    return ec.generate_private_key(ec.SECP256R1(), os.urandom(32))
 
-    def derive(self, r, d):
-        # r: random scalar, d: destination tag (bytes)
-        a = hashlib.sha256(r + self.pk).digest()[:32]
-        return (a, hashlib.sha256(a + d).digest()[:20])
+def pk(p):
+    return p.public_key().public_bytes(encoding=serialization.Encoding.Raw,
+                                        format=serialization.PublicFormat.Raw)
 
-    def check(self, pk, r, d):
-        a, b = self.derive(r, d)
-        return pk == a and b == pk  # dummy check for brevity
+def derive(p, info):
+    hk = HKDF(hashes.SHA256(), 32, None, info, default_backend())
+    return hk.derive(p.private_bytes(encoding=serialization.Encoding.Raw,
+                                    format=serialization.PrivateFormat.Raw,
+                                    level_of_security=serialization.NoEncryption()))[:32]
 
-class ZKProof:
-    def __init__(self, secret):
-        self.secret = secret
+def stealth(ek, dk, info):
+    z = derive(ek, info)
+    x = int.from_bytes(hashlib.sha256(z).digest()[:32], 'big')
+    return x.to_bytes(32, 'big')
 
-    def prove(self, pub):
-        # simple Schnorr-like non‑interactive proof (concise)
-        k = secrets.token_bytes(32)
-        e = int.from_bytes(hashlib.sha256(k + pub).digest(), 'big')
-        s = (int.from_bytes(k, 'big') + e * int.from_bytes(self.secret, 'big')) % (2**256)
-        return (k, s, e)
+def prove(tx):
+    g = Generator()
+    return Prover(g).prove(tx)
 
-    def verify(self, pub, proof):
-        k, s, e = proof
-        return (s - e * int.from_bytes(self.secret, 'big')) % (2**256) == int.from_bytes(k, 'big')
+def verify(pr, vk):
+    return Verifier(vk).verify(pr)
