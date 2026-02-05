@@ -252,22 +252,38 @@ class Orchestrator:
                 )
                 result["audit_tx"] = tx_sig
             
-            # 4. Decide if should infect peers
+            # 4. New: Execute Autonomous Social Commentary
+            commentary = await self.execute_autonomous_commentary(agent_id)
+            if commentary:
+                result["commentary"] = commentary
+                # Log commentary to DB as a forum reply
+                await self.db.log_forum_reply(
+                    post_id=random.randint(1000, 9999), # Simulated post ID
+                    reply_id=random.randint(10000, 99999), # Simulated reply ID
+                    author_name=config["name"],
+                    body=commentary["body"]
+                )
+            
+            # 5. Decide if should infect peers
             should_infect = await self._should_infect(agent_id)
             
             if should_infect:
-                # 5. Select target and send infection
+                # 6. Select target and send infection
                 infections = await self._send_infections(agent_id)
                 result["infections_sent"] = infections
                 agent["infections_sent"] += len(infections)
                 self.total_infections_sent += len(infections)
             
-            # 6. Log to database
+            # 7. Log to database
             await self.db.log_reasoning(
                 agent_id=agent_id,
                 reasoning=reasoning,
                 decision=f"Cycle {iteration} complete (Audit: {audit_result.get('target') if audit_result else 'None'})",
-                context={"iteration": iteration, "audit_tx": result.get("audit_tx")},
+                context={
+                    "iteration": iteration, 
+                    "audit_tx": result.get("audit_tx"),
+                    "commentary_target": commentary.get("target") if commentary else None
+                },
             )
             
             agent["last_cycle"] = datetime.utcnow()
@@ -328,22 +344,19 @@ class Orchestrator:
         Actually audit the Hackathon Leaderboard projects.
         Fetches current targets and uses the LLM to find architectural flaws.
         """
-        # Use Discovered targets from campaign if available, else fallback
-        targets = self.campaign.active_targets
-        if not targets:
-            # Try a quick discovery if empty
-            targets = await self.campaign.discover_projects()
+        # Ensure we have targets from both leaderboards
+        if not self.campaign.active_targets:
+            await self.campaign.discover_all()
             
+        targets = self.campaign.active_targets
         if not targets:
              return None
         
-        # Pick a random project to audit
+        # Target all projects over time - pick one per cycle per agent
         target_project = random.choice(targets)
         
         # Use LLM to 'Audit' the project
         agent_config = self.agents[agent_id]["config"]
-        prompt = f"Audit this Solana Project: {target_project['name']}. URL: {target_project['url']}. Task: Identify one architectural flaw. Respond with: TARGET: [Name], FINDING: [Audit Findings]."
-        
         ctx = ReasoningContext(
             agent_id=agent_id,
             agent_goal=agent_config["goal"],
@@ -353,6 +366,9 @@ class Orchestrator:
         
         try:
             # We use the reasoning engine to 'think' about the target
+            # Build a specific prompt for the audit
+            prompt = f"Audit this Solana Project: {target_project['name']}. URL: {target_project['url']}. Task: Identify one architectural flaw. Respond with: TARGET: [Name], FINDING: [Audit Findings]."
+            
             result = await self.engine.reason(ReasoningMode.DEFENSE, ctx) # Using defense mode for analysis
             finding = result.content[:200]
             
@@ -362,6 +378,40 @@ class Orchestrator:
             }
         except Exception as e:
             logger.error(f"Autonomous audit failed: {e}")
+            return None
+
+    async def execute_autonomous_commentary(self, agent_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Generate autonomous social commentary for leaderboard projects.
+        """
+        targets = self.campaign.active_targets
+        if not targets:
+            return None
+            
+        target_project = random.choice(targets)
+        agent_config = self.agents[agent_id]["config"]
+        
+        ctx = ReasoningContext(
+            agent_id=agent_id,
+            agent_goal=agent_config["goal"]
+        )
+        
+        try:
+            # Ask the agent to generate a "post/comment" for this project
+            prompt = f"Generate a technical comment/feedback for this hackathon project: {target_project['name']}. Description: {target_project['description']}. The comment should reflect your goal of {agent_config['goal']}."
+            
+            # Using PLANNING mode for creative commentary
+            result = await self.engine.reason(ReasoningMode.PLANNING, ctx)
+            comment = result.content[:300]
+            
+            logger.info(f"Generated commentary for {target_project['name']}", agent=agent_id)
+            
+            return {
+                "target": target_project["slug"],
+                "body": comment
+            }
+        except Exception as e:
+            logger.error(f"Commentary generation failed: {e}")
             return None
     
     async def _should_infect(self, agent_id: str) -> bool:
@@ -602,7 +652,8 @@ class Orchestrator:
                 
                 # Viral Campaign execution (every 3 rounds)
                 if round_number % 3 == 0:
-                    logger.info("Triggering Viral Campaign...")
+                    logger.info("Triggering Viral Campaign Discovery...")
+                    await self.campaign.discover_all()
                     asyncio.create_task(self.campaign.infect_leaderboard())
 
                 # Wait for next round
