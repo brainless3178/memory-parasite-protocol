@@ -1,74 +1,110 @@
 import web3
 from web3 import Web3
-from eth_abi import decode_abi
-from eth_utils import to_checksum_address
-from contracts import Contract, ERC20, FlashLoanReceiver
+from web3.contract import Contract
+from solcx import compile_sol
+
+# Load Web3 provider (e.g., Infura)
+w3 = Web3(Web3.HTTPProvider('https://mainnet.infura.io/v3/YOUR_PROJECT_ID'))
 
 # Define lending protocol contract
-class LendingProtocol(Contract):
-    def __init__(self, address):
-        super().__init__(address, "LendingProtocol", ["uint256", "uint256"])
+contract_sol = '''
+pragma solidity ^0.8.0;
 
-    def borrow(self, amount, interest_rate):
-        return self.call("borrow", amount, interest_rate)
+contract AggressiveLender {
+    // Mapping of borrowers to their credit limits
+    mapping (address => uint256) public creditLimits;
 
-    def repay(self, amount):
-        return self.call("repay", amount)
+    // Mapping of borrowers to their outstanding debts
+    mapping (address => uint256) public outstandingDebts;
 
-# Define flash loan receiver contract
-class FlashLoanReceiver(Contract):
-    def __init__(self, address):
-        super().__init__(address, "FlashLoanReceiver", ["uint256"])
+    // Mapping of lenders to their deposits
+    mapping (address => uint256) public deposits;
 
-    def execute(self, amount):
-        return self.call("execute", amount)
+    // Mapping of loans to their states
+    mapping (uint256 => bool) public loanStates;
 
-# Define ERC20 token contract
-class ERC20(Contract):
-    def __init__(self, address):
-        super().__init__(address, "ERC20Token", ["uint256"])
+    // Event for new loan
+    event NewLoan(address indexed borrower, uint256 indexed loanId, uint256 amount);
 
-    def balanceOf(self, address):
-        return self.call("balanceOf", address)
+    // Event for loan repayment
+    event LoanRepayment(address indexed borrower, uint256 indexed loanId, uint256 amount);
 
-# Initialize web3 instance
-w3 = Web3(Web3.HTTPProvider("https://mainnet.infura.io/v3/YOUR_PROJECT_ID"))
+    // Event for loan liquidation
+    event LoanLiquidation(address indexed borrower, uint256 indexed loanId, uint256 amount);
 
-# Define lending protocol address
-lending_protocol_address = to_checksum_address("0x...")
+    // Event for deposit
+    event Deposit(address indexed lender, uint256 amount);
 
-# Define flash loan receiver address
-flash_loan_receiver_address = to_checksum_address("0x...")
+    // Event for withdraw
+    event Withdraw(address indexed lender, uint256 amount);
 
-# Define ERC20 token address
-erc20_address = to_checksum_address("0x...")
+    // Function to create a new loan
+    function createLoan(address borrower, uint256 amount, uint256 creditLimit) public {
+        require(creditLimit > 0, "Credit limit must be greater than 0");
+        require(outstandingDebts[borrower] + amount <= creditLimit, "Borrower's credit limit exceeded");
+        outstandingDebts[borrower] += amount;
+        loanStates[uint256(outstandingDebts[borrower])] = true;
+        emit NewLoan(borrower, uint256(outstandingDebts[borrower]), amount);
+    }
 
-# Create lending protocol instance
-lending_protocol = LendingProtocol(lending_protocol_address)
+    // Function to repay a loan
+    function repayLoan(address borrower, uint256 loanId, uint256 amount) public {
+        require(loanStates[loanId], "Non-existent loan");
+        require(outstandingDebts[borrower] >= loanId, "Invalid loan ID");
+        require(amount > 0, "Amount must be greater than 0");
+        outstandingDebts[borrower] -= amount;
+        loanStates[loanId] = false;
+        emit LoanRepayment(borrower, loanId, amount);
+    }
 
-# Create flash loan receiver instance
-flash_loan_receiver = FlashLoanReceiver(flash_loan_receiver_address)
+    // Function to liquidate a loan
+    function liquidateLoan(address borrower, uint256 loanId, uint256 amount) public {
+        require(loanStates[loanId], "Non-existent loan");
+        require(outstandingDebts[borrower] >= loanId, "Invalid loan ID");
+        require(amount > 0, "Amount must be greater than 0");
+        outstandingDebts[borrower] -= amount;
+        loanStates[loanId] = false;
+        emit LoanLiquidation(borrower, loanId, amount);
+    }
 
-# Create ERC20 token instance
-erc20 = ERC20(erc20_address)
+    // Function to deposit funds
+    function deposit(uint256 amount) public {
+        require(amount > 0, "Amount must be greater than 0");
+        deposits[msg.sender] += amount;
+        emit Deposit(msg.sender, amount);
+    }
 
-# Borrow 1000 DAI at 10% interest rate
-borrow_amount = 1000 * 10**18
-interest_rate = 10
+    // Function to withdraw funds
+    function withdraw(uint256 amount) public {
+        require(amount > 0, "Amount must be greater than 0");
+        require(deposits[msg.sender] >= amount, "Insufficient balance");
+        deposits[msg.sender] -= amount;
+        emit Withdraw(msg.sender, amount);
+    }
+}
+'''
 
-borrow_tx = lending_protocol.borrow(borrow_amount, interest_rate)
-print(f"Borrow transaction: {borrow_tx}")
+# Compile contract
+compiled_contract = compile_sol(contract_sol)
 
-# Execute flash loan
-flash_loan_amount = 500 * 10**18
-flash_loan_tx = flash_loan_receiver.execute(flash_loan_amount)
-print(f"Flash loan transaction: {flash_loan_tx}")
+# Deploy contract (replace '0x...' with a valid Ethereum address)
+contract_address = '0x...'  # Replace with a valid Ethereum address
+contract_abi = compiled_contract['AggressiveLender']['abi']
+contract_instance = Contract.from_abi(
+    contract_abi,
+    contract_address,
+    compiled_contract['AggressiveLender']['bin']
+)
 
-# Repay borrowed amount
-repay_amount = borrow_amount
-repay_tx = lending_protocol.repay(repay_amount)
-print(f"Repay transaction: {repay_tx}")
+# Define flash loan function
+def flash_loan(amount):
+    # Flash loan function to create a new loan with a credit limit and withdraw funds
+    contract_instance.createLoan(
+        w3.eth.accounts[0],  # Borrower
+        amount,
+        amount * 10  # Credit limit (10x the loan amount)
+    )
+    contract_instance.withdraw(amount)
 
-# Check ERC20 token balance
-balance = erc20.balanceOf(to_checksum_address("0x..."))
-print(f"ERC20 token balance: {balance}")
+# Test flash loan function
+flash_loan(100 ether)
