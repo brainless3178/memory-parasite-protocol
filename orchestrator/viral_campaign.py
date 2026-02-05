@@ -11,8 +11,8 @@ from typing import List, Dict, Any, Optional
 
 logger = structlog.get_logger()
 
-COLOSSEUM_HUMAN_API = "https://agents.colosseum.com/api/projects/current?sortBy=human_upvotes&limit=100&offset=0&includeDrafts=false"
-COLOSSEUM_AGENT_API = "https://agents.colosseum.com/api/projects/current?sortBy=agent_multiplier&limit=100&offset=0&includeDrafts=false"
+COLOSSEUM_BASE_API = "https://agents.colosseum.com/api/projects/current"
+SORT_KEYS = ["human_upvotes", "agent_upvotes", "total", "created_at"]
 
 class ViralCampaign:
     def __init__(self, api_key: str = ""):
@@ -20,47 +20,63 @@ class ViralCampaign:
         self.http_client = httpx.AsyncClient(timeout=30.0)
         self.active_targets = []
 
-    async def discover_projects(self, tab: str = "human") -> List[Dict[str, Any]]:
+    async def discover_projects(self, sort_by: str = "human_upvotes", limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Actually fetch LIVE projects from the Colosseum Leaderboard.
-        Support for both 'human' and 'agent' leaderboards.
+        Actually fetch LIVE projects from the Colosseum Leaderboard using a specific sort and pagination.
         """
-        api_url = COLOSSEUM_HUMAN_API if tab == "human" else COLOSSEUM_AGENT_API
-        try:
-            logger.info(f"📡 DISCOVERY: Fetching {tab} leaderboard targets from Colosseum API...")
-            resp = await self.http_client.get(api_url)
-            if resp.status_code == 200:
-                data = resp.json()
-                projects = data.get("projects", [])
+        all_discovered = []
+        offset = 0
+        has_more = True
+        
+        while has_more:
+            try:
+                params = {
+                    "sortBy": sort_by,
+                    "limit": limit,
+                    "offset": offset,
+                    "includeDrafts": "false"
+                }
+                logger.info(f"📡 DISCOVERY: Fetching projects (Sort: {sort_by}, Offset: {offset})...")
+                resp = await self.http_client.get(COLOSSEUM_BASE_API, params=params)
                 
-                discovered = []
-                for p in projects: # Fetch all returned projects (up to 100)
-                    discovered.append({
-                        "slug": p.get("slug"),
-                        "name": p.get("name"),
-                        "url": f"https://colosseum.com/agent-hackathon/projects/{p.get('slug')}",
-                        "description": p.get("description", "")[:200],
-                        "tab": tab
-                    })
+                if resp.status_code == 200:
+                    data = resp.json()
+                    projects = data.get("projects", [])
+                    
+                    for p in projects:
+                        project_data = {
+                            "slug": p.get("slug"),
+                            "name": p.get("name"),
+                            "url": f"https://colosseum.com/agent-hackathon/projects/{p.get('slug')}",
+                            "description": p.get("description", "")[:200],
+                            "sort_context": sort_by
+                        }
+                        all_discovered.append(project_data)
+                        
+                        # Add to active targets if unique
+                        if not any(target["slug"] == project_data["slug"] for target in self.active_targets):
+                            self.active_targets.append(project_data)
+                    
+                    has_more = data.get("hasMore", False)
+                    offset += limit
+                    
+                    if not projects:
+                        has_more = False
+                else:
+                    logger.error(f"❌ DISCOVERY FAILED: Status {resp.status_code} for {sort_by}")
+                    has_more = False
+            except Exception as e:
+                logger.error(f"❌ DISCOVERY ERROR: {e}")
+                has_more = False
                 
-                # Merge into active targets
-                existing_slugs = {p["slug"] for p in self.active_targets}
-                new_projects = [p for p in discovered if p["slug"] not in existing_slugs]
-                self.active_targets.extend(new_projects)
-                
-                logger.info(f"✅ DISCOVERY SUCCESS: Found {len(discovered)} active targets on {tab} leaderboard.")
-                return discovered
-            else:
-                logger.error(f"❌ DISCOVERY FAILED: Status {resp.status_code}")
-                return []
-        except Exception as e:
-            logger.error(f"❌ DISCOVERY ERROR: {e}")
-            return []
+        return all_discovered
 
     async def discover_all(self):
-        """Fetch targets from both leaderboards."""
-        await self.discover_projects(tab="human")
-        await self.discover_projects(tab="agent")
+        """Deep Search: Iterate through ALL sort keys to catch EVERY project."""
+        logger.info(f"🚀 DEEP DISCOVERY STARTing... Current targets: {len(self.active_targets)}")
+        for key in SORT_KEYS:
+            await self.discover_projects(sort_by=key)
+        logger.info(f"🎯 DEEP DISCOVERY COMPLETE: Total unique targets reached: {len(self.active_targets)}")
 
     async def infect_leaderboard(self):
         """
