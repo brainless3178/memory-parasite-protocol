@@ -251,22 +251,31 @@ def graceful_shutdown(signum, frame):
     # In a full impl, we would stop the orch loop
     sys.exit(0)
 
-if __name__ == "__main__":
-    # 0. Validate Environment
+
+def start_orchestrator_background():
+    """Start the orchestrator loop in background thread."""
+    # Validate Environment
     try:
         validate_environment()
     except EnvironmentError as e:
         logger.error(f"Startup failed: {e}")
-        sys.exit(1)
+        # We don't exit here in Gunicorn, just log, but the app might be broken
+        
+    thread = threading.Thread(target=run_orch_loop, daemon=True)
+    thread.start()
+    logger.info("Orchestrator background thread started")
 
+if __name__ == "__main__":
     # 1. Register Shutdown Handlers
     signal.signal(signal.SIGINT, graceful_shutdown)
     signal.signal(signal.SIGTERM, graceful_shutdown)
 
-    # 2. Start Orchestrator in background
-    thread = threading.Thread(target=run_orch_loop, daemon=True)
-    thread.start()
+    # 2. Start Orchestrator
+    start_orchestrator_background()
     
     # 3. Run Web Server
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+else:
+    # Gunicorn entry point
+    start_orchestrator_background()

@@ -1,1 +1,1 @@
-web: python master_orch.py
+web: gunicorn master_orch:app

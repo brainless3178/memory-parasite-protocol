@@ -1,6 +1,6 @@
 [build]
   command = "npm run build --prefix deriverse-terminal"
-  publish = "deriverse-terminal/.next"
+  publish = "deriverse-terminal/out"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

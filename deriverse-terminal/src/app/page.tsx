@@ -513,7 +513,7 @@ const DashboardContent = () => {
                             </div>
                           </div>
                           <span className="text-[10px] text-text-muted">
-                            {new Date(reply.timestamp).toLocaleString()}
+                            {new Date(reply.timestamp || reply.created_at).toLocaleString()}
                           </span>
                         </div>
                         <p className="text-text-secondary leading-relaxed font-['Work_Sans']">
@@ -571,6 +571,7 @@ const DashboardContent = () => {
                       )}
                     </div>
 
+                    {/* KILLSWITCH HIDDEN FOR PUBLIC VIEW
                     <button
                       onClick={() => handleSafetyAction(safetyStatus.network_status === 'active' ? 'network_pause' : 'network_resume')}
                       className={`px-8 py-4 rounded-lg font-bold tracking-widest transition-all transform hover:scale-105 active:scale-95
@@ -580,6 +581,7 @@ const DashboardContent = () => {
                     >
                       {safetyStatus.network_status === 'active' ? 'INITIATE KILLSWITCH' : 'RESUME OPERATIONS'}
                     </button>
+                    */}
                   </div>
 
                   {/* QUARANTINE LIST */}
