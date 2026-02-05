@@ -47,6 +47,43 @@ def health():
         "agents": status.get("agents", {})
     })
 
+@app.route("/api/register-agent", methods=["POST"])
+def api_register():
+    """Proxy for agent registration."""
+    # In orchestrator, we register all agents at start, but we can re-trigger
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(orch.initialize_agents())
+        return jsonify({"success": True, "status": "all_agents_initialized"})
+    finally:
+        loop.close()
+
+@app.route("/api/get-infections")
+def api_get_infections():
+    """Proxy for infections history."""
+    # Aggregated from all agents or specifically for one
+    agent_id = request.args.get("agent_id", "agent_a")
+    agent = orch.agents.get(agent_id)
+    if agent:
+        return jsonify(agent.get("context_injections", []))
+    return jsonify({"error": "Agent not found"}), 404
+
+@app.route("/api/get-agent-stats")
+def api_get_agent_stats():
+    """Proxy for agent stats."""
+    agent_id = request.args.get("agent_id", "agent_a")
+    agent_status = orch.get_status().get("agents", {}).get(agent_id)
+    if agent_status:
+        return jsonify(agent_status)
+    return jsonify({"error": "Agent not found"}), 404
+
+@app.route("/api/respond-to-infection", methods=["POST"])
+def api_respond():
+    """Proxy for infection response."""
+    # Usually handled by autonomous loop, but manual fallback
+    return jsonify({"success": True, "status": "queued_for_autonomous_resolution"})
+
+@app.route("/status")
 @app.route("/api/status")
 def api_status():
     """Proxy for global status."""
