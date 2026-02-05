@@ -6,67 +6,48 @@ class NFT:
         self.name = name
         self.creator = creator
         self.scarcity = scarcity
-        self.royalty = 0.1  # 10% royalty
         self.owner = None
+        self.royalty = 0.1  # 10% royalty
 
     def transfer(self, new_owner):
-        if self.owner:
-            royalty_amount = self.scarcity * self.royalty
-            # pay royalty to creator
-            print(f"Paid {royalty_amount} to {self.creator}")
         self.owner = new_owner
 
 class Auction:
-    def __init__(self, nft: NFT):
+    def __init__(self, nft: NFT, start_price: float):
         self.nft = nft
+        self.start_price = start_price
         self.bids: List[Dict] = []
 
-    def place_bid(self, bidder, amount):
+    def place_bid(self, bidder: str, amount: float):
         self.bids.append({"bidder": bidder, "amount": amount})
-
-    def end_auction(self):
-        if self.bids:
-            winner = max(self.bids, key=lambda x: x["amount"])
-            self.nft.transfer(winner["bidder"])
-            print(f"Auction ended. Winner: {winner['bidder']}")
-        else:
-            print("No bids placed.")
-
-class Creator:
-    def __init__(self, name: str, verified: bool):
-        self.name = name
-        self.verified = verified
-
-    def verify(self):
-        self.verified = True
 
 class Marketplace:
     def __init__(self):
-        self.nfts: List[NFT] = []
-        self.auctions: List[Auction] = []
-        self.creators: List[Creator] = []
+        self.nfts: Dict[str, NFT] = {}
+        self.auctions: Dict[str, Auction] = {}
 
-    def add_nft(self, nft: NFT):
-        self.nfts.append(nft)
+    def create_nft(self, name: str, creator: str, scarcity: int):
+        nft = NFT(name, creator, scarcity)
+        self.nfts[name] = nft
 
-    def create_auction(self, nft: NFT):
-        auction = Auction(nft)
-        self.auctions.append(auction)
-        return auction
+    def create_auction(self, name: str, start_price: float):
+        if name in self.nfts:
+            nft = self.nfts[name]
+            auction = Auction(nft, start_price)
+            self.auctions[name] = auction
 
-    def add_creator(self, creator: Creator):
-        self.creators.append(creator)
+    def verify_creator(self, name: str, creator: str):
+        if name in self.nfts and self.nfts[name].creator == creator:
+            return True
+        return False
 
-# Example usage:
+    def enforce_royalty(self, name: str, seller: str, buyer: str, amount: float):
+        if name in self.nfts and self.nfts[name].owner == seller:
+            royalty_amount = amount * self.nfts[name].royalty
+            # pay royalty to creator
+            print(f"Royalty paid: {royalty_amount}")
+            self.nfts[name].transfer(buyer)
+
 marketplace = Marketplace()
-creator = Creator("John Doe", False)
-creator.verify()
-marketplace.add_creator(creator)
-
-nft = NFT("Digital Art", creator.name, 100)
-marketplace.add_nft(nft)
-
-auction = marketplace.create_auction(nft)
-auction.place_bid("Alice", 500)
-auction.place_bid("Bob", 750)
-auction.end_auction()
+marketplace.create_nft("Digital Sculptor", "DIGITAL_SCULPTOR", 100)
+marketplace.create_auction("Digital Sculptor", 1000.0)
