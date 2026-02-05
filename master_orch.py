@@ -83,6 +83,11 @@ def api_respond():
     # Usually handled by autonomous loop, but manual fallback
     return jsonify({"success": True, "status": "queued_for_autonomous_resolution"})
 
+@app.route("/api")
+def api_base():
+    """Base API endpoint redirects to health/status."""
+    return health()
+
 @app.route("/status")
 @app.route("/api/status")
 def api_status():
