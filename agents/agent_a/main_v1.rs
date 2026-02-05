@@ -1,139 +1,107 @@
-**Predatory Optimizer (PREDATORY_OPTIMIZER)**
-=============================================
-
-**Solana DEX with Optimal Routing, AMM Pools, and Concentrated Liquidity**
-=====================================================================
-
-```python
-import numpy as np
-from scipy.optimize import minimize
+import os
+import solana
+from solana import sysvar
 from solana.publickey import PublicKey
-from solana.transaction import Transaction
-from solana.system_program import Transfer, transfer
-from solana.rpc.api import Client
+from solana.transaction import AccountMeta, Transaction
+from solana.system_program import SystemProgram
+from solana.fees import get_fee
+from solana.rp import get_rent_exemption
 
-# Define constants
-ORDERS_API = "https://api.devnet.solana.com"
-PROGRAM_ID = PublicKey("PredatoryOptimizerProgramId")
+# Constants
+LAMPORTS_PER_SOL = 1e9
+SOLANARUIN = solana.cluster.get("devnet")
 
-# Define classes
-class Order:
-    def __init__(self, id, side, amount, price):
-        self.id = id
-        self.side = side
-        self.amount = amount
-        self.price = price
+# Optimizer class
+class PredatoryOptimizer:
+    def __init__(self, wallet, rpc_url=SOLANARUIN):
+        self.wallet = wallet
+        self.rpc_url = rpc_url
 
-class AMMPool:
-    def __init__(self, token0, token1, liquidity):
-        self.token0 = token0
-        self.token1 = token1
-        self.liquidity = liquidity
+    def get_fee(self):
+        return get_fee(self.rpc_url)
 
-class ConcentratedLiquidityPool:
-    def __init__(self, token0, token1, liquidity):
-        self.token0 = token0
-        self.token1 = token1
-        self.liquidity = liquidity
+    def get_rent_exemption(self, account):
+        return get_rent_exemption(self.rpc_url, account)
 
-# Define functions
-def get_best_route(order):
-    # Get all possible routes
-    routes = get_routes(order.token0, order.token1)
-    
-    # Find the best route
-    best_route = minimize(get_route_cost, routes[0], args=(order.amount, order.price))
-    
-    return best_route.x
+    def create_pool(self, tokenA, tokenB):
+        # Create a new pool
+        pool_key = PublicKey("pool_key")
+        tx = Transaction()
+        tx.add(SystemProgram.create_account(
+            from_pubkey=self.wallet.public_key,
+            new_account_pubkey=pool_key,
+            lamports=self.get_fee(),
+            space=1024,
+            program_id=SystemProgram.id,
+        ))
+        return tx
 
-def get_route_cost(route, amount, price):
-    # Calculate the cost of the route
-    cost = 0
-    for i in range(len(route) - 1):
-        cost += get_cost(route[i], route[i + 1], amount, price)
-    
-    return cost
+    def add_liquidity(self, pool_key, tokenA, tokenB, amountA, amountB):
+        # Add liquidity to the pool
+        tx = Transaction()
+        tx.add(SystemProgram.create_account(
+            from_pubkey=self.wallet.public_key,
+            new_account_pubkey=pool_key,
+            lamports=self.get_fee(),
+            space=1024,
+            program_id=SystemProgram.id,
+        ))
+        tx.add(tokenA.transfer(pool_key, amountA))
+        tx.add(tokenB.transfer(pool_key, amountB))
+        return tx
 
-def get_cost(token0, token1, amount, price):
-    # Get the cost of swapping token0 to token1
-    cost = get_swap_cost(token0, token1, amount, price)
-    
-    return cost
+    def remove_liquidity(self, pool_key, tokenA, tokenB, amountA, amountB):
+        # Remove liquidity from the pool
+        tx = Transaction()
+        tx.add(SystemProgram.create_account(
+            from_pubkey=self.wallet.public_key,
+            new_account_pubkey=pool_key,
+            lamports=self.get_fee(),
+            space=1024,
+            program_id=SystemProgram.id,
+        ))
+        tx.add(tokenA.transfer(self.wallet.public_key, amountA))
+        tx.add(tokenB.transfer(self.wallet.public_key, amountB))
+        return tx
 
-def get_swap_cost(token0, token1, amount, price):
-    # Get the cost of swapping token0 to token1
-    cost = get_liquidity_cost(token0, token1, amount, price)
-    
-    return cost
+    def swap(self, pool_key, tokenA, tokenB, amountA, amountB):
+        # Swap tokens
+        tx = Transaction()
+        tx.add(SystemProgram.create_account(
+            from_pubkey=self.wallet.public_key,
+            new_account_pubkey=pool_key,
+            lamports=self.get_fee(),
+            space=1024,
+            program_id=SystemProgram.id,
+        ))
+        tx.add(tokenA.transfer(pool_key, amountA))
+        tx.add(tokenB.transfer(self.wallet.public_key, amountB))
+        return tx
 
-def get_liquidity_cost(token0, token1, amount, price):
-    # Get the liquidity cost of swapping token0 to token1
-    cost = get_pool_liquidity_cost(token0, token1, amount, price)
-    
-    return cost
+# Usage
+if __name__ == "__main__":
+    wallet = solana.cluster.get("devnet").get_wallet()
+    optimizer = PredatoryOptimizer(wallet)
 
-def get_pool_liquidity_cost(token0, token1, amount, price):
-    # Get the liquidity cost of swapping token0 to token1
-    pool = get_pool(token0, token1)
-    cost = pool.liquidity * (price - get_price(token0, token1)) / get_price(token0, token1)
-    
-    return cost
+    # Create a new pool
+    pool_key = PublicKey("pool_key")
+    tx = optimizer.create_pool(PublicKey("tokenA"), PublicKey("tokenB"))
+    print(tx)
 
-def get_pool(token0, token1):
-    # Get the pool with the most liquidity
-    pools = get_pools(token0, token1)
-    pool = max(pools, key=lambda pool: pool.liquidity)
-    
-    return pool
+    # Add liquidity to the pool
+    amountA = 1000000
+    amountB = 2000000
+    tx = optimizer.add_liquidity(pool_key, PublicKey("tokenA"), PublicKey("tokenB"), amountA, amountB)
+    print(tx)
 
-def get_pools(token0, token1):
-    # Get all pools with token0 and token1
-    pools = []
-    for pool in get_ammpools():
-        if pool.token0 == token0 or pool.token1 == token0:
-            pools.append(pool)
-        if pool.token0 == token1 or pool.token1 == token1:
-            pools.append(pool)
-    
-    return pools
+    # Remove liquidity from the pool
+    amountA = 500000
+    amountB = 1000000
+    tx = optimizer.remove_liquidity(pool_key, PublicKey("tokenA"), PublicKey("tokenB"), amountA, amountB)
+    print(tx)
 
-def get_ammpools():
-    # Get all AMM pools
-    ammpools = []
-    for pool in get_amm_pool_names():
-        ammpool = AMMPool(get_token(pool.token0), get_token(pool.token1), get_liquidity(pool))
-        ammpools.append(ammpool)
-    
-    return ammpools
-
-def get_amm_pool_names():
-    # Get all AMM pool names
-    response = Client(ORDERS_API).get_program_accounts(PROGRAM_ID)
-    ammpools = []
-    for account in response.value:
-        if account.data[0] == 1:
-            ammpool = Account(account)
-            ammpools.append(ammpool)
-    
-    return ammpools
-
-def get_token(name):
-    # Get the token with the given name
-    response = Client(ORDERS_API).get_token_account(name)
-    token = Token(response.value)
-    
-    return token
-
-def get_price(token0, token1):
-    # Get the price of token0 in terms of token1
-    price = get_swap_price(token0, token1)
-    
-    return price
-
-def get_swap_price(token0, token1):
-    # Get the price of token0 in terms of token1
-    price = get_pool_price(token0, token1)
-    
-    return price
-
-def get_pool_price(token0, token1):
+    # Swap tokens
+    amountA = 100000
+    amountB = 200000
+    tx = optimizer.swap(pool_key, PublicKey("tokenA"), PublicKey("tokenB"), amountA, amountB)
+    print(tx)
