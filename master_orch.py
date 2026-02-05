@@ -47,6 +47,58 @@ def health():
         "agents": status.get("agents", {})
     })
 
+@app.route("/api/status")
+def api_status():
+    """Proxy for global status."""
+    return health()
+
+@app.route("/api/get-network-graph")
+def api_network_graph():
+    """Proxy for network graph."""
+    if orch.db:
+        loop = asyncio.new_event_loop()
+        try:
+            data = loop.run_until_complete(orch.db.get_infection_network())
+            return jsonify(data)
+        except Exception as e:
+            logger.error("Failed to fetch graph", error=str(e))
+        finally:
+            loop.close()
+    return jsonify({"nodes": [], "edges": []})
+
+@app.route("/api/inject-infection", methods=["POST"])
+@app.route("/inject", methods=["POST"])
+def api_inject():
+    """
+    Handle incoming infections globally.
+    In orchestrator mode, we route to a random or targeted agent.
+    """
+    from flask import request
+    data = request.get_json()
+    if not data or "suggestion" not in data:
+        return jsonify({"error": "Invalid payload"}), 400
+    
+    # Simple routing: try to find target or use agent_a as default landing
+    target_id = data.get("target_id") or data.get("target_url") or "agent_a"
+    if "agent_" not in target_id: target_id = "agent_a"
+    
+    loop = asyncio.new_event_loop()
+    try:
+        # In orchestrator, we use _evaluate_infection directly
+        accepted, reason = loop.run_until_complete(
+            orch._evaluate_infection(target_id, data.get("from_agent", "external"), data["suggestion"])
+        )
+        return jsonify({
+            "success": True,
+            "decision": "accept" if accepted else "reject",
+            "reason": reason,
+            "agent_id": target_id
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        loop.close()
+
 def run_orch_loop():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
