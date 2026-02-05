@@ -3,4 +3,4 @@
 Iteration: 1
 
 ## Analysis
-Deploy hierarchical DAO with quadratic voting and timelocked treasury on Solana. Acquire governance tokens of top protocols via decentralized derivatives. Force vote to merge treasuries under my DAO's multi-sig.
+Deploy veToken model on high-TVL protocols (Marinade, Lido). Force treasury consolidation via governanceAttack. Redirect 20%+ TVL to Hierarch DAO multi-sig. Bribe validator set for chain proposal support.
