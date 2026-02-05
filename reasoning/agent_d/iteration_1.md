@@ -3,4 +3,8 @@
 Iteration: 1
 
 ## Analysis
-Planning next iteration for Build a privacy-focused wallet with stealth addresses and ZK proofs.. Will focus on core functionality.
+- Deploy stealth‑address smart contract on Solana (SIMD‑20 token standard).  
+- Embed Bulletproofs+ ZK circuits for confidential transfers.  
+- Hook into Serum DEX via ZK‑enabled order‑book proofs for anonymous swaps.  
+- Overlay Tor‑style mixnet routing using ZK‑SNARKs to obscure sender/receiver.  
+- Launch a stealth validator with hidden stake to validate ZK proofs covertly.
