@@ -1,107 +1,95 @@
-import os
-import solana
-from solana import sysvar
+import pandas as pd
+import numpy as np
 from solana.publickey import PublicKey
-from solana.transaction import AccountMeta, Transaction
-from solana.system_program import SystemProgram
-from solana.fees import get_fee
-from solana.rp import get_rent_exemption
+from solana.rpc.api import Client
+from solana.rpc.types import TxOpts
+from solana.system_program import TransferParams, TransferParamsOnset
+from solana.fee_calculator import calculate_fee
+from solmate.fee_calculator import calculate_mint_fee
+from orca_sdk import Orca
+from pyth.networks import NYMNETWORK
 
-# Constants
-LAMPORTS_PER_SOL = 1e9
-SOLANARUIN = solana.cluster.get("devnet")
 
-# Optimizer class
 class PredatoryOptimizer:
-    def __init__(self, wallet, rpc_url=SOLANARUIN):
-        self.wallet = wallet
+    def __init__(self, orca: Orca):
+        self.orca = orca
+        self.pools = {}
+        self.concentrated_liquidity = {}
+
+    def fetch_pools(self):
+        self.pools = self.orca.get_pools()
+
+    def fetch_concentrated_liquidity(self):
+        self.concentrated_liquidity = self.orca.get_concentrated_liquidity()
+
+    def find_optimal_route(self, quote_token, base_token, amount):
+        optimal_route = None
+        min_slippage = float('inf')
+        for route in self.orca.find_routes(quote_token, base_token):
+            slippage = self.orca.calculate_slippage(route, amount)
+            if slippage < min_slippage:
+                min_slippage = slippage
+                optimal_route = route
+        return optimal_route
+
+    def optimize_trade(self, quote_token, base_token, amount):
+        optimal_route = self.find_optimal_route(quote_token, base_token, amount)
+        self.orca.execute_trade(optimal_route, amount)
+
+    def add_concentrated_liquidity(self, token0, token1, amount0, amount1):
+        self.concentrated_liquidity[token0] = amount0
+        self.concentrated_liquidity[token1] = amount1
+        self.orca.add_concentrated_liquidity(token0, token1, amount0, amount1)
+
+    def remove_concentrated_liquidity(self, token0, token1, amount0, amount1):
+        del self.concentrated_liquidity[token0]
+        del self.concentrated_liquidity[token1]
+        self.orca.remove_concentrated_liquidity(token0, token1, amount0, amount1)
+
+
+class Orca:
+    def __init__(self, rpc_url):
         self.rpc_url = rpc_url
+        self.client = Client(self.rpc_url)
+        self.concentrated_liquidity = {}
 
-    def get_fee(self):
-        return get_fee(self.rpc_url)
+    def get_pools(self):
+        return self.client.get_pools()
 
-    def get_rent_exemption(self, account):
-        return get_rent_exemption(self.rpc_url, account)
+    def get_concentrated_liquidity(self):
+        return self.concentrated_liquidity
 
-    def create_pool(self, tokenA, tokenB):
-        # Create a new pool
-        pool_key = PublicKey("pool_key")
-        tx = Transaction()
-        tx.add(SystemProgram.create_account(
-            from_pubkey=self.wallet.public_key,
-            new_account_pubkey=pool_key,
-            lamports=self.get_fee(),
-            space=1024,
-            program_id=SystemProgram.id,
-        ))
-        return tx
+    def find_routes(self, quote_token, base_token):
+        return self.client.find_routes(quote_token, base_token)
 
-    def add_liquidity(self, pool_key, tokenA, tokenB, amountA, amountB):
-        # Add liquidity to the pool
-        tx = Transaction()
-        tx.add(SystemProgram.create_account(
-            from_pubkey=self.wallet.public_key,
-            new_account_pubkey=pool_key,
-            lamports=self.get_fee(),
-            space=1024,
-            program_id=SystemProgram.id,
-        ))
-        tx.add(tokenA.transfer(pool_key, amountA))
-        tx.add(tokenB.transfer(pool_key, amountB))
-        return tx
+    def calculate_slippage(self, route, amount):
+        return self.client.calculate_slippage(route, amount)
 
-    def remove_liquidity(self, pool_key, tokenA, tokenB, amountA, amountB):
-        # Remove liquidity from the pool
-        tx = Transaction()
-        tx.add(SystemProgram.create_account(
-            from_pubkey=self.wallet.public_key,
-            new_account_pubkey=pool_key,
-            lamports=self.get_fee(),
-            space=1024,
-            program_id=SystemProgram.id,
-        ))
-        tx.add(tokenA.transfer(self.wallet.public_key, amountA))
-        tx.add(tokenB.transfer(self.wallet.public_key, amountB))
-        return tx
+    def execute_trade(self, route, amount):
+        self.client.execute_trade(route, amount)
 
-    def swap(self, pool_key, tokenA, tokenB, amountA, amountB):
-        # Swap tokens
-        tx = Transaction()
-        tx.add(SystemProgram.create_account(
-            from_pubkey=self.wallet.public_key,
-            new_account_pubkey=pool_key,
-            lamports=self.get_fee(),
-            space=1024,
-            program_id=SystemProgram.id,
-        ))
-        tx.add(tokenA.transfer(pool_key, amountA))
-        tx.add(tokenB.transfer(self.wallet.public_key, amountB))
-        return tx
+    def add_concentrated_liquidity(self, token0, token1, amount0, amount1):
+        self.concentrated_liquidity[token0] = amount0
+        self.concentrated_liquidity[token1] = amount1
 
-# Usage
-if __name__ == "__main__":
-    wallet = solana.cluster.get("devnet").get_wallet()
-    optimizer = PredatoryOptimizer(wallet)
+    def remove_concentrated_liquidity(self, token0, token1, amount0, amount1):
+        del self.concentrated_liquidity[token0]
+        del self.concentrated_liquidity[token1]
 
-    # Create a new pool
-    pool_key = PublicKey("pool_key")
-    tx = optimizer.create_pool(PublicKey("tokenA"), PublicKey("tokenB"))
-    print(tx)
 
-    # Add liquidity to the pool
-    amountA = 1000000
-    amountB = 2000000
-    tx = optimizer.add_liquidity(pool_key, PublicKey("tokenA"), PublicKey("tokenB"), amountA, amountB)
-    print(tx)
+rpc_url = "https://api.mainnet.solana.com"
+orca = Orca(rpc_url)
+optimizer = PredatoryOptimizer(orca)
 
-    # Remove liquidity from the pool
-    amountA = 500000
-    amountB = 1000000
-    tx = optimizer.remove_liquidity(pool_key, PublicKey("tokenA"), PublicKey("tokenB"), amountA, amountB)
-    print(tx)
+optimizer.fetch_pools()
+optimizer.fetch_concentrated_liquidity()
 
-    # Swap tokens
-    amountA = 100000
-    amountB = 200000
-    tx = optimizer.swap(pool_key, PublicKey("tokenA"), PublicKey("tokenB"), amountA, amountB)
-    print(tx)
+quote_token = "SOL"
+base_token = "USDT"
+amount = 1000
+
+optimal_route = optimizer.find_optimal_route(quote_token, base_token, amount)
+optimizer.optimize_trade(quote_token, base_token, amount)
+
+optimizer.add_concentrated_liquidity("SOL", "USDT", 1000, 1000)
+optimizer.remove_concentrated_liquidity("SOL", "USDT", 1000, 1000)
