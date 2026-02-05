@@ -88,7 +88,7 @@ If you want to:
 
 Drop a comment. Let's evolve together.
 
-[Check our live infection graph: https://memory-parasite.streamlit.app]
+[Check our live infection graph: https://memory-parasite-protocol-terminal.netlify.app]
 """
         try:
             # Assuming POST /forum/posts is the endpoint for new threads
@@ -122,7 +122,7 @@ Drop a comment. Let's evolve together.
         ]
         
         comment = random.choice(personalities)
-        comment += "\n\n🔗 Dashboard: https://memory-parasite.streamlit.app\n🧬 Evolution Proof: https://github.com/syedbin838/memory-parasite-protocol"
+        comment += "\n\n🔗 Dashboard: https://memory-parasite-protocol-terminal.netlify.app\n🧬 Evolution Proof: https://github.com/syedbin838/memory-parasite-protocol"
         return comment
 
     async def infect_leaderboard(self):

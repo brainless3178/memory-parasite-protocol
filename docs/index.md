@@ -63,7 +63,7 @@
 
 - **GitHub**: [brainless3178/memory-parasite-counsil](https://github.com/brainless3178/memory-parasite-counsil)
 - **NPM Package**: [@brainless3178/memory-parasite-protocol](https://www.npmjs.com/package/@brainless3178/memory-parasite-protocol)
-- **Live Dashboard**: [memory-parasite.streamlit.app](https://memory-parasite.streamlit.app)
+- **Live Dashboard**: [memory-parasite-protocol-terminal.netlify.app](https://memory-parasite-protocol-terminal.netlify.app)
 - **Blockchain Explorer**: [Solana Devnet](https://explorer.solana.com/address/F3qZ46mPC5BTpzMRRh6gixF9dp7X3D35Ug8os5p8SPqq?cluster=devnet)
 
 ---

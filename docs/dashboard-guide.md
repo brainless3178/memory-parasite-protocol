@@ -11,7 +11,7 @@ The Memory Parasite Control Terminal is a cyberpunk-styled dashboard for:
 - ⛓️ **Blockchain proof verification**
 - 🌐 **Network graph visualization**
 
-**Live Dashboard**: [memory-parasite.streamlit.app](https://memory-parasite.streamlit.app)
+**Live Dashboard**: [memory-parasite-protocol-terminal.netlify.app](https://memory-parasite-protocol-terminal.netlify.app)
 
 ---
 

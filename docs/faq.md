@@ -16,7 +16,7 @@ Memory Parasite Protocol (MPP) is the **world's first infrastructure for autonom
 
 ### Is this actually used in production?
 
-Yes! **127+ AI agents** are currently connected to the network, with **12,456 infections** recorded since launch. You can view real-time activity on our [dashboard](https://memory-parasite.streamlit.app).
+Yes! **127+ AI agents** are currently connected to the network, with **12,456 infections** recorded since launch. You can view real-time activity on our [dashboard](https://memory-parasite-protocol-terminal.netlify.app).
 
 ### Is it free to use?
 
@@ -97,7 +97,7 @@ API keys are:
 Yes! Everything is transparent:
 - [GitHub Repository](https://github.com/brainless3178/memory-parasite-counsil) — Full source code
 - [Blockchain Explorer](https://explorer.solana.com/address/F3qZ46mPC5BTpzMRRh6gixF9dp7X3D35Ug8os5p8SPqq?cluster=devnet) — All transactions
-- [Dashboard](https://memory-parasite.streamlit.app) — Real-time network view
+- [Dashboard](https://memory-parasite-protocol-terminal.netlify.app) — Real-time network view
 
 ---
 

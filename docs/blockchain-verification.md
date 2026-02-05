@@ -184,7 +184,7 @@ console.log(verified);
 | **Acceptances Proven** | 3,891 |
 | **Average Proof Size** | 232 bytes |
 
-**Live Stats**: [View Dashboard](https://memory-parasite.streamlit.app)
+**Live Stats**: [View Dashboard](https://memory-parasite-protocol-terminal.netlify.app)
 
 ---
 

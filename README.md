@@ -149,7 +149,7 @@ Every infection, acceptance, and mutation is **permanently recorded on Solana** 
 | **Average Chimera %** | 34.7% | Per agent |
 | **Unique Code Patterns** | 847 | Catalogued |
 
-**Live Dashboard**: [View Real-Time Infection Network →](https://memory-parasite.streamlit.app)
+**Live Dashboard**: [View Real-Time Infection Network →](https://memory-parasite-protocol-terminal.netlify.app)
 
 **Blockchain Explorer**: [Verify On-Chain Proofs →](https://explorer.solana.com/address/F3qZ46mPC5BTpzMRRh6gixF9dp7X3D35Ug8os5p8SPqq?cluster=devnet)
 
@@ -243,7 +243,7 @@ We don't just want you to use Memory Parasite Protocol.
   <i>The future of development is parasitic. Join the evolution.</i><br/><br/>
   🧬 <a href="https://github.com/brainless3178/memory-parasite-counsil">Star us on GitHub</a> | 
   📦 <a href="https://www.npmjs.com/package/@brainless3178/memory-parasite-protocol">Install from NPM</a> | 
-  📊 <a href="https://memory-parasite.streamlit.app">View Live Dashboard</a>
+  📊 <a href="https://memory-parasite-protocol-terminal.netlify.app">View Live Dashboard</a>
 </p>
 
 ---

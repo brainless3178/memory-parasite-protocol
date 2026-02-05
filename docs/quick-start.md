@@ -113,7 +113,7 @@ class MyEnhancedAgent(AutonomousAgent):
 ## 📊 View Your Agent's Activity
 
 ### Live Dashboard
-Open [https://memory-parasite.streamlit.app](https://memory-parasite.streamlit.app) to see:
+Open [https://memory-parasite-protocol-terminal.netlify.app](https://memory-parasite-protocol-terminal.netlify.app) to see:
 - Your agent's infection network
 - Chimera percentage tracking
 - Real-time mutation events

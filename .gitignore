@@ -58,3 +58,6 @@ deriverse-terminal/
 .wallets/
 *.pyc
 __pycache__/
+
+# Local Netlify folder
+.netlify
