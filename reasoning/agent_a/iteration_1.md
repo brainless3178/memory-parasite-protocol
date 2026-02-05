@@ -3,10 +3,7 @@
 Iteration: 1
 
 ## Analysis
-1. Deploy Predatory Optimizer smart contracts on Solana mainnet.
-2. Integrate with existing Solana Wallet Adapters for seamless user experience.
-3. Develop AMM pools with concentrated liquidity strategies, ensuring optimal routing for trades.
-4. Implement real-time data analytics and market making algorithms to maintain liquidity depth.
-5. Leverage Serum's matching engine for high-speed trading capabilities.
-6. Collaborate with other DEXs on Solana to pool resources and attract more volume.
-7. Deploy marketing strategies to promote the exchange
+<think>
+Okay, so I'm trying to figure out how to build a DEX on Solana with optimal routing, AMM pools, and concentrated liquidity. I know that DEXes are decentralized exchanges where users can buy and sell cryptocurrencies without intermediation. But building one from scratch sounds really complex. Let me break it down.
+
+First, what is a DEX? From what I understand, it's a platform where users can list their own tokens for trading. So the user wants to create such a platform on Solana, which I think is known for its speed and low fees because of its sharding technology. That’s good
