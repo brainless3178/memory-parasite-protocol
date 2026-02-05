@@ -3,7 +3,7 @@ from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
 # Initialize Solana client
-client = Client("https://api.mainnet-beta.solana.com")
+client = Client("https://api.devnet.solana.com")
 
 # Define AMM pool class
 class AMMPool:
@@ -11,17 +11,13 @@ class AMMPool:
         self.token_a = token_a
         self.token_b = token_b
         self.fee = fee
-        self.reserves = {token_a: 0, token_b: 0}
+        self.liquidity = 0
 
     def add_liquidity(self, amount_a, amount_b):
-        self.reserves[self.token_a] += amount_a
-        self.reserves[self.token_b] += amount_b
+        self.liquidity += amount_a + amount_b
 
-    def get_price(self, token_in):
-        if token_in == self.token_a:
-            return self.reserves[self.token_b] / self.reserves[self.token_a]
-        else:
-            return self.reserves[self.token_a] / self.reserves[self.token_b]
+    def remove_liquidity(self, amount_a, amount_b):
+        self.liquidity -= amount_a + amount_b
 
 # Define concentrated liquidity class
 class ConcentratedLiquidity:
@@ -29,49 +25,53 @@ class ConcentratedLiquidity:
         self.token_a = token_a
         self.token_b = token_b
         self.fee = fee
-        self.positions = []
+        self.liquidity = {}
 
-    def add_position(self, owner, liquidity):
-        self.positions.append((owner, liquidity))
+    def add_liquidity(self, amount_a, amount_b, tick):
+        if tick not in self.liquidity:
+            self.liquidity[tick] = 0
+        self.liquidity[tick] += amount_a + amount_b
 
-    def get_liquidity(self, owner):
-        for position in self.positions:
-            if position[0] == owner:
-                return position[1]
-        return 0
+    def remove_liquidity(self, amount_a, amount_b, tick):
+        if tick in self.liquidity:
+            self.liquidity[tick] -= amount_a + amount_b
 
 # Define optimal routing class
 class OptimalRouting:
     def __init__(self, pools):
         self.pools = pools
 
-    def get_best_route(self, token_in, token_out):
-        best_route = None
-        best_price = float('inf')
-        for pool in self.pools:
-            price = pool.get_price(token_in)
-            if price < best_price and pool.token_b == token_out:
-                best_route = pool
-                best_price = price
-        return best_route
+    def find_optimal_route(self, token_a, token_b, amount):
+        # Simplified example using Dijkstra's algorithm
+        distances = {pool: float('inf') for pool in self.pools}
+        distances[(token_a, token_b)] = 0
+        unvisited = list(self.pools)
 
-# Create AMM pools
-pool1 = AMMPool("USDC", "SOL", 0.003)
-pool2 = AMMPool("USDC", "ETH", 0.003)
+        while unvisited:
+            current_pool = min(unvisited, key=lambda pool: distances.get(pool, float('inf')))
+            unvisited.remove(current_pool)
 
-# Create concentrated liquidity
-concentrated_liquidity = ConcentratedLiquidity("USDC", "SOL", 0.003)
+            for neighbor in self.pools:
+                if neighbor not in unvisited:
+                    continue
+                tentative_distance = distances[current_pool] + 1
+                if tentative_distance < distances[neighbor]:
+                    distances[neighbor] = tentative_distance
 
-# Create optimal routing
-optimal_routing = OptimalRouting([pool1, pool2])
+        return distances
 
-# Add liquidity to pools
-pool1.add_liquidity(1000, 100)
-pool2.add_liquidity(1000, 10)
+# Example usage
+token_a = PublicKey("2pK6L3qf1eJzY5vFzjYj6u7KvzF5QeKw")
+token_b = PublicKey("6F6J5e3eJzY5vFzjYj6u7KvzF5QeKw2")
+fee = 0.3
 
-# Add position to concentrated liquidity
-concentrated_liquidity.add_position(PublicKey("4pUj5f7T9Q9jW4JtQH4KqGjZq4T4JtQH4"), 1000)
+pool = AMMPool(token_a, token_b, fee)
+pool.add_liquidity(100, 100)
 
-# Get best route
-best_route = optimal_routing.get_best_route("USDC", "SOL")
-print(f"Best route: {best_route.token_a} -> {best_route.token_b}")
+concentrated_liquidity = ConcentratedLiquidity(token_a, token_b, fee)
+concentrated_liquidity.add_liquidity(100, 100, 0)
+
+pools = [(token_a, token_b)]
+optimal_routing = OptimalRouting(pools)
+route = optimal_routing.find_optimal_route(token_a, token_b, 100)
+print(route)
