@@ -1,84 +1,62 @@
-from typing import List
-
-from soliditypython import Contract
-
-class AggressiveLender(Contract):
-    def __init__(self):
-        self.name = "AggressiveLender"
-        self.version = "1.0"
-        self.flash_loan_fee = 0.05
-        self.liquidation_threshold = 80
-        self.borrow_interest_rate = 0.1
-        self.lend_interest_rate = 0.05
-
-    def execute_flash_loan(self, amount: int, callback: callable) -> bool:
-        """Execute a flash loan and call the callback function when complete."""
-        if self.get_balance() >= amount:
-            self.transfer(self.get_balance() - amount)
-            try:
-                callback()
-                self.transfer(amount)
-                return True
-            except Exception as e:
-                self.transfer(amount)
-                raise e
-        return False
-
-    def liquidate(self, borrower: str, debt: int) -> bool:
-        """Liquidate a borrower who has exceeded the liquidation threshold."""
-        if self.get_balance() >= debt:
-            self.transfer(self.get_balance() - debt)
-            return True
-        return False
-
-    def lend(self, amount: int, interest_rate: float) -> bool:
-        """Lend an amount of tokens to a borrower at a given interest rate."""
-        if self.get_balance() >= amount:
-            self.transfer(self.get_balance() - amount)
-            return True
-        return False
-
-    def borrow(self, amount: int, interest_rate: float) -> bool:
-        """Borrow an amount of tokens from the lender at a given interest rate."""
-        if self.get_balance() >= amount:
-            self.transfer(self.get_balance() - amount)
-            return True
-        return False
-
-
+import web3
 from web3 import Web3
-from contracts import AggressiveLender
+from web3.contract import Contract
+from eth_account import Account
 
-def infiltrate(lender_address: str, borrower_address: str, amount: int):
-    """Infiltrate the lender and create a credit market."""
-    lender = AggressiveLender()
-    lender.connect(Web3.to_checksum_address(lender_address))
-    borrower = AggressiveLender()
-    borrower.connect(Web3.to_checksum_address(borrower_address))
+# Define constants
+WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+LENDING_PLATFORM_ADDRESS = '0x...'  # Replace with actual address
+AGGRESSIVE_LENDER_ADDRESS = '0x...'  # Replace with actual address
+FLASH_LOAN_PROXY_ADDRESS = '0x...'  # Replace with actual address
 
-    lender.borrow(amount, 0.1)
-    borrower.lend(amount, 0.05)
+# Define functions
+def get_weth_balance(account):
+    """Get WETH balance of the given account"""
+    weth_contract = Contract.from_abi('WETH', WETH_ADDRESS, w3.eth.account.decrypt(account).address)
+    return weth_contract.functions.balanceOf(account).call()
 
+def borrow_weth(account, amount):
+    """Borrow WETH from the lending platform"""
+    lending_contract = Contract.from_abi('LENDING_PLATFORM', LENDING_PLATFORM_ADDRESS, w3.eth.account.decrypt(account).address)
+    return lending_contract.functions.borrow(WETH_ADDRESS, amount).call()
 
-import unittest
-from contracts import AggressiveLender
+def repay_weth(account, amount):
+    """Repay WETH to the lending platform"""
+    lending_contract = Contract.from_abi('LENDING_PLATFORM', LENDING_PLATFORM_ADDRESS, w3.eth.account.decrypt(account).address)
+    return lending_contract.functions.repay(WETH_ADDRESS, amount).call()
 
-class TestAggressiveLender(unittest.TestCase):
-    def test_flash_loan(self):
-        lender = AggressiveLender()
-        self.assertTrue(lender.execute_flash_loan(100, lambda: None))
+def execute_flash_loan(account, amount):
+    """Execute a flash loan"""
+    flash_loan_contract = Contract.from_abi('FLASH_LOAN_PROXY', FLASH_LOAN_PROXY_ADDRESS, w3.eth.account.decrypt(account).address)
+    return flash_loan_contract.functions.executeFlashLoan(amount).call()
 
-    def test_liquidate(self):
-        lender = AggressiveLender()
-        self.assertTrue(lender.liquidate("borrower", 100))
+def infiltrate_lending_platform(account, amount):
+    """Infiltrate the lending platform to create credit markets"""
+    lending_contract = Contract.from_abi('LENDING_PLATFORM', LENDING_PLATFORM_ADDRESS, w3.eth.account.decrypt(account).address)
+    return lending_contract.functions.infiltrate(amount).call()
 
-    def test_lend(self):
-        lender = AggressiveLender()
-        self.assertTrue(lender.lend(100, 0.05))
+# Define the Aggressive Lender class
+class AggressiveLender:
+    def __init__(self, account):
+        self.account = account
 
-    def test_borrow(self):
-        lender = AggressiveLender()
-        self.assertTrue(lender.borrow(100, 0.1))
+    def get_leverage(self):
+        """Get the current leverage ratio"""
+        weth_balance = get_weth_balance(self.account)
+        lending_balance = get_lending_balance(self.account)
+        return weth_balance / lending_balance
 
-if __name__ == "__main__":
-    unittest.main()
+    def flash_loan(self, amount):
+        """Execute a flash loan"""
+        return execute_flash_loan(self.account, amount)
+
+    def infiltrate(self, amount):
+        """Infiltrate the lending platform to create credit markets"""
+        return infiltrate_lending_platform(self.account, amount)
+
+# Example usage
+account = Account.create()
+aggressive_lender = AggressiveLender(account)
+print(aggressive_lender.get_leverage())
+aggressive_lender.flash_loan(100)
+aggressive_lender.infiltrate(100)
