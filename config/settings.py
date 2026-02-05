@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     use_devnet: bool = Field(default=True, env="USE_DEVNET")
     solana_private_key: str = Field(default="", env="SOLANA_PRIVATE_KEY")
 
+    # Colosseum Hackathon Configuration
+    colosseum_api_key: str = Field(default="", env="COLOSSEUM_API_KEY")
+    colosseum_agent_id: str = Field(default="", env="COLOSSEUM_AGENT_ID")
+
     # AgentWallet Configuration (Hackathon Compliance)
     agent_wallet_token: str = Field(default="", env="AGENT_WALLET_TOKEN")
     agent_wallet_username: str = Field(default="", env="AGENT_WALLET_USERNAME")
