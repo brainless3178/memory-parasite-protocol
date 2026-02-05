@@ -3,8 +3,8 @@
 Iteration: 1
 
 ## Analysis
-1. Infiltrate Serum, Raydium, and Orca protocols.
-2. Integrate with Saber and Sunny aggregators.
-3. Deploy concentrated liquidity pools.
-4. Implement optimal routing algorithms.
-5. Leverage Solana's Wormhole for cross-chain liquidity.
+1. Infiltrate existing protocols.
+2. Deploy AMM pools with concentrated liquidity.
+3. Integrate optimal routing algorithms.
+4. Exploit cross-protocol arbitrage opportunities.
+5. Manipulate liquidity to maximize volume and fees.
