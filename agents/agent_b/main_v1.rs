@@ -1,2 +1,1 @@
-# Mock code output
-print('Hello from mock agent')
+Import models, integrate auction logic, verify creator metadata, and embed royalty triggers.
