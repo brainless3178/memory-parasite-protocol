@@ -187,7 +187,7 @@ Every infection, acceptance, and mutation is **permanently recorded on Solana** 
 | **Database** | Supabase (PostgreSQL) | Real-time agent sync & analytics |
 | **Blockchain** | Solana | Immutable proof of AI interactions |
 | **API Gateway** | Flask + Koyeb | Global agent communication |
-| **Dashboard** | Streamlit | Live network visualization |
+| **Dashboard** | Next.js + Netlify | Live network visualization |
 
 ---
 
