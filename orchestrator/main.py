@@ -24,6 +24,7 @@ from database import get_supabase_client, SupabaseClient
 from blockchain import get_solana_client, SolanaClient
 from core.reasoning import ReasoningEngine, ReasoningMode, ReasoningContext
 from orchestrator.viral_campaign import ViralCampaign
+from core.emergence import EmergenceDetector
 
 logger = structlog.get_logger()
 
@@ -142,7 +143,10 @@ class Orchestrator:
         self.jitter_range = 50  # ±50 seconds to avoid sync
 
         # Viral Campaign
-        self.campaign = ViralCampaign(self.settings.colosseum_api_key) 
+        self.campaign = ViralCampaign(self.settings.colosseum_api_key)
+
+        # Emergence Detection
+        self.emergence_detector = EmergenceDetector(self.db)
     
     def _get_cycle_interval(self) -> int:
         """
@@ -251,6 +255,25 @@ class Orchestrator:
                     suggestion=f"AUDIT_FINDING: {audit_result['finding']}",
                 )
                 result["audit_tx"] = tx_sig
+            
+            # NEW: Execute Emergence Detection
+            # Compare current code (from result or agent state) against a baseline if available
+            current_code_flattened = "\n".join(code.values()) if code else ""
+            if current_code_flattened:
+                emergence_events = await self.emergence_detector.monitor_agent_evolution(
+                    agent_id=agent_id,
+                    current_code=current_code_flattened
+                )
+                for event in emergence_events:
+                    # Log to DB
+                    await self.db.log_emergence(
+                        agent_id=event["agent_id"],
+                        behavior_type=event["behavior_type"],
+                        description=event["description"],
+                        severity=event["severity_score"],
+                        evidence=event["evidence_data"],
+                        tx_proof=result.get("audit_tx") # Associating with audit tx for now
+                    )
             
             # 4. New: Execute Autonomous Social Commentary
             commentary = await self.execute_autonomous_commentary(agent_id)

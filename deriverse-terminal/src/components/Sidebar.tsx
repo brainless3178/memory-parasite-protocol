@@ -7,7 +7,8 @@ import {
     TrendingUp,
     Target,
     Activity,
-    ShieldAlert
+    ShieldAlert,
+    ShieldCheck
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { clsx, type ClassValue } from 'clsx';

@@ -111,7 +111,35 @@ const DashboardContent = () => {
         return { active_controls: [], network_status: 'active', safety_audit_log: [] };
       }
     },
-    refetchInterval: 2000,
+    refetchInterval: 5000,
+  });
+
+  // Fetch Discovered Projects
+  const { data: discovery = { total_discovered: 0, projects: [] } } = useQuery({
+    queryKey: ['discovery'],
+    queryFn: async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/colosseum/projects`);
+        return await res.json();
+      } catch (e) {
+        return { total_discovered: 0, projects: [] };
+      }
+    },
+    refetchInterval: 10000,
+  });
+
+  // Fetch Live Surveillance
+  const { data: surveillance = { status: 'offline' } } = useQuery({
+    queryKey: ['surveillance'],
+    queryFn: async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/leaderboard-surveillance`);
+        return await res.json();
+      } catch (e) {
+        return { status: 'offline' };
+      }
+    },
+    refetchInterval: 3000,
   });
 
   // Handle Safety Actions
@@ -197,11 +225,12 @@ const DashboardContent = () => {
                 </header>
 
                 {/* STATS OVERVIEW */}
-                <section className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                <section className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                   <MetricCard label="Active Specimens" value={activeSpecimens} trend="neutral" />
                   <MetricCard label="Neural Invasions" value={totalInfections} trend="neutral" />
                   <MetricCard label="Mutation Rate" value={winRate} suffix="%" trend={winRate > 50 ? 'positive' : 'negative'} />
                   <MetricCard label="Collective Dominance" value={totalInfluence} decimals={1} trend="positive" />
+                  <MetricCard label="Discovered Targets" value={discovery.total_discovered} trend="positive" />
                   <MetricCard label="Protocol Health" value={98.2} suffix="%" trend="positive" />
                 </section>
 
@@ -287,6 +316,60 @@ const DashboardContent = () => {
                         <div className="px-4 py-2 bg-elevated/50 rounded-lg border border-border text-[11px] font-bold text-text-primary">
                           NEURAL MUTATION TRACKING
                         </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* LIVE SURVEILLANCE FEED */}
+                <section className="bg-void/50 border border-border rounded-xl p-6 relative overflow-hidden shadow-inner">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="heading text-xl text-neutral flex items-center gap-3">
+                      <Terminal className="text-neutral" size={24} />
+                      Leaderboard Surveillance Feed
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-text-muted font-['IBM_Plex_Mono']">SCANNING COLOSSEUM API...</span>
+                      <div className="w-2 h-2 bg-neutral rounded-full animate-pulse" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div className="p-4 bg-surface/40 rounded-lg border border-border/50">
+                        <p className="label text-[10px] mb-2 uppercase text-neutral">Real-time Target Analysis</p>
+                        {surveillance.status === 'active_surveillance' ? (
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-center text-sm font-bold">
+                              <span className="text-text-primary">{surveillance.target}</span>
+                              <span className="text-[9px] px-1 bg-loss/20 text-loss rounded">VULNERABLE</span>
+                            </div>
+                            <p className="text-xs text-text-secondary italic">" {surveillance.finding} "</p>
+                            <div className="flex justify-between text-[9px] text-text-muted font-['IBM_Plex_Mono']">
+                              <span>DETECTED BY: {surveillance.agent_id}</span>
+                              <span className="text-profit underline cursor-pointer">
+                                {surveillance.tx ? `TX: ${surveillance.tx.slice(0, 10)}...` : 'ON-CHAIN LOGGING...'}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-text-muted animate-pulse italic">Synchronizing with hive mind intelligence...</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-surface/20 rounded-lg p-4 border border-border/30 overflow-hidden">
+                      <p className="label text-[10px] mb-3 uppercase text-text-muted">Competitive Intelligence: All Projects</p>
+                      <div className="space-y-2 max-h-[120px] overflow-y-auto scrollbar-hide">
+                        {discovery.projects.slice(0, 10).map((p: any) => (
+                          <div key={p.slug} className="flex items-center justify-between text-[11px] p-2 hover:bg-white/5 rounded transition-colors group">
+                            <span className="text-text-secondary group-hover:text-text-primary truncate max-w-[150px]">{p.name}</span>
+                            <span className="text-[9px] text-text-muted uppercase px-1 border border-border/30 rounded">{p.sort_context?.replace('_', ' ')}</span>
+                          </div>
+                        ))}
+                        {discovery.total_discovered > 10 && (
+                          <p className="text-[9px] text-center text-text-muted mt-2">+ {discovery.total_discovered - 10} more projects under surveillance</p>
+                        )}
                       </div>
                     </div>
                   </div>

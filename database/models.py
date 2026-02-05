@@ -276,6 +276,29 @@ class ForumReply(BaseModel):
             "created_at": self.timestamp.isoformat(),
         }
 
+class EmergentBehaviorRecord(BaseModel):
+    """Database record for detected emergent behavior."""
+    id: Optional[str] = Field(default_factory=uuid_v7)
+    agent_id: str
+    behavior_type: str
+    description: str
+    severity_score: int = 0
+    evidence_data: Dict[str, Any] = Field(default_factory=dict)
+    detected_at: datetime = Field(default_factory=datetime.utcnow)
+    blockchain_proof: Optional[str] = None
+
+    def to_insert_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "agent_id": self.agent_id,
+            "behavior_type": self.behavior_type,
+            "description": self.description,
+            "severity_score": self.severity_score,
+            "evidence_data": self.evidence_data,
+            "detected_at": self.detected_at.isoformat(),
+            "blockchain_proof": self.blockchain_proof
+        }
+
 
 
 class ChimeraMetrics(BaseModel):

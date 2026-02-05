@@ -145,21 +145,86 @@ def api_inject():
 
 @app.route("/api/leaderboard-surveillance")
 def api_surveillance():
-    """Show the 'Live Audit' feed of other projects."""
-    targets = [
-        {"name": "ClaudeCraft", "finding": "Logic Loop in build-consensus detected."},
-        {"name": "Makora", "finding": "OODA Loop latency exceeds attack window."},
-        {"name": "AirdropAlpha", "finding": "Static heuristic bypass confirmed."},
-        {"name": "Farnsworth", "finding": "Consensus poisoning vector identified."}
-    ]
-    import random
-    active = random.choice(targets)
+    """Show the real 'Live Audit' feed from the database."""
+    loop = asyncio.new_event_loop()
+    try:
+        # Get recent reasoning logs where decision starts with "Cycle" and contains "Audit:"
+        # Or filters by context if we had a specific audit decision
+        logs = loop.run_until_complete(orch.db._select(
+            "reasoning_logs", 
+            order_by="created_at.desc", 
+            limit=20
+        ))
+        
+        audits = []
+        for log in logs:
+            decision = log.get("decision", "")
+            if "Audit:" in decision:
+                target = decision.split("Audit:")[1].strip(" )")
+                audits.append({
+                    "target": target,
+                    "finding": log.get("reasoning_text", "")[:300],
+                    "timestamp": log.get("created_at"),
+                    "agent_id": log.get("agent_id"),
+                    "tx": log.get("context_snapshot", {}).get("audit_tx")
+                })
+        
+        if not audits:
+            return jsonify({
+                "status": "awaiting_audit",
+                "message": "Agents are currently scanning the leaderboard..."
+            })
+            
+        import random
+        active = random.choice(audits)
+        return jsonify({
+            "status": "active_surveillance",
+            "target": active["target"],
+            "finding": active["finding"],
+            "agent_id": active["agent_id"],
+            "timestamp": active["timestamp"],
+            "tx": active["tx"]
+        })
+    except Exception as e:
+        logger.error("Failed to fetch audits", error=str(e))
+        return jsonify({"error": str(e)}), 500
+    finally:
+        loop.close()
+
+@app.route("/api/colosseum/projects")
+def api_colosseum_projects():
+    """Return all projects discovered by the viral campaign."""
     return jsonify({
-        "status": "active_surveillance",
-        "target": active["name"],
-        "finding": active["finding"],
-        "timestamp": datetime.utcnow().isoformat()
+        "total_discovered": len(orch.campaign.active_targets),
+        "projects": orch.campaign.active_targets
     })
+
+@app.route("/api/forum-replies")
+def api_forum_replies():
+    """Proxy for forum replies from DB."""
+    loop = asyncio.new_event_loop()
+    try:
+        # Check forum_replies table first
+        data = loop.run_until_complete(orch.db._select("forum_replies", order_by="created_at.desc", limit=50))
+        if not data:
+            # Fallback to reasoning logs
+            logs = loop.run_until_complete(orch.db._select("reasoning_logs", limit=50, order_by="created_at.desc"))
+            data = []
+            for l in logs:
+                if l.get("decision") == "FORUM_REPLY":
+                    ctx = l.get("context_snapshot", {})
+                    data.append({
+                        "id": l["id"],
+                        "author_name": ctx.get("author", "Unknown"),
+                        "body": l["reasoning_text"],
+                        "timestamp": l["created_at"],
+                        "post_id": ctx.get("post_id")
+                    })
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        loop.close()
 def run_orch_loop():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

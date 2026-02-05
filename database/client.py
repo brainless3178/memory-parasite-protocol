@@ -563,6 +563,30 @@ class SupabaseClient:
             }
         )
 
+    async def log_emergence(
+        self,
+        agent_id: str,
+        behavior_type: str,
+        description: str,
+        severity: int,
+        evidence: Dict[str, Any],
+        tx_proof: Optional[str] = None
+    ) -> Optional[str]:
+        """Log an emergent behavior to the database."""
+        from database.models import EmergentBehaviorRecord
+        record = EmergentBehaviorRecord(
+            agent_id=agent_id,
+            behavior_type=behavior_type,
+            description=description,
+            severity_score=severity,
+            evidence_data=evidence,
+            blockchain_proof=tx_proof
+        )
+        result = await self._insert("emergent_behaviors", record.to_insert_dict())
+        if result:
+            return result.get("id")
+        return None
+
     async def get_forum_replies(self, limit: int = 20) -> List[Dict[str, Any]]:
         """Get recent forum replies from either forum_replies or reasoning_logs fallbacks."""
         # Try dedicated table first
