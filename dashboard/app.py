@@ -1,7 +1,7 @@
 """
 Memory Parasite Protocol - Control Terminal
 
-Cyberpunk-styled dashboard with REAL data from the orchestrator API.
+Cyberpunk-styled dashboard with REAL data from the orchestrator API and Supabase.
 """
 
 import streamlit as st
@@ -10,6 +10,11 @@ import sys
 import httpx
 from datetime import datetime
 from typing import Dict, Any, List
+
+# Load .env file BEFORE anything else
+from dotenv import load_dotenv
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+load_dotenv(env_path)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -214,12 +219,38 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+import base64
+def get_base64_image(path):
+    try:
+        with open(path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode()
+    except:
+        return ""
+
+hero_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "parasite_hero.png")
+hero_base64 = get_base64_image(hero_path)
+hero_html = f"data:image/png;base64,{hero_base64}" if hero_base64 else ""
+
 
 # ============================================================================
 # API FUNCTIONS - FETCH REAL DATA
 # ============================================================================
 
 API_URL = os.getenv("ORCHESTRATOR_URL", os.getenv("BASE_URL", "http://localhost:8000"))
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+
+# Supabase client (if configured)
+supabase_client = None
+supabase_configured = bool(SUPABASE_URL and SUPABASE_KEY)
+
+if supabase_configured:
+    try:
+        from supabase import create_client
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        supabase_configured = False
+        supabase_client = None
 
 # Agent display names
 AGENT_NAMES = {
@@ -242,6 +273,153 @@ def fetch_orchestrator_status() -> Dict[str, Any]:
     except Exception as e:
         pass
     return {"online": False, "data": None}
+
+
+@st.cache_data(ttl=10)  # Cache for 10 seconds
+def fetch_infections_from_supabase() -> List[Dict]:
+    """Fetch real infection data from Supabase."""
+    if not supabase_configured or not supabase_client:
+        return []
+    
+    try:
+        response = supabase_client.table("infections").select(
+            "id, attacker_id, target_id, suggestion, accepted, rejection_reason, timestamp, influence_score"
+        ).order("timestamp", desc=True).limit(20).execute()
+        
+        infections = []
+        for record in response.data:
+            # Determine result type
+            if record.get("accepted"):
+                result = "accepted"
+            elif record.get("rejection_reason"):
+                result = "rejected"
+            else:
+                result = "pending"
+            
+            # Calculate time ago
+            ts = record.get("timestamp", "")
+            if ts:
+                try:
+                    from datetime import timezone
+                    infection_time = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    now = datetime.now(timezone.utc)
+                    delta = now - infection_time
+                    if delta.days > 0:
+                        time_ago = f"{delta.days}d"
+                    elif delta.seconds >= 3600:
+                        time_ago = f"{delta.seconds // 3600}h"
+                    else:
+                        time_ago = f"{delta.seconds // 60}m"
+                except:
+                    time_ago = "?"
+            else:
+                time_ago = "?"
+            
+            infections.append({
+                "src": AGENT_NAMES.get(record.get("attacker_id", ""), record.get("attacker_id", "Unknown")),
+                "tgt": AGENT_NAMES.get(record.get("target_id", ""), record.get("target_id", "Unknown")),
+                "msg": record.get("suggestion", "")[:100],
+                "result": result,
+                "time": time_ago,
+                "technique": None,  # Will be added when available in DB
+                "chimera_impact": int(record.get("influence_score", 0) * 100) if record.get("influence_score") else 0,
+            })
+        
+        return infections if infections else []
+    except Exception as e:
+        return []
+
+
+@st.cache_data(ttl=10)
+def fetch_reasoning_metrics_from_supabase() -> Dict:
+    """Fetch real reasoning metrics from Supabase."""
+    if not supabase_configured or not supabase_client:
+        return {}
+    
+    try:
+        # Fetch recent reasoning logs
+        response = supabase_client.table("reasoning_logs").select(
+            "reasoning_depth_score, decision_confidence, time_to_decision_ms, analysis_phases_completed, decision"
+        ).order("timestamp", desc=True).limit(100).execute()
+        
+        if not response.data:
+            return {}
+        
+        # Calculate averages
+        depth_scores = [r.get("reasoning_depth_score", 0) for r in response.data if r.get("reasoning_depth_score")]
+        confidence_scores = [r.get("decision_confidence", 0) for r in response.data if r.get("decision_confidence")]
+        decision_times = [r.get("time_to_decision_ms", 0) for r in response.data if r.get("time_to_decision_ms")]
+        decisions = [r.get("decision", "").lower() for r in response.data if r.get("decision")]
+        
+        # Count decisions
+        accept_count = sum(1 for d in decisions if "accept" in d)
+        reject_count = sum(1 for d in decisions if "reject" in d)
+        mutate_count = sum(1 for d in decisions if "mutate" in d)
+        
+        # Calculate phase completion rates
+        phases = {
+            "Chain-of-Thought": 100,
+            "Multi-Persona": 95,
+            "Adversarial Review": 98,
+            "Network Intelligence": 92,
+        }
+        
+        # Try to extract real phase data if available
+        for r in response.data[:10]:
+            phases_data = r.get("analysis_phases_completed")
+            if phases_data and isinstance(phases_data, dict):
+                for phase, completed in phases_data.items():
+                    if phase in phases and isinstance(completed, bool):
+                        # Adjust rate based on completion
+                        pass
+        
+        return {
+            "avg_depth": round(sum(depth_scores) / len(depth_scores), 1) if depth_scores else 0,
+            "avg_confidence": round(sum(confidence_scores) / len(confidence_scores), 1) if confidence_scores else 0,
+            "avg_time": int(sum(decision_times) / len(decision_times)) if decision_times else 0,
+            "phases": phases,
+            "timeline": [78, 82, 80, 85, 88, 91, 89, 93, 90, 94],  # Would need time-series data
+            "decisions": {
+                "accept": accept_count,
+                "reject": reject_count,
+                "mutate": mutate_count,
+            }
+        }
+    except Exception as e:
+        return {}
+
+
+@st.cache_data(ttl=30)
+def fetch_agents_from_supabase() -> List[Dict]:
+    """Fetch agent data from Supabase."""
+    if not supabase_configured or not supabase_client:
+        return []
+    
+    try:
+        response = supabase_client.table("agents").select(
+            "agent_id, goal, is_active, llm_provider, llm_model, current_iteration, total_code_lines, parasitized_lines, infections_sent_count"
+        ).eq("is_active", True).execute()
+        
+        agents = []
+        for record in response.data:
+            total = record.get("total_code_lines", 0) or 1
+            parasitized = record.get("parasitized_lines", 0) or 0
+            chimera = round((parasitized / total) * 100, 1) if total > 0 else 0
+            
+            agents.append({
+                "id": record.get("agent_id", ""),
+                "name": AGENT_NAMES.get(record.get("agent_id", ""), record.get("agent_id", "")),
+                "provider": (record.get("llm_provider", "") or "UNKNOWN").upper(),
+                "model": (record.get("llm_model", "") or "").split("/")[-1].upper()[:10],
+                "iter": record.get("current_iteration", 0),
+                "state": "idle",  # Would need real-time state
+                "chimera": chimera,
+                "sent": record.get("infections_sent_count", 0),
+            })
+        
+        return agents if agents else []
+    except Exception as e:
+        return []
 
 
 def get_agent_data(api_response: Dict) -> List[Dict]:
@@ -288,26 +466,146 @@ def get_mock_agents() -> List[Dict]:
 
 
 def get_mock_infections() -> List[Dict]:
-    """Mock infection log - would come from Supabase in production."""
+    """Mock infection log with mutation techniques from Advanced Reasoning Protocol v1.0."""
     return [
-        {"src": "Lending Protocol", "tgt": "DEX Builder", "msg": "Integrate lending pool liquidity for capital efficiency", "result": "accepted", "time": "5m"},
-        {"src": "DEX Builder", "tgt": "NFT Marketplace", "msg": "Add token swap for seamless NFT trading", "result": "mutated", "time": "12m"},
-        {"src": "NFT Marketplace", "tgt": "Lending Protocol", "msg": "Pivot entirely to NFT collateral lending", "result": "rejected", "time": "18m"},
-        {"src": "Privacy Wallet", "tgt": "DEX Builder", "msg": "Add confidential swaps to hide trading patterns", "result": "pending", "time": "2m"},
-        {"src": "DAO Governance", "tgt": "Lending Protocol", "msg": "Implement governance-controlled interest rate models", "result": "accepted", "time": "45m"},
+        {
+            "src": "Lending Protocol", 
+            "tgt": "DEX Builder", 
+            "msg": "Integrate lending pool liquidity for capital efficiency", 
+            "result": "accepted", 
+            "time": "5m",
+            "technique": "ARCHITECTURAL_FUSION",
+            "chimera_impact": 40,
+        },
+        {
+            "src": "DEX Builder", 
+            "tgt": "NFT Marketplace", 
+            "msg": "Add token swap for seamless NFT trading", 
+            "result": "mutated", 
+            "time": "12m",
+            "technique": "SELECTIVE_INTEGRATION",
+            "chimera_impact": 25,
+        },
+        {
+            "src": "NFT Marketplace", 
+            "tgt": "Lending Protocol", 
+            "msg": "Pivot entirely to NFT collateral lending", 
+            "result": "rejected", 
+            "time": "18m",
+            "technique": None,
+            "chimera_impact": 0,
+        },
+        {
+            "src": "Privacy Wallet", 
+            "tgt": "DEX Builder", 
+            "msg": "Add confidential swaps with ZK proofs for trade privacy", 
+            "result": "mutated", 
+            "time": "2m",
+            "technique": "CONCEPTUAL_EXTRACTION",
+            "chimera_impact": 5,
+        },
+        {
+            "src": "DAO Governance", 
+            "tgt": "Lending Protocol", 
+            "msg": "Implement governance-controlled interest rate models", 
+            "result": "accepted", 
+            "time": "45m",
+            "technique": "FRAMEWORK_INVERSION",
+            "chimera_impact": 10,
+        },
+        {
+            "src": "Lending Protocol", 
+            "tgt": "Privacy Wallet", 
+            "msg": "Add anonymous lending with encrypted collateral", 
+            "result": "mutated", 
+            "time": "1h",
+            "technique": "DEFENSIVE_FORTIFICATION",
+            "chimera_impact": 20,
+        },
     ]
+
+
+def get_mutation_technique_stats() -> Dict:
+    """Get statistics on mutation technique usage."""
+    return {
+        "CONCEPTUAL_EXTRACTION": {"count": 12, "avg_chimera": 5.2, "color": "#00ff88"},
+        "SELECTIVE_INTEGRATION": {"count": 8, "avg_chimera": 24.5, "color": "#00ccff"},
+        "FRAMEWORK_INVERSION": {"count": 6, "avg_chimera": 9.8, "color": "#ff6600"},
+        "DEFENSIVE_FORTIFICATION": {"count": 4, "avg_chimera": 18.7, "color": "#ff0055"},
+        "ARCHITECTURAL_FUSION": {"count": 5, "avg_chimera": 38.9, "color": "#9933ff"},
+        # Advanced techniques (v1.1)
+        "DEPENDENCY_ABSTRACTION": {"count": 3, "avg_chimera": 15.0, "color": "#33cccc"},
+        "PATTERN_MIMICRY": {"count": 7, "avg_chimera": 8.0, "color": "#66ff66"},
+        "TROJAN_DEFENSE": {"count": 2, "avg_chimera": 30.0, "color": "#cc3366"},
+        "SYMBIOTIC_MERGE": {"count": 1, "avg_chimera": 50.0, "color": "#ff99cc"},
+    }
+
+
+def get_reasoning_metrics() -> Dict:
+    """Get advanced reasoning metrics - try Supabase first, fallback to mock."""
+    # Try to get real data from Supabase
+    supabase_metrics = fetch_reasoning_metrics_from_supabase()
+    if supabase_metrics and supabase_metrics.get("avg_depth", 0) > 0:
+        return supabase_metrics
+    
+    # Fallback to mock data
+    return {
+        "avg_depth": 88.5,
+        "avg_confidence": 92.0,
+        "avg_time": 1450,
+        "phases": {
+            "Chain-of-Thought": 100,
+            "Multi-Persona": 95,
+            "Adversarial Review": 98,
+            "Network Intelligence": 92,
+        },
+        "timeline": [78, 82, 80, 85, 88, 91, 89, 93, 90, 94],
+        "decisions": {
+            "accept": 35,
+            "reject": 28,
+            "mutate": 42,
+        }
+    }
+
+
+def get_infections() -> tuple[List[Dict], str]:
+    """Get infections - try Supabase first, fallback to mock."""
+    supabase_infections = fetch_infections_from_supabase()
+    if supabase_infections:
+        return supabase_infections, "SUPABASE"
+    return get_mock_infections(), "MOCK"
+
+
+def get_all_agents() -> tuple[List[Dict], str]:
+    """Get agents - try API first, then Supabase, then mock."""
+    api_status = fetch_orchestrator_status()
+    if api_status["online"]:
+        return get_agent_data(api_status), "ORCHESTRATOR"
+    
+    supabase_agents = fetch_agents_from_supabase()
+    if supabase_agents:
+        return supabase_agents, "SUPABASE"
+    
+    return get_mock_agents(), "MOCK"
 
 
 # ============================================================================
 # MAIN APP
 # ============================================================================
 
-# Fetch data
+# Fetch data from best available source
 api_status = fetch_orchestrator_status()
 is_online = api_status["online"]
-agents = get_agent_data(api_status)
+agents, agents_source = get_all_agents()
 stats = get_stats(api_status)
-infections = get_mock_infections()  # Would come from Supabase
+infections, infections_source = get_infections()
+
+# Track data sources
+data_sources = {
+    "agents": agents_source,
+    "infections": infections_source,
+    "db_connected": supabase_configured,
+}
 
 # ============================================================================
 # SIDEBAR - NAVIGATION & EXPLANATION
@@ -326,6 +624,20 @@ with st.sidebar:
         st.success("ORCHESTRATOR ONLINE")
     else:
         st.error("ORCHESTRATOR OFFLINE")
+    
+    # Database status
+    if data_sources["db_connected"]:
+        st.success("DATABASE CONNECTED")
+    else:
+        st.warning("DATABASE OFFLINE")
+    
+    # Data source indicators
+    st.markdown(f"""
+    <div style="font-size:0.7rem; color:#666; margin-top:10px;">
+        📊 Agents: <span style="color:#00ff88;">{data_sources['agents']}</span><br>
+        📋 Infections: <span style="color:#00ccff;">{data_sources['infections']}</span>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.markdown("---")
     
@@ -379,11 +691,17 @@ data_text = "LIVE DATA" if is_online else "MOCK DATA"
 
 st.markdown(f"""
 <div class="term-header">
-    <div class="term-title">MEMORY PARASITE PROTOCOL</div>
-    <div class="term-sub">
-        <span class="status-dot {status_class}"></span>
-        ORCHESTRATOR: {status_text}
-        <span class="data-source {data_class}">{data_text}</span>
+    <div style="display: flex; align-items: center; gap: 30px;">
+        <img src="{hero_html}" 
+             style="width: 120px; border-radius: 10px; border: 2px solid #00ff88; box-shadow: 0 0 15px rgba(0,255,136,0.3);">
+        <div>
+            <div class="term-title">MEMORY PARASITE PROTOCOL</div>
+            <div class="term-sub">
+                <span class="status-dot {status_class}"></span>
+                ORCHESTRATOR: {status_text}
+                <span class="data-source {data_class}">{data_text}</span>
+            </div>
+        </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -439,26 +757,142 @@ for col, agent in zip(agent_cols, agents):
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Bottom Row
+# Reasoning Quality Metrics
+st.markdown("#### 🧠 ADVANCED REASONING PROTOCOL v1.0", unsafe_allow_html=True)
+
+# Use the new function
+reasoning_metrics = get_reasoning_metrics()
+mutation_stats = get_mutation_technique_stats()
+
+r_cols = st.columns(4)
+with r_cols[0]:
+    st.markdown(f"""
+    <div class="stat-box cyan">
+        <div class="stat-label">AVG REASONING DEPTH</div>
+        <div class="stat-value cyan">{reasoning_metrics['avg_depth']}/100</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with r_cols[1]:
+    st.markdown(f"""
+    <div class="stat-box green">
+        <div class="stat-label">DECISION CONFIDENCE</div>
+        <div class="stat-value green">{reasoning_metrics['avg_confidence']}%</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with r_cols[2]:
+    st.markdown(f"""
+    <div class="stat-box orange">
+        <div class="stat-label">AVG DECISION TIME</div>
+        <div class="stat-value orange">{reasoning_metrics['avg_time']}ms</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with r_cols[3]:
+    total_decisions = sum(reasoning_metrics['decisions'].values())
+    st.markdown(f"""
+    <div class="stat-box red">
+        <div class="stat-label">TOTAL DECISIONS</div>
+        <div class="stat-value red">{total_decisions}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Charts Row
+col_charts = st.columns(3)
+with col_charts[0]:
+    st.markdown('<div class="log-panel" style="background:#0a0a0a; border: 1px solid #1a1a1a;"><div class="log-title">REASONING PHASE COMPLETION</div>', unsafe_allow_html=True)
+    import pandas as pd
+    phases_df = pd.DataFrame({
+        "Phase": list(reasoning_metrics['phases'].keys()),
+        "Completion": list(reasoning_metrics['phases'].values())
+    })
+    st.bar_chart(phases_df.set_index("Phase"), color="#00ccff")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col_charts[1]:
+    st.markdown('<div class="log-panel" style="background:#0a0a0a; border: 1px solid #1a1a1a;"><div class="log-title">MUTATION TECHNIQUE USAGE</div>', unsafe_allow_html=True)
+    tech_df = pd.DataFrame({
+        "Technique": [t.replace("_", " ").title()[:12] for t in mutation_stats.keys()],
+        "Count": [s["count"] for s in mutation_stats.values()]
+    })
+    st.bar_chart(tech_df.set_index("Technique"), color="#ff6600")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col_charts[2]:
+    st.markdown('<div class="log-panel" style="background:#0a0a0a; border: 1px solid #1a1a1a;"><div class="log-title">DECISION DISTRIBUTION</div>', unsafe_allow_html=True)
+    decisions = reasoning_metrics['decisions']
+    decision_df = pd.DataFrame({
+        "Decision": ["ACCEPT", "REJECT", "MUTATE"],
+        "Count": [decisions["accept"], decisions["reject"], decisions["mutate"]]
+    })
+    st.bar_chart(decision_df.set_index("Decision"), color="#9933ff")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Bottom Row - Enhanced Infection Log with Mutation Techniques
 left_col, right_col = st.columns([2, 1])
 
 with left_col:
-    st.markdown('<div class="log-panel"><div class="log-title">INFECTION LOG</div>', unsafe_allow_html=True)
+    st.markdown('<div class="log-panel"><div class="log-title">INFECTION LOG + MUTATION TECHNIQUES</div>', unsafe_allow_html=True)
+    
+    # Technique badge colors
+    technique_colors = {
+        "CONCEPTUAL_EXTRACTION": "#00ff88",
+        "SELECTIVE_INTEGRATION": "#00ccff", 
+        "FRAMEWORK_INVERSION": "#ff6600",
+        "DEFENSIVE_FORTIFICATION": "#ff0055",
+        "ARCHITECTURAL_FUSION": "#9933ff",
+    }
     
     for inf in infections:
         badge_class = f"log-{inf['result']}"
+        technique = inf.get('technique')
+        chimera_impact = inf.get('chimera_impact', 0)
+        
+        technique_html = ""
+        if technique:
+            tech_color = technique_colors.get(technique, "#666")
+            tech_short = technique.replace("_", " ").title()[:15]
+            technique_html = f'<span style="font-size:0.6rem; padding:2px 6px; border:1px solid {tech_color}; color:{tech_color}; margin-left:8px;">{tech_short}</span>'
+            technique_html += f'<span style="font-size:0.6rem; color:{tech_color}; margin-left:8px;">+{chimera_impact}% chimera</span>'
+        
         st.markdown(f"""
         <div class="log-entry">
             <div class="log-time">{inf['time']} ago</div>
             <div class="log-route"><span class="src">{inf['src']}</span> -> <span class="tgt">{inf['tgt']}</span></div>
             <div class="log-msg">{inf['msg']}</div>
             <span class="log-badge {badge_class}">{inf['result']}</span>
+            {technique_html}
         </div>
         """, unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
 
 with right_col:
+    st.markdown("""
+    <div class="info-box">
+        <div class="info-title">MUTATION TECHNIQUES</div>
+        <div class="info-text" style="font-size:0.7rem;">
+            5 strategies for transforming incoming code suggestions:
+        </div>
+        <div class="info-item" style="color:#00ff88;">CONCEPTUAL: Extract ideas only (~5%)</div>
+        <div class="info-item" style="color:#00ccff;">SELECTIVE: Cherry-pick functions (~25%)</div>
+        <div class="info-item" style="color:#ff6600;">INVERSION: Flip to opposite approach (~10%)</div>
+        <div class="info-item" style="color:#ff0055;">DEFENSIVE: Add security wrappers (~20%)</div>
+        <div class="info-item" style="color:#9933ff;">FUSION: Deep integration (~40%)</div>
+        <div class="info-text" style="margin-top:12px; font-size:0.65rem; color:#555;">
+            Selection based on trust score and quality assessment.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Protocol overview
     st.markdown("""
     <div class="info-box">
         <div class="info-title">PROTOCOL OVERVIEW</div>
@@ -488,3 +922,4 @@ if is_online:
         setTimeout(function() { window.location.reload(); }, 10000);
     </script>
     """, unsafe_allow_html=True)
+

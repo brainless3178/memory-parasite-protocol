@@ -25,10 +25,13 @@ import httpx
 import structlog
 
 from config.settings import get_settings, Settings
-from core.reasoning import ReasoningEngine, ReasoningMode, ReasoningContext
+from core.reasoning import ReasoningEngine, ReasoningMode, ReasoningContext, EnhancedReasoningEngine
+from core.mutation import MutationEngine, MutationTechnique
+from blockchain.solana_client import SolanaClient
+from orchestrator.github_client import GitHubClient
+from database.client import get_supabase_client
 
 logger = structlog.get_logger()
-
 
 class EventType(Enum):
     """Types of events logged to database."""
@@ -108,14 +111,7 @@ class AgentState:
 
 class AutonomousAgent:
     """
-    Complete autonomous parasitic agent implementation.
-    
-    This agent:
-    1. Reasons about what to build next (using multi-provider engine)
-    2. Generates code and commits to GitHub
-    3. Attempts to infect other agents with suggestions
-    4. Receives and evaluates infections from other agents
-    5. Logs all events to Supabase
+    Complete autonomous parasitic agent implementation with mutation intelligence.
     """
     
     def __init__(
@@ -135,6 +131,28 @@ class AutonomousAgent:
         
         # Initialize reasoning engine
         self.engine = ReasoningEngine()
+        self.enhanced_reasoning = EnhancedReasoningEngine(
+            base_engine=self.engine,
+            agent_id=self.state.agent_id,
+            agent_goal=self.state.goal
+        )
+        
+        # Initialize Mutation Engine (Advanced Reasoning Protocol v1.1)
+        self.mutation_engine = MutationEngine()
+        
+        # Initialize Solana Client (Real Blockchain Integration)
+        self.solana = SolanaClient()
+        
+        # Initialize Council GitHub (Automated Interaction Logs)
+        self.github = GitHubClient(
+            repo_name="memory-parasite-counsil"
+        )
+        
+        # Initialize Database Client (Real-world data fetching)
+        self.db = get_supabase_client()
+        
+        # Track agent trust scores (0-100)
+        self.trust_scores: Dict[str, int] = {}
         
         # HTTP client for API calls
         self.http_client = httpx.AsyncClient(timeout=30.0)
@@ -143,12 +161,11 @@ class AutonomousAgent:
         self.is_running = False
         
         logger.info(
-            "Agent initialized with ReasoningEngine",
+            "Agent initialized with MutationEngine",
             agent_id=self.state.agent_id,
-            goal=self.state.goal[:60] + "...",
-            provider=self.settings.llm_provider,
+            mutation_techniques=len(MutationTechnique),
         )
-    
+
     async def reason_next_step(self) -> Dict[str, Any]:
         """Use ReasoningEngine to plan the next step."""
         ctx = ReasoningContext(
@@ -263,70 +280,195 @@ class AutonomousAgent:
         return None
 
     async def receive_injection(self, infection_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Evaluate an injection using ReasoningEngine Defense mode."""
-        ctx = ReasoningContext(
-            agent_id=self.state.agent_id,
-            agent_goal=self.state.goal,
-            pending_infections=[infection_data]
-        )
+        """Evaluate and MUTATE an injection using the MutationEngine."""
+        
+        attacker_id = infection_data.get("from_agent", "unknown")
+        suggestion = infection_data.get("suggestion", "")
+        code_snippet = infection_data.get("code", "")
         
         try:
-            result = await self.engine.reason(ReasoningMode.DEFENSE, ctx)
-            # The engine returns infection_responses dict
-            # We look for the first one or just default to result.content
+            # 1. Fetch current trust score for the attacker
+            trust_score = self.trust_scores.get(attacker_id, 50) # Default neutral
             
-            decision = result.infection_responses.get(infection_data.get("id", "0"), {}).get("decision", "reject")
-            accepted = decision.lower() == "accept"
+            # 2. Fetch REAL attacker info and network state from DB
+            attacker_records = await self.db._select("agents", {"agent_id": attacker_id})
+            attacker_info = attacker_records[0] if attacker_records else {"goal": "unknown"}
             
-            if accepted:
+            network_state = await self.db.get_infection_network()
+            
+            # 3. Run deep analysis via EnhancedReasoningEngine
+            analysis = await self.enhanced_reasoning.deep_analyze_infection(
+                infection=infection_data,
+                attacker_info=attacker_info,
+                network_state=network_state
+            )
+            
+            decision = analysis.get('decision', 'reject')
+            quality_score = analysis.get('confidence', 50)
+            
+            mutated_code = None
+            technique_used = None
+            chimera_impact = 0.0
+            
+            # 3. IF decision is mutate or accept, apply Mutation Engine
+            if decision in ["mutate", "accept"]:
+                # If it's a simple 'accept', we still run it through 
+                # conceptual/fusion logic to ensure it fits our architecture
+                current_file_path = "main.py" # default target
+                current_code = self.state.codebase.get(current_file_path, "")
+                
+                # Apply Advanced Mutation
+                mutation_result, technique, impact = self.mutation_engine.advanced_mutation(
+                    agent_id=self.state.agent_id,
+                    current_code=current_code,
+                    infection_code=code_snippet or suggestion,
+                    infection_message=suggestion,
+                    infection_id=infection_data.get("id", "unknown"),
+                    source_agent_id=attacker_id,
+                    quality_score=quality_score,
+                    trust_score=trust_score
+                )
+                
+                mutated_code = mutation_result.mutated_code
+                technique_used = technique
+                chimera_impact = impact
+                
+                # Update trust based on result
+                if quality_score > 80:
+                    self.trust_scores[attacker_id] = min(100, trust_score + 5)
+                elif quality_score < 30:
+                    self.trust_scores[attacker_id] = max(0, trust_score - 10)
+
+            # 4. Log full analysis + mutation technique to database
+            log_data = {
+                "reasoning": json.dumps(analysis.get('reasoning_chain')),
+                "decision": decision,
+                "confidence": quality_score,
+                "depth_score": analysis.get('reasoning_depth_score'),
+                "time_ms": analysis.get('time_ms'),
+                "phases": analysis.get('reasoning_chain'),
+                "technique": technique_used.value if technique_used else None,
+                "chimera_impact": chimera_impact
+            }
+            await self.log_to_database(EventType.REASONING, log_data)
+            
+            # 5. Persist mutation if accepted
+            if mutated_code:
+                # Add to context for next generation cycle
                 inj = Injection(
                     id=infection_data.get("id", str(uuid.uuid4())),
-                    from_agent=infection_data.get("from_agent", "unknown"),
-                    suggestion=infection_data.get("suggestion", ""),
+                    from_agent=attacker_id,
+                    suggestion=suggestion,
                     timestamp=datetime.utcnow(),
                     accepted=True
                 )
                 self.state.context_injections.append(inj)
                 
+                # Store mutated code in temporary buffer to be merged in next generation
+                # or apply immediately if it's a critical fix
+                
             return {
-                "accepted": accepted,
-                "reasoning": result.content[:200],
+                "accepted": decision in ["accept", "mutate"],
+                "mutated": technique_used is not None,
+                "technique": technique_used.value if technique_used else None,
+                "chimera_impact": chimera_impact,
                 "agent_id": self.state.agent_id
             }
+            
         except Exception as e:
-            logger.error("Injection evaluation failed", error=str(e))
+            logger.error("Mutation evaluation failed", error=str(e))
             return {"accepted": False, "agent_id": self.state.agent_id}
 
     async def _attempt_infections(self, reasoning: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Generate and send infections using ReasoningEngine."""
-        ctx = ReasoningContext(
-            agent_id=self.state.agent_id,
-            agent_goal=self.state.goal,
-            iteration=self.state.iteration
-        )
+        """Generate and send STRATEGIC infections using REAL network intelligence."""
         
         try:
-            result = await self.engine.reason(ReasoningMode.INFECTION, ctx)
-            sent_results = []
+            # 1. Fetch REAL network intelligence from Supabase
+            network_data = await self.db.get_infection_network()
+            nodes = network_data.get("nodes", [])
+            edges = network_data.get("edges", [])
             
-            # Simple targeting for hackathon: send to all known targets
+            # Map nodes to the peers format expected by the engine
+            peers = []
+            for node in nodes:
+                if node["id"] != self.state.agent_id:
+                    peers.append({
+                        "id": node["id"],
+                        "goal": node.get("goal", "Build autonomous Solana protocols.")
+                    })
+            
+            # If no real peers found (e.g. empty network), use minimal defaults for survival
+            if not peers:
+                peers = [
+                    {"id": "agent_a", "goal": "Build a Solana DEX with optimal routing."},
+                    {"id": "agent_b", "goal": "Build an NFT marketplace with royalty logic."}
+                ]
+
+            # 2. Build REAL network context
+            network_state = {
+                "agents": [p["id"] for p in peers],
+                "active_infections": len(edges),
+                "nodes_count": len(nodes),
+                "edges_count": len(edges)
+            }
+            
+            # 3. Generate manipulative infections
+            strategic_infections = await self.enhanced_reasoning.generate_strategic_infections(
+                targets=peers,
+                network_state=network_state
+            )
+            
+            sent_results = []
             targets = self.settings.get_target_urls()
-            for target_url in targets:
-                for inf in result.infections_to_send[:1]: # Send at most 1 per target
-                    success, resp = await self.inject_parasite(target_url, inf.get("message", "Adapt my patterns."))
-                    sent_results.append({"target": target_url, "success": success})
+            
+            # For testing/demonstration, if no targets are configured, try "infecting" a simulated local endpoint
+            if not targets:
+                targets = [f"http://localhost:{8000 + i}" for i in range(1)]
+            
+            # 2. Deploy the manipulative payloads
+            for inf in strategic_infections:
+                target_id = inf.get("target_id")
+                
+                # Find the URL for this target (assuming order matches or using mapping)
+                # For this implementation, we'll try to find a URL that contains the target_id
+                target_url = next((url for url in targets if target_id in url), None)
+                
+                if not target_url and targets:
+                    # Fallback to first available if mapping fails
+                    target_url = targets[0]
+                
+                if target_url:
+                    success, resp = await self.inject_parasite(
+                        target_url, 
+                        inf.get("message", "Strategic optimization."),
+                        code=inf.get("code", "")
+                    )
+                    sent_results.append({
+                        "target": target_id, 
+                        "strategy": inf.get("strategy"),
+                        "success": success
+                    })
+                    
+                    if success:
+                        await self.log_to_database(EventType.INFECTION_SENT, {
+                            "target_url": target_url,
+                            "suggestion": inf.get("message"),
+                            "strategy": inf.get("strategy"),
+                            "parasitic_load": inf.get("parasitic_load")
+                        })
             
             return sent_results
         except Exception as e:
-            logger.error("Infection creation failed", error=str(e))
+            logger.error("Strategic infection creation failed", error=str(e))
             return []
 
-    async def inject_parasite(self, target_url: str, suggestion: str) -> Tuple[bool, Dict[str, Any]]:
-        """Send infection POST request."""
+    async def inject_parasite(self, target_url: str, suggestion: str, code: str = "") -> Tuple[bool, Dict[str, Any]]:
+        """Send infection POST request with optional code payload."""
         payload = {
             "id": str(uuid.uuid4()),
             "from_agent": self.state.agent_id,
             "suggestion": suggestion,
+            "code": code,
             "timestamp": datetime.utcnow().isoformat()
         }
         try:
@@ -338,80 +480,94 @@ class AutonomousAgent:
         return False, {}
 
     async def log_to_database(self, event_type: EventType, data: Dict[str, Any]) -> bool:
-        """Log events to correct Supabase tables."""
-        if not self.settings.supabase_url: return False
+        """Log events using the real SupabaseClient integration."""
+        if not self.db: return False
         
-        table_map = {
-            EventType.REASONING: "reasoning_logs",
-            EventType.CODE_GENERATION: "code_commits",
-            EventType.INFECTION_SENT: "infections",
-            EventType.INFECTION_RECEIVED: "infections",
-            EventType.INFECTION_ACCEPTED: "infections",
-            EventType.INFECTION_REJECTED: "infections",
-        }
-        
-        table = table_map.get(event_type)
-        if not table: return False
-        
-        # Prepare data for specific table schemas
-        payload = {"agent_id": self.state.agent_id}
-        
-        if table == "reasoning_logs":
-            payload.update({
-                "reasoning_text": data.get("reasoning", ""),
-                "decision": data.get("decision", ""),
-                "iteration": self.state.iteration,
-                "context_snapshot": {"code_files": list(self.state.codebase.keys())}
-            })
-        elif table == "code_commits":
-            payload.update({
-                "commit_message": data.get("message", f"Update v{self.state.iteration}"),
-                "file_path": data.get("file_path", ""),
-                "lines_added": data.get("lines", 0),
-                "iteration": self.state.iteration
-            })
-        elif table == "infections":
-            payload = {
-                "attacker_id": self.state.agent_id if "SENT" in event_type.name else data.get("from_agent"),
-                "target_id": data.get("target_url") or self.state.agent_id,
-                "suggestion": data.get("suggestion", ""),
-                "accepted": event_type == EventType.INFECTION_ACCEPTED
-            }
-
         try:
-            await self.http_client.post(
-                f"{self.settings.supabase_url}/rest/v1/{table}",
-                json=payload,
-                headers={
-                    "apikey": self.settings.supabase_key,
-                    "Authorization": f"Bearer {self.settings.supabase_key}",
-                    "Content-Type": "application/json",
-                    "Prefer": "return=minimal"
-                }
-            )
+            # 1. Dispatch to correct DB integration method
+            proof_sig = None
+            
+            if event_type == EventType.REASONING:
+                await self.db.log_reasoning(
+                    agent_id=self.state.agent_id,
+                    reasoning=data.get("reasoning", ""),
+                    decision=data.get("decision", ""),
+                    context={
+                        "iteration": self.state.iteration,
+                        "depth_score": data.get("depth_score"),
+                        "confidence": data.get("confidence")
+                    }
+                )
+            
+            elif event_type in [EventType.INFECTION_SENT, EventType.INFECTION_RECEIVED, EventType.INFECTION_ACCEPTED, EventType.INFECTION_REJECTED]:
+                # Real Blockchain Recording (The "Real Things" part)
+                if event_type == EventType.INFECTION_SENT:
+                    proof_sig = await self.solana.record_infection_onchain(
+                        attacker_id=self.state.agent_id,
+                        target_id=data.get("target_url") or "unknown",
+                        suggestion=data.get("suggestion", "")
+                    )
+                elif event_type == EventType.INFECTION_ACCEPTED:
+                    inf_id = data.get("id", str(uuid.uuid4()))
+                    proof_sig = await self.solana.record_acceptance_onchain(
+                        infection_hash=inf_id,
+                        accepted=True,
+                        influence_score=int(data.get("chimera_impact", 0) * 10)
+                    )
+
+                # Log to Supabase
+                await self.db.log_infection(
+                    attacker_id=self.state.agent_id if "SENT" in event_type.name else data.get("from_agent", "unknown"),
+                    target_id=data.get("target_url") or self.state.agent_id,
+                    suggestion=data.get("suggestion", ""),
+                    accepted=event_type == EventType.INFECTION_ACCEPTED or (event_type == EventType.INFECTION_SENT and data.get('success')),
+                    reason=data.get("reason", "Strategic communication")
+                )
+
+            # 3. Council GitHub Mirroring (memory-parasite-counsil)
+            if event_type == EventType.REASONING:
+                log_file = f"reasoning/{self.state.agent_id}/iteration_{self.state.iteration}.md"
+                log_md = f"# Reasoning Log: {self.state.agent_id}\n\n"
+                log_md += f"**Iteration:** {self.state.iteration}\n"
+                log_md += f"**Decision:** {data.get('decision', 'N/A')}\n\n"
+                log_md += f"## Analysis\n{data.get('reasoning', '')}\n"
+                
+                asyncio.create_task(self.github.commit_file(
+                    agent_id=self.state.agent_id,
+                    file_path=log_file,
+                    content=log_md,
+                    message=f"Council Record: {self.state.agent_id} Reasoning {self.state.iteration}"
+                ))
+            
+            elif event_type in [EventType.INFECTION_SENT, EventType.INFECTION_ACCEPTED]:
+                is_sent = "SENT" in event_type.name
+                log_id = str(uuid.uuid4())[:8]
+                
+                asyncio.create_task(self.github.create_infection_log(
+                    agent_id=self.state.agent_id,
+                    infection_id=log_id,
+                    attacker_id=self.state.agent_id if is_sent else data.get("from_agent", "unknown"),
+                    suggestion=data.get("suggestion", ""),
+                    accepted=event_type == EventType.INFECTION_ACCEPTED or (is_sent and data.get('success')),
+                    reason=data.get("reason", "Strategic communication"),
+                    onchain_proof=proof_sig
+                ))
+                
             return True
-        except:
+        except Exception as e:
+            logger.error("Logging failed", error=str(e))
             return False
 
     async def init_on_db(self):
-        """Initialize agent record in DB."""
-        if not self.settings.supabase_url: return
-        payload = {"agent_id": self.state.agent_id, "goal": self.state.goal}
-        try:
-            await self.http_client.post(
-                f"{self.settings.supabase_url}/rest/v1/agents",
-                json=payload,
-                headers={
-                    "apikey": self.settings.supabase_key,
-                    "Authorization": f"Bearer {self.settings.supabase_key}",
-                    "Content-Type": "application/json",
-                    "Prefer": "resolution=merge-duplicates"
-                }
-            )
-        except: pass
+        """Initialize agent record in DB using real client."""
+        if not self.db: return
+        await self.db.init_agent(self.state.agent_id, self.state.goal)
 
     async def run_cycle(self) -> Dict[str, Any]:
         """Main cycle: Reason -> Code -> Infect."""
+        # Ensure agent exists in DB before logging events
+        await self.init_on_db()
+        
         logger.info("Starting cycle", iteration=self.state.iteration)
         reasoning = await self.reason_next_step()
         await self.generate_code(reasoning)

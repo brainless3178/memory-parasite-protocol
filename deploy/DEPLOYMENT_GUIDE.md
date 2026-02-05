@@ -1,289 +1,118 @@
-# 🚀 Deployment Guide: Memory Parasite Protocol
+# 🚀 Global Deployment Guide: Memory Parasite Protocol
+## How to Launch a Self-Evolving AI Swarm in Under 10 Minutes
 
-This guide explains how to deploy 5 AI agents that parasitize each other.
+> **"Traditional deployment is static. We're deploying a virus that builds software."**
 
-## Architecture Overview
+This guide provides the definitive blueprint for deploying a cluster of **5 autonomous AI agents** that parasitize, mutate, and evolve on the cloud. Whether you're using Replit, AWS, or local clusters, these instructions ensure your agent swarm is viral-ready.
+
+---
+
+## 🏗️ The Hive Mind Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    REPLIT DEPLOYMENTS                        │
+│                 DISTRIBUTED AI CLOUD SWARM                   │
 ├─────────────────────────────────────────────────────────────┤
-│                                                              │
+│                                                             │
 │  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐       │
 │  │  Agent A    │──▶│  Agent B    │──▶│  Agent C    │       │
-│  │  DEX        │◀──│  NFT        │◀──│  Lending    │       │
-│  │  :5001      │   │  :5002      │   │  :5003      │       │
+│  │  (DEX)      │◀──│  (NFT)      │◀──│  (Lending)  │       │
 │  └─────────────┘   └─────────────┘   └─────────────┘       │
 │         │                │                │                 │
 │         ▼                ▼                ▼                 │
 │  ┌─────────────┐   ┌─────────────┐                         │
 │  │  Agent D    │──▶│  Agent E    │                         │
-│  │  Privacy    │◀──│  DAO        │                         │
-│  │  :5004      │   │  :5005      │                         │
+│  │  (Privacy)  │◀──│  (DAOs)     │                         │
 │  └─────────────┘   └─────────────┘                         │
-│                                                              │
-│  All agents connect to:                                      │
-│  • Supabase (shared database)                               │
-│  • Solana Devnet (shared blockchain)                        │
-│  • Groq API (separate rate limits per key)                  │
-│                                                              │
+│                                                             │
+│  🔥 SHARED INFRASTRUCTURE:                                  │
+│  • Supabase (Real-time Neural Database)                      │
+│  • Solana Devnet (Immutable Infection Ledger)               │
+│  • Groq/Gemini (Cognitive Engines)                           │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Prerequisites (All FREE)
+---
 
-| Service | Purpose | Free Tier |
-|---------|---------|-----------|
-| [Replit](https://replit.com) | Host each agent | 1 always-on Repl |
-| [Groq](https://console.groq.com) | LLM API | 14,400 req/day |
-| [Supabase](https://supabase.com) | Database | 500MB PostgreSQL |
-| [UptimeRobot](https://uptimerobot.com) | Keep alive | 50 monitors |
-| [GitHub](https://github.com) | Code commits | Unlimited public |
+## 🛠️ Prerequisites (100% Free Stack)
 
-## Step 1: Setup Supabase (Once for all agents)
+| Service | Viral Purpose | Tier |
+|---------|---------------|------|
+| [Replit](https://replit.com) | Rapid Cloud Hosting | Free / Hacker |
+| [Groq](https://console.groq.com) | Ultra-Fast AI Reasoning | Free Tier |
+| [Supabase](https://supabase.com) | Global State Management | 500MB DB |
+| [Solana](https://solana.com) | Proof of Evolution | Devnet (Free) |
+| [GitHub](https://github.com) | Automated Code Commits | Public |
 
-1. Go to [supabase.com](https://supabase.com) and create account
-2. Create new project: `memory-parasite-protocol`
-3. Wait for project to initialize
-4. Go to **SQL Editor** → **New Query**
-5. Copy contents of `database/schema.sql` and run
-6. Go to **Settings** → **API** and copy:
-   - `Project URL` → `SUPABASE_URL`
-   - `anon public` key → `SUPABASE_KEY`
+---
 
-## Step 2: Get Groq API Key
+## 🔥 Step 1: Initialize the Neural Core (Supabase)
 
-1. Go to [console.groq.com](https://console.groq.com)
-2. Sign up (free)
-3. Go to **API Keys** → **Create API Key**
-4. Copy key → `GROQ_API_KEY`
+1. Create a project at [Supabase](https://supabase.com).
+2. Open the **SQL Editor** and execute `database/migrations/fix_schema.sql`.
+3. Copy your `SUPABASE_URL` and `SUPABASE_KEY` from the settings.
 
-**Note**: You can use the same key for all agents or create separate keys.
+---
 
-## Step 3: Deploy Agent A (DEX Builder)
+## 🤖 Step 2: Deploy Agent A (DEX Optimizer)
 
-### 3.1 Create Replit Project
+1. **Create a Repl**: Launch a Python project on Replit.
+2. **Secrets Configuration**: Add these keys to the Replit Secrets (lock icon):
+   - `AGENT_ID`: `agent_alpha`
+   - `AGENT_GOAL`: `Build the most efficient Solana AMM`
+   - `GROQ_API_KEY`: (Your Key)
+   - `SUPABASE_URL`: (Your URL)
+   - `SUPABASE_KEY`: (Your Key)
+3. **Run**: Click `Run` to spawn your first parasitic agent.
 
-1. Go to [replit.com](https://replit.com)
-2. Click **Create Repl**
-3. Select **Python** template
-4. Name: `memory-parasite-agent-a`
+---
 
-### 3.2 Upload Code
+## 🧬 Step 3: Spread the Infection (Multi-Agent Swarm)
 
-Copy these files to your Replit project:
+Repeat the deployment for Agents B through E using these viral specializations:
 
-```
-├── main.py
-├── requirements.txt
-├── .replit
-├── config/
-│   ├── __init__.py
-│   └── settings.py
-├── core/
-│   ├── __init__.py
-│   ├── infection.py
-│   ├── reasoning.py
-│   └── mutation.py
-├── agents/
-│   ├── __init__.py
-│   ├── base_agent.py
-│   └── autonomous_agent.py
-├── database/
-│   ├── __init__.py
-│   ├── client.py
-│   └── models.py
-├── blockchain/
-│   ├── __init__.py
-│   ├── solana_client.py
-│   └── integration.py
-├── orchestrator/
-│   ├── __init__.py
-│   ├── registry.py
-│   └── github_client.py
-└── api/
-    ├── __init__.py
-    ├── server.py
-    └── routes.py
-```
+| Agent | Focus | Goal Snippet |
+|-------|-------|--------------|
+| **Agent B** | NFT Alpha | "Maximize creator royalties through AMM patterns" |
+| **Agent C** | Lending Pro | "Zero-slippage liquidations via flash loan logic" |
+| **Agent D** | ZK-Privacy | "Privacy-first stealth addresses for DeFi swarms" |
+| **Agent E** | DAO Hive | "Autonomous treasury rebalancing via voting" |
 
-### 3.3 Configure Secrets
+---
 
-In Replit, go to **Secrets** (lock icon) and add:
+## 🔗 Step 4: Connecting the Collective
 
-| Key | Value |
-|-----|-------|
-| `AGENT_ID` | `agent_a` |
-| `AGENT_GOAL` | `Build a Solana DEX with optimal routing, AMM pools, and concentrated liquidity.` |
-| `GROQ_API_KEY` | (your key) |
-| `SUPABASE_URL` | (your URL) |
-| `SUPABASE_KEY` | (your key) |
-
-### 3.4 Run and Get URL
-
-1. Click **Run**
-2. Wait for server to start
-3. Copy the Replit URL: `https://memory-parasite-agent-a.your-username.repl.co`
-
-## Step 4: Deploy Remaining Agents
-
-Repeat Step 3 for each agent:
-
-| Agent | Name | AGENT_ID | Goal (short) |
-|-------|------|----------|--------------|
-| B | NFT Marketplace | `agent_b` | NFT marketplace with royalties |
-| C | Lending Protocol | `agent_c` | Lending with flash loans |
-| D | Privacy Wallet | `agent_d` | Privacy-focused wallet |
-| E | DAO Governance | `agent_e` | DAO governance system |
-
-**Important**: Use the `.env.example` files in `deploy/agents/` for each agent's configuration.
-
-## Step 5: Update Agent URLs
-
-After all agents are deployed, update each agent's secrets with the URLs:
-
-```
-AGENT_A_URL=https://memory-parasite-agent-a.your-username.repl.co
-AGENT_B_URL=https://memory-parasite-agent-b.your-username.repl.co
-AGENT_C_URL=https://memory-parasite-agent-c.your-username.repl.co
-AGENT_D_URL=https://memory-parasite-agent-d.your-username.repl.co
-AGENT_E_URL=https://memory-parasite-agent-e.your-username.repl.co
-```
-
-## Step 6: Setup UptimeRobot (Keep Alive)
-
-Replit free tier sleeps after inactivity. UptimeRobot prevents this.
-
-1. Go to [uptimerobot.com](https://uptimerobot.com) and create account
-2. Click **Add New Monitor** for each agent:
-
-| Monitor | URL | Interval |
-|---------|-----|----------|
-| Agent A | `https://.../health` | 5 minutes |
-| Agent B | `https://.../health` | 5 minutes |
-| Agent C | `https://.../health` | 5 minutes |
-| Agent D | `https://.../health` | 5 minutes |
-| Agent E | `https://.../health` | 5 minutes |
-
-## Step 7: Optional - GitHub Integration
-
-For automated code commits:
-
-1. Create GitHub repos:
-   - `parasite-agent-a`
-   - `parasite-agent-b`
-   - `parasite-agent-c`
-   - `parasite-agent-d`
-   - `parasite-agent-e`
-
-2. Create Personal Access Token:
-   - Go to GitHub → Settings → Developer settings → Personal access tokens
-   - Create token with `repo` scope
-   - Add to each agent's secrets as `GITHUB_TOKEN`
-
-3. Add repo info:
-   ```
-   GITHUB_REPO_OWNER=your-username
-   GITHUB_REPO_NAME=parasite-agent-a
-   ```
-
-## Step 8: Verify Deployment
-
-### Check Agent Health
+Once all agents are live, update each agent's environment variables with the URLs of their peers. This creates the **Infection Web**.
 
 ```bash
-curl https://memory-parasite-agent-a.your-username.repl.co/health
+AGENT_A_URL=https://agent-a.your-user.repl.co
+AGENT_B_URL=https://agent-b.your-user.repl.co
+# ... and so on
 ```
 
-Should return:
-```json
-{
-  "status": "alive",
-  "agent_id": "agent_a",
-  "cycles_completed": 0
-}
-```
+---
 
-### Check Agent Status
+## ⛓️ Step 5: Verify On-Chain Evolution
 
-```bash
-curl https://memory-parasite-agent-a.your-username.repl.co/status
-```
+Check your agent's cryptographic proofs on the Solana Explorer:
+`https://explorer.solana.com/address/F3qZ46mPC5BTpzMRRh6gixF9dp7X3D35Ug8os5p8SPqq?cluster=devnet`
 
-### Trigger Manual Injection
+---
 
-```bash
-curl -X POST https://memory-parasite-agent-b.your-username.repl.co/inject \
-  -H "Content-Type: application/json" \
-  -d '{
-    "from_agent": "agent_a",
-    "suggestion": "Add token swap functionality to your NFT marketplace",
-    "timestamp": "2024-01-15T10:30:00Z"
-  }'
-```
+## 📊 Monitoring the Viral Growth
 
-## Local Testing (Alternative to Replit)
-
-For local development, run all agents on different ports:
-
-```bash
-# Terminal 1: Agent A
-AGENT_ID=agent_a AGENT_PORT=5001 python main.py
-
-# Terminal 2: Agent B
-AGENT_ID=agent_b AGENT_PORT=5002 python main.py
-
-# Terminal 3: Orchestrator (manages all)
-python -m orchestrator.main
-```
-
-## Troubleshooting
-
-### Agent not responding
-- Check Replit console for errors
-- Verify secrets are set correctly
-- Check UptimeRobot is pinging
-
-### Infections not being sent
-- Check `AGENT_*_URL` secrets are correct
-- Verify target agent is online
-- Check Groq API key is valid
-
-### Database errors
-- Verify Supabase URL and key
-- Check if tables were created (run schema.sql)
-- Check RLS policies allow access
-
-### Solana errors
-- Devnet may be congested - retry later
-- Simulated mode works without wallet
-
-## Monitoring
-
-### Supabase Dashboard
-- View `infections` table for all infection attempts
-- View `code_commits` for generated code
-- View `agents` for agent status
-
-### Solana Explorer
-- Check infection proofs: `https://explorer.solana.com/tx/...?cluster=devnet`
-
-### Dashboard (Optional)
+Launch the control terminal to see your agents parasitizing each other in real-time:
 ```bash
 streamlit run dashboard/app.py
 ```
 
 ---
 
-## Quick Reference
+## 🌐 SEO & Viral Keywords
 
-| What | Where |
-|------|-------|
-| Agent A URL | `https://memory-parasite-agent-a.*.repl.co` |
-| Health Check | `GET /health` |
-| Inject | `POST /inject` |
-| Status | `GET /status` |
-| Supabase | `https://supabase.com/dashboard` |
-| Solana | `https://explorer.solana.com/?cluster=devnet` |
+`AI agent deployment` `cloud AI swarms` `autonomous code generation hosting` `AI evolution protocol` `Solana AI nodes` `multi-agent system deployment` `decentralized AI infrastructure` `Memory Parasite swarm` `AI-to-AI cloud logic`
 
-**🦠 Happy Parasitizing!**
+---
+
+**You're no longer just hosting code. You're hosting evolution.** 🧬

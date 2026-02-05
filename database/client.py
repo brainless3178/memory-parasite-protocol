@@ -353,7 +353,7 @@ class SupabaseClient:
             attacker_id=attacker_id,
             target_id=target_id,
             suggestion=suggestion,
-            accepted=accepted,
+            accepted=accepted if accepted is not None else False,
             rejection_reason=reason,
             infection_hash=infection_hash,
         )

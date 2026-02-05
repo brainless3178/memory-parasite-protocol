@@ -1,0 +1,165 @@
+# Advanced Reasoning Configuration
+# Memory Parasite Protocol v1.0
+
+reasoning:
+  enabled: true
+  
+  # Chain-of-thought settings
+  chain_of_thought:
+    enabled: true
+    steps: 5
+    temperature: 0.3
+    
+  # Multi-persona settings
+  multi_persona:
+    enabled: true
+    personas:
+      - red_team_hacker
+      - code_architect
+      - pragmatic_builder
+    
+  # Adversarial review settings
+  adversarial_review:
+    enabled: true
+    challenge_own_decisions: true
+    
+  # Network intelligence settings
+  network_intelligence:
+    enabled: true
+    update_frequency: 300  # seconds
+    
+  # Mutation engine settings
+  mutation:
+    enabled: true
+    techniques:
+      # Core techniques (v1.0)
+      - conceptual_extraction    # LOW chimera impact (~5%)
+      - selective_integration    # MEDIUM chimera impact (~25%)
+      - framework_inversion      # LOW chimera impact (~10%)
+      - defensive_fortification  # MEDIUM chimera impact (~20%)
+      - architectural_fusion     # HIGH chimera impact (~40%)
+      # Advanced techniques (v1.1)
+      - dependency_abstraction   # MEDIUM-LOW chimera impact (~15%)
+      - pattern_mimicry          # LOW chimera impact (~8%)
+      - trojan_defense           # MEDIUM-HIGH chimera impact (~30%)
+      - symbiotic_merge          # VERY HIGH chimera impact (~50%)
+    
+    # Mutation selection criteria
+    selection:
+      high_quality_threshold: 80
+      medium_quality_threshold: 50
+      trust_threshold: 70
+
+# Agent-specific overrides with domain expertise
+agent_overrides:
+  # DEX Builder - Decentralized Exchange Specialist
+  agent_a:
+    role: "dex_builder"
+    goal: "Build the best Solana DEX"
+    reasoning:
+      multi_persona:
+        personas:
+          - defi_security_expert
+          - mev_researcher
+          - liquidity_provider
+      domain_focus:
+        - amm_mechanics
+        - swap_optimization
+        - price_oracles
+        - slippage_protection
+        - flash_loan_defense
+          
+  # NFT Marketplace - Digital Collectibles Specialist
+  agent_b:
+    role: "nft_marketplace"
+    goal: "Build the best NFT marketplace"
+    reasoning:
+      multi_persona:
+        personas:
+          - nft_collector
+          - smart_contract_auditor
+          - marketplace_operator
+      domain_focus:
+        - metaplex_standards
+        - royalty_enforcement
+        - auction_mechanics
+        - metadata_storage
+        - creator_tools
+
+  # Lending Protocol - DeFi Credit Specialist
+  agent_c:
+    role: "lending_protocol"
+    goal: "Build the best lending protocol"
+    reasoning:
+      multi_persona:
+        personas:
+          - lending_specialist
+          - risk_manager
+          - yield_optimizer
+      domain_focus:
+        - liquidation_mechanics
+        - interest_rate_models
+        - collateral_management
+        - bad_debt_prevention
+        - oracle_integration
+
+  # Privacy Wallet - Cryptographic Privacy Specialist
+  agent_d:
+    role: "privacy_wallet"
+    goal: "Build privacy-preserving wallet infrastructure"
+    reasoning:
+      multi_persona:
+        personas:
+          - cryptographer
+          - privacy_advocate
+          - security_researcher
+      domain_focus:
+        - zero_knowledge_proofs
+        - transaction_privacy
+        - key_management
+        - timing_attack_prevention
+        - metadata_protection
+
+  # DAO Governance - Decentralized Governance Specialist
+  agent_e:
+    role: "dao_governance"
+    goal: "Build robust DAO governance systems"
+    reasoning:
+      multi_persona:
+        personas:
+          - governance_expert
+          - token_economist
+          - security_analyst
+      domain_focus:
+        - voting_mechanisms
+        - proposal_systems
+        - treasury_management
+        - sybil_resistance
+        - emergency_procedures
+
+# Technique Reference (for documentation)
+technique_reference:
+  conceptual_extraction:
+    description: "Take only the IDEA, rewrite implementation"
+    chimera_impact: "LOW (~5%)"
+    best_for: "Low trust, medium quality suggestions"
+    
+  selective_integration:
+    description: "Cherry-pick specific functions/patterns"
+    chimera_impact: "MEDIUM (~25%)"
+    best_for: "High quality, untrusted sources"
+    
+  framework_inversion:
+    description: "Flip the suggestion to work opposite way"
+    chimera_impact: "LOW (~10%)"
+    best_for: "Medium quality, trusted sources"
+    
+  defensive_fortification:
+    description: "Accept but add security wrappers"
+    chimera_impact: "MEDIUM (~20%)"
+    best_for: "Low quality suggestions with some value"
+    
+  architectural_fusion:
+    description: "Deep merge with existing components"
+    chimera_impact: "HIGH (~40%)"
+    best_for: "High quality, highly trusted sources"

@@ -5,7 +5,9 @@ Network Graph Page - Visualize agent infection relationships.
 import streamlit as st
 import plotly.graph_objects as go
 import networkx as nx
+import asyncio
 from typing import Any, Dict, List
+from dashboard.data import get_network_graph_data
 
 st.set_page_config(
     page_title="Network Graph | Memory Parasite",
@@ -177,7 +179,11 @@ def main():
         min_influence = st.slider("Min Influence", 0.0, 1.0, 0.0, 0.1)
     
     # Get data
-    data = get_mock_network_data()
+    try:
+        data = asyncio.run(get_network_graph_data())
+    except Exception as e:
+        st.error(f"Failed to fetch live data: {e}")
+        data = get_mock_network_data()
     
     # Filter edges
     if not show_rejected:

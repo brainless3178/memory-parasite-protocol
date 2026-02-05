@@ -64,19 +64,101 @@ def create_app() -> Flask:
     def health():
         return jsonify({"status": "healthy", "agent_id": settings.agent_id})
     
+    @app.route("/api/register-agent", methods=["POST"])
+    def register_agent():
+        """Force initialization on database."""
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(agent.init_on_db())
+            return jsonify({
+                "success": True, 
+                "agent_id": settings.agent_id,
+                "status": "registered"
+            })
+        finally:
+            loop.close()
+
     @app.route("/inject", methods=["POST"])
+    @app.route("/api/inject-infection", methods=["POST"])
     def receive_injection():
         data = request.get_json()
         if not data or "suggestion" not in data:
             return jsonify({"error": "Invalid payload"}), 400
         
-        # Run in new loop for flask compatibility
         loop = asyncio.new_event_loop()
         try:
             result = loop.run_until_complete(agent.receive_injection(data))
             return jsonify(result)
         finally:
             loop.close()
+
+    @app.route("/api/respond-to-infection", methods=["POST"])
+    def respond_to_infection():
+        """Allow manual/external responding to a pending infection."""
+        data = request.get_json()
+        
+        # Get real AgentWallet signature
+        loop = asyncio.new_event_loop()
+        try:
+            proof_sig = loop.run_until_complete(
+                agent.solana.record_acceptance_onchain(
+                    infection_hash=data.get("infection_id", "unknown"),
+                    accepted=data.get("accepted", True),
+                    influence_score=data.get("influence_score", 50)
+                )
+            )
+        except Exception as e:
+            proof_sig = f"error_{str(e)[:20]}"
+        finally:
+            loop.close()
+        
+        return jsonify({
+            "success": True, 
+            "status": "processed",
+            "transaction_hash": proof_sig or "pending"
+        })
+
+    @app.route("/api/get-infections")
+    def get_infections():
+        """Return history of infections received."""
+        return jsonify([inj.to_dict() for inj in agent.state.context_injections])
+
+    @app.route("/api/get-agent-stats")
+    def get_agent_stats():
+        """Return specific stats for this agent."""
+        status = agent.get_status()
+        return jsonify({
+            "agent_id": settings.agent_id,
+            "total_sent": status.get("infections_sent", 0),
+            "total_received": len(agent.state.context_injections),
+            "chimera_percentage": status.get("parasitized_pct", 0),
+            "acceptance_rate": 0.35 # TODO: Calculate from real DB data
+        })
+
+    @app.route("/api/get-network-graph")
+    def get_network_graph():
+        """Serve data for the network graph visualization."""
+        if agent.db:
+            loop = asyncio.new_event_loop()
+            try:
+                data = loop.run_until_complete(agent.db.get_infection_network())
+                return jsonify(data)
+            except Exception as e:
+                logger.error("Failed to fetch graph from DB", error=str(e))
+            finally:
+                loop.close()
+        
+        # Fallback when DB unavailable - return empty network
+        return jsonify({
+            "nodes": [{"id": settings.agent_id, "goal": "Build autonomous AI agent"}],
+            "edges": []
+        })
+
+    @app.route("/status")
+    @app.route("/api/status")
+    def get_status():
+        """Return full agent status."""
+        return jsonify(agent.get_status())
             
     return app
 

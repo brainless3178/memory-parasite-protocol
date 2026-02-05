@@ -202,6 +202,12 @@ class ReasoningLogRecord(BaseModel):
     iteration: int = 0
     influenced_by: List[str] = Field(default_factory=list)  # Agent IDs
     
+    # Advanced Reasoning Metrics
+    reasoning_depth_score: Optional[int] = None
+    analysis_phases_completed: Optional[List[Dict[str, Any]]] = None
+    decision_confidence: Optional[int] = None
+    time_to_decision_ms: Optional[int] = None
+    
     class Config:
         use_enum_values = True
     
@@ -213,6 +219,10 @@ class ReasoningLogRecord(BaseModel):
             "decision": self.decision,
             "context_snapshot": self.context_snapshot,
             "iteration": self.iteration,
+            "reasoning_depth_score": self.reasoning_depth_score,
+            "analysis_phases_completed": self.analysis_phases_completed,
+            "decision_confidence": self.decision_confidence,
+            "time_to_decision_ms": self.time_to_decision_ms,
         }
         if self.influenced_by:
             data["influenced_by"] = self.influenced_by

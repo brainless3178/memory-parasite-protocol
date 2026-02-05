@@ -23,6 +23,7 @@ from orchestrator.github_client import GitHubClient, get_github_client
 from database import get_supabase_client, SupabaseClient
 from blockchain import get_solana_client, SolanaClient
 from core.reasoning import ReasoningEngine, ReasoningMode, ReasoningContext
+from orchestrator.viral_campaign import ViralCampaign
 
 logger = structlog.get_logger()
 
@@ -139,6 +140,9 @@ class Orchestrator:
         # Cycle configuration
         self.base_cycle_interval = self.settings.agent_cycle_interval or 600  # 10 minutes
         self.jitter_range = 50  # ±50 seconds to avoid sync
+
+        # Viral Campaign
+        self.campaign = ViralCampaign(self.settings.colosseum_api_key) 
     
     def _get_cycle_interval(self) -> int:
         """
@@ -534,6 +538,11 @@ class Orchestrator:
                     total_cycles=self.total_cycles,
                 )
                 
+                # Viral Campaign execution (every 3 rounds)
+                if round_number % 3 == 0:
+                    logger.info("Triggering Viral Campaign...")
+                    asyncio.create_task(self.campaign.infect_leaderboard())
+
                 # Wait for next round
                 interval = self._get_cycle_interval()
                 logger.info(f"Next round in {interval}s")

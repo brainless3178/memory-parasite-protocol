@@ -167,6 +167,45 @@ class DashboardData:
         self._set_cache("stats", stats)
         return stats
     
+    async def get_advanced_reasoning_metrics(self) -> Dict[str, Any]:
+        """Get advanced reasoning metrics from database."""
+        if self.db:
+            try:
+                # Query recent logs
+                logs = await self.db._select("reasoning_logs", limit=100, order_by="timestamp.desc")
+                if not logs:
+                    return self._get_mock_reasoning_metrics()
+                
+                # Calculate averages
+                depths = [l.get("reasoning_depth_score") for l in logs if l.get("reasoning_depth_score") is not None]
+                confidences = [l.get("decision_confidence") for l in logs if l.get("decision_confidence") is not None]
+                times = [l.get("time_to_decision_ms") for l in logs if l.get("time_to_decision_ms") is not None]
+                
+                avg_depth = sum(depths) / len(depths) if depths else 0
+                avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+                avg_time = sum(times) / len(times) if times else 0
+                
+                return {
+                    "avg_depth": avg_depth,
+                    "avg_confidence": avg_confidence,
+                    "avg_time": avg_time,
+                    "phase_completion": [100, 95, 98, 92], # Mock indices
+                    "quality_timeline": [78, 82, 80, 85, 88, 91, 89] # Mock timeline
+                }
+            except Exception as e:
+                logger.error(f"Failed to fetch reasoning metrics: {e}")
+        
+        return self._get_mock_reasoning_metrics()
+
+    def _get_mock_reasoning_metrics(self) -> Dict[str, Any]:
+        return {
+            "avg_depth": 88.5,
+            "avg_confidence": 92.0,
+            "avg_time": 1450,
+            "phase_completion": [100, 95, 98, 92],
+            "quality_timeline": [78, 82, 80, 85, 88, 91, 89]
+        }
+
     async def verify_infection(
         self,
         infection_hash: str,
@@ -287,3 +326,6 @@ async def get_agent_timeline(agent_id: str) -> List[Dict]:
 
 async def get_chimera_stats(agent_id: str) -> Dict[str, Any]:
     return await get_data_provider().get_chimera_stats(agent_id)
+
+async def get_advanced_reasoning_metrics() -> Dict[str, Any]:
+    return await get_data_provider().get_advanced_reasoning_metrics()

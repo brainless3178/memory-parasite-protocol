@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     use_devnet: bool = Field(default=True, env="USE_DEVNET")
     solana_private_key: str = Field(default="", env="SOLANA_PRIVATE_KEY")
 
+    # AgentWallet Configuration (Hackathon Compliance)
+    agent_wallet_token: str = Field(default="", env="AGENT_WALLET_TOKEN")
+    agent_wallet_username: str = Field(default="", env="AGENT_WALLET_USERNAME")
+    agent_wallet_solana_address: str = Field(default="", env="AGENT_WALLET_SOLANA_ADDRESS")
+
     # Agent Behavior Configuration
     agent_cycle_interval: int = Field(default=1200, env="AGENT_CYCLE_INTERVAL")  # 20 mins
     max_infections_per_cycle: int = Field(default=3, env="MAX_INFECTIONS_PER_CYCLE")

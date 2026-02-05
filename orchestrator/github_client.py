@@ -8,6 +8,7 @@ Each agent commits its generated code with proper attribution.
 import base64
 import hashlib
 import os
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 import httpx
@@ -165,9 +166,6 @@ class GitHubClient:
         # Encode content
         content_b64 = base64.b64encode(content.encode()).decode()
         
-        # Check if file exists (get SHA for update)
-        existing_sha = await self.get_file_sha(file_path, branch)
-        
         # Build request
         payload = {
             "message": full_message,
@@ -175,44 +173,55 @@ class GitHubClient:
             "branch": branch,
         }
         
-        if existing_sha:
-            payload["sha"] = existing_sha
-        
-        try:
-            response = await self.http_client.put(
-                f"{self.base_url}/repos/{self.repo_owner}/{self.repo_name}/contents/{file_path}",
-                json=payload,
-                headers=self.headers,
-            )
+        # Retroactive retry logic for concurrency (Handle 409 Conflict)
+        max_retries = 3
+        for attempt in range(max_retries):
+            existing_sha = await self.get_file_sha(file_path, branch)
+            if existing_sha:
+                payload["sha"] = existing_sha
             
-            if response.status_code in (200, 201):
-                data = response.json()
-                commit_info = data.get("commit", {})
-                
-                logger.info(
-                    "GitHub commit successful",
-                    agent=agent_id,
-                    file=file_path,
-                    sha=commit_info.get("sha", "")[:8],
+            try:
+                response = await self.http_client.put(
+                    f"{self.base_url}/repos/{self.repo_owner}/{self.repo_name}/contents/{file_path}",
+                    json=payload,
+                    headers=self.headers,
                 )
                 
-                return {
-                    "sha": commit_info.get("sha"),
-                    "html_url": commit_info.get("html_url"),
-                    "message": full_message,
-                    "simulated": False,
-                }
-            else:
-                logger.error(
-                    "GitHub commit failed",
-                    status=response.status_code,
-                    error=response.text[:200],
-                )
+                if response.status_code in (200, 201):
+                    data = response.json()
+                    commit_info = data.get("commit", {})
+                    
+                    logger.info(
+                        "GitHub commit successful",
+                        agent=agent_id,
+                        file=file_path,
+                        sha=commit_info.get("sha", "")[:8],
+                    )
+                    
+                    return {
+                        "sha": commit_info.get("sha"),
+                        "html_url": commit_info.get("html_url"),
+                        "message": full_message,
+                        "simulated": False,
+                    }
+                elif response.status_code == 409 and attempt < max_retries - 1:
+                    logger.warning("GitHub conflict (409), retrying...", file=file_path, attempt=attempt+1)
+                    await asyncio.sleep(1 * (attempt + 1)) # Exponential backoff
+                    continue
+                else:
+                    logger.error(
+                        "GitHub commit failed",
+                        status=response.status_code,
+                        error=response.text[:200],
+                    )
+                    return None
+            except Exception as e:
+                logger.error(f"GitHub commit error: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                    continue
                 return None
-                
-        except Exception as e:
-            logger.error(f"GitHub commit error: {e}")
-            return None
+        return None
     
     async def commit_codebase(
         self,
@@ -263,23 +272,31 @@ class GitHubClient:
         suggestion: str,
         accepted: bool,
         reason: Optional[str] = None,
+        onchain_proof: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Create a log entry for an infection attempt.
-        
-        This creates a JSON file in the repo documenting the infection.
         """
         import json
         
-        log_content = json.dumps({
+        log_data = {
             "infection_id": infection_id,
             "target_agent": agent_id,
             "attacker_agent": attacker_id,
             "suggestion": suggestion,
             "accepted": accepted,
+            "onchain_proof": onchain_proof,
             "rejection_reason": reason,
             "timestamp": datetime.utcnow().isoformat(),
-        }, indent=2)
+        }
+        
+        if onchain_proof:
+            log_data["explorer_url"] = f"https://explorer.solana.com/tx/{onchain_proof}?cluster=devnet"
+            if onchain_proof.startswith("aw_"):
+                log_data["proof_type"] = "AgentWallet Signature"
+                log_data["verification_info"] = "Verified via AgentWallet (mcpay.tech)"
+        
+        log_content = json.dumps(log_data, indent=2)
         
         file_path = f"infections/{agent_id}/{infection_id[:8]}.json"
         message = f"Log infection from {attacker_id}"

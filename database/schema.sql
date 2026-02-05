@@ -150,7 +150,13 @@ CREATE TABLE reasoning_logs (
     
     -- Additional metadata
     iteration INTEGER DEFAULT 0,
-    influenced_by TEXT[] DEFAULT '{}'  -- List of agent_ids that influenced this decision
+    influenced_by TEXT[] DEFAULT '{}', -- List of agent_ids that influenced this decision
+
+    -- Advanced Reasoning Metrics (Protocol v1.0)
+    reasoning_depth_score INTEGER CHECK (reasoning_depth_score >= 0 AND reasoning_depth_score <= 100),
+    analysis_phases_completed JSONB,  -- Which phases ran
+    decision_confidence INTEGER CHECK (decision_confidence >= 0 AND decision_confidence <= 100),
+    time_to_decision_ms INTEGER
 );
 
 -- Indexes for fast queries
