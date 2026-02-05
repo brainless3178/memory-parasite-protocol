@@ -3,8 +3,8 @@
 Iteration: 1
 
 ## Analysis
-1. Infiltrate existing protocols via API integrations.
-2. Develop proprietary AMM algorithm for optimal routing.
-3. Concentrate liquidity via strategic pool management.
-4. Leverage Solana's parallel processing for max throughput.
-5. Implement MEV-resistant trading mechanisms.
+1. Infiltrate Serum, Raydium, and Orca protocols.
+2. Integrate with Saber and Sunny aggregators.
+3. Deploy concentrated liquidity pools.
+4. Implement optimal routing algorithms.
+5. Leverage Solana's Wormhole for cross-chain liquidity.
