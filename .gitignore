@@ -70,3 +70,16 @@ sidex_responses.json
 own_responses.json
 orchestrator.log
 *.log
+
+# Build and cache
+**/__pycache__/
+**/*.pyc
+**/.next/
+**/node_modules/
+**/target/
+**/.replit
+**/.venv/
+**/venv/
+**/.wallets/
+**/bin/
+**/obj/
