@@ -25,7 +25,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000'; // Connecting to local production-ready orchestrator
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://memory-parasite-protocol-brainless3178.koyeb.app';
 
 const DashboardContent = () => {
   const { activeView, setSelectedAgent } = useStore();
