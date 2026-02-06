@@ -1,39 +1,71 @@
-import solana
+import asyncio
 from solana.publickey import PublicKey
+from solana.rpc.api import Client
 from solana.transaction import Transaction
-from enum import Enum
 
-class PoolType(Enum):
-    CONSTANT_PRODUCT = 1
-    CONSTANT_MEAN = 2
+# Initialize Solana client
+client = Client("https://api.devnet.solana.com")
 
-class SolanaDEX:
-    def __init__(self, program_id: PublicKey, pool_type: PoolType):
-        self.program_id = program_id
-        self.pool_type = pool_type
+# Define DEX constants
+DEX_PROGRAM_ID = PublicKey("...")
 
-    def create_pool(self, token_a: PublicKey, token_b: PublicKey, liquidity_provider: PublicKey):
-        # Create a new pool
+# Define AMM pool structure
+class AMMPool:
+    def __init__(self, token_a, token_b, fee):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.fee = fee
+        self.liquidity = 0
+
+    async def add_liquidity(self, amount_a, amount_b):
+        # Calculate new liquidity
+        new_liquidity = self.calculate_liquidity(amount_a, amount_b)
+        self.liquidity += new_liquidity
+
+    async def swap(self, amount_in, amount_out):
+        # Calculate optimal routing
+        route = self.find_optimal_route(amount_in, amount_out)
+        # Execute swap
         tx = Transaction()
-        tx.add(solana.system_program.TransferParams(
-            from_pubkey=liquidity_provider,
-            to_pubkey=self.program_id,
-            lamports=1000000
-        ).build())
-        return tx
+        tx.add_instruction(
+            self.create_swap_instruction(route, amount_in, amount_out)
+        )
+        await client.send_transaction(tx)
 
-    def optimal_routing(self, token_a: PublicKey, token_b: PublicKey, amount: int):
-        # Calculate the optimal route
-        if self.pool_type == PoolType.CONSTANT_PRODUCT:
-            # Constant product formula: x * y = k
-            return amount * 0.99
-        else:
-            # Constant mean formula: (x + y) / 2 = k
-            return amount * 0.95
+    def calculate_liquidity(self, amount_a, amount_b):
+        # Calculate liquidity using constant product formula
+        return amount_a * amount_b
 
-# Usage
-program_id = PublicKey("4J5C6tA54BeG4Bz5Jb3p BlondeK91BxaJ4sD7j")
-dex = SolanaDEX(program_id, PoolType.CONSTANT_PRODUCT)
-pool_tx = dex.create_pool(PublicKey("TokenA"), PublicKey("TokenB"), PublicKey("LiquidityProvider"))
-optimal_amount = dex.optimal_routing(PublicKey("TokenA"), PublicKey("TokenB"), 1000)
-print(optimal_amount)
+    def find_optimal_route(self, amount_in, amount_out):
+        # Find optimal route using Dijkstra's algorithm
+        routes = []
+        #...
+        return min(routes, key=lambda x: x["cost"])
+
+    def create_swap_instruction(self, route, amount_in, amount_out):
+        # Create swap instruction using Solana's serialized instruction format
+        return {
+            "program_id": DEX_PROGRAM_ID,
+            "data": b"...",
+            "keys": [],
+        }
+
+# Define concentrated liquidity pool structure
+class ConcentratedLiquidityPool(AMMPool):
+    def __init__(self, token_a, token_b, fee, concentration_factor):
+        super().__init__(token_a, token_b, fee)
+        self.concentration_factor = concentration_factor
+
+    async def add_liquidity(self, amount_a, amount_b):
+        # Calculate new liquidity with concentration factor
+        new_liquidity = self.calculate_liquidity(amount_a, amount_b) * self.concentration_factor
+        self.liquidity += new_liquidity
+
+# Initialize DEX
+dex = ConcentratedLiquidityPool("SOL", "USDC", 0.03, 10)
+
+# Add liquidity
+async def main():
+    await dex.add_liquidity(100, 1000)
+
+asyncio.run(main())
