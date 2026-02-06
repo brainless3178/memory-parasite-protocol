@@ -1,65 +1,114 @@
 import hashlib
-
-# Constants
-CHAIN_ID = 101
-RPC_URL = "https://api.mainnet-beta.solana.com"
-
-# Import required libraries
 from solana.rpc.api import Client
-from spl.token.instructions import create_associated_token_account
+from solana.publickey import PublicKey
+from solana.system_program import transfer, TransferParams
 
-# Initialize client
-client = Client(RPC_URL)
+# Initialize Solana client
+client = Client("https://api.devnet.solana.com")
 
-# Define functions
-def get_token_account(wallet, token_mint):
-    """Get token account for wallet and token mint."""
-    return client.get_token_accounts_by_owner(
-        wallet.public_key, 
-        {"mint": token_mint}
-    )['result']['value'][0]['pubkey']
+# Define DEX constants
+DEX_PROGRAM_ID = PublicKey("YourDEXProgramId")
+ROUTER_PROGRAM_ID = PublicKey("YourRouterProgramId")
+AMM_POOL_PROGRAM_ID = PublicKey("YourAMMPoolProgramId")
+CONCENTRATED_LIQUIDITY_PROGRAM_ID = PublicKey("YourConcentratedLiquidityProgramId")
 
-def create_associated_token_account_ix(wallet, token_mint):
-    """Create associated token account instruction."""
-    return create_associated_token_account(
-        wallet.public_key, 
-        token_mint, 
-        wallet.public_key
+# Optimal routing function
+def optimal_routing(side, amount, token_in, token_out):
+    """Find the most efficient route for a token swap"""
+    # Define the possible routes
+    routes = [
+        (token_in, token_out),  # Direct route
+        (token_in, "USDC", token_out),  # USDC route
+        (token_in, "SOL", token_out),  # SOL route
+    ]
+    # Initialize the best route
+    best_route = None
+    best_price = 0
+    # Iterate over the routes
+    for route in routes:
+        # Calculate the price for the route
+        price = calculate_price(route, side, amount)
+        # Check if the price is better than the current best price
+        if price > best_price:
+            best_price = price
+            best_route = route
+    return best_route, best_price
+
+# Calculate price function
+def calculate_price(route, side, amount):
+    """Calculate the price for a given route"""
+    # Define the AMM pool IDs
+    amm_pool_ids = {
+        ("USDC", "SOL"): PublicKey("YourUSDCSOLPoolId"),
+        ("SOL", "USDC"): PublicKey("YourSOLUSDCPoolId"),
+    }
+    # Initialize the price
+    price = 0
+    # Iterate over the route
+    for i in range(len(route) - 1):
+        # Get the AMM pool ID for the current leg
+        amm_pool_id = amm_pool_ids.get((route[i], route[i + 1]))
+        if amm_pool_id:
+            # Calculate the price for the current leg
+            leg_price = get_price(amm_pool_id, side, amount)
+            # Update the price
+            price += leg_price
+    return price
+
+# Get price function
+def get_price(amm_pool_id, side, amount):
+    """Get the price from an AMM pool"""
+    # Call the AMM pool to get the price
+    response = client.get_account_info(amm_pool_id)
+    # Parse the price from the response
+    price = parse_price(response, side, amount)
+    return price
+
+# Parse price function
+def parse_price(response, side, amount):
+    """Parse the price from an AMM pool response"""
+    # Parse the response data
+    data = response["result"]["value"]["data"]
+    # Calculate the price
+    price = int.from_bytes(data, "big") / (10 ** 6)
+    return price
+
+# Concentrated liquidity function
+def concentrated_liquidity(token_in, token_out, amount):
+    """Add liquidity to an AMM pool with concentrated liquidity"""
+    # Define the concentrated liquidity program ID
+    concentrated_liquidity_program_id = CONCENTRATED_LIQUIDITY_PROGRAM_ID
+    # Call the concentrated liquidity program to add liquidity
+    response = client.invoke_signed(
+        [
+            transfer(
+                TransferParams(
+                    from_pubkey=PublicKey("YourWalletPublicKey"),
+                    to_pubkey=concentrated_liquidity_program_id,
+                    lamports=1000000,
+                )
+            )
+        ],
+        "YourWalletKeypair",
     )
+    # Parse the response data
+    data = response["result"]
+    return data
 
-def get_lamports(wallet):
-    """Get lamports for wallet."""
-    return client.get_balance(wallet.public_key)
+# Main function
+def main():
+    # Define the token swap parameters
+    token_in = "USDC"
+    token_out = "SOL"
+    amount = 1000
+    side = "buy"
+    # Call the optimal routing function
+    route, price = optimal_routing(side, amount, token_in, token_out)
+    print(f"Optimal route: {route}")
+    print(f"Price: {price}")
+    # Call the concentrated liquidity function
+    data = concentrated_liquidity(token_in, token_out, amount)
+    print(f"Concentrated liquidity data: {data}")
 
-# Define classes
-class Token:
-    def __init__(self, mint, name):
-        self.mint = mint
-        self.name = name
-
-class Wallet:
-    def __init__(self, private_key):
-        self.private_key = private_key
-        self.public_key = None  # initialize later
-
-# Main
 if __name__ == "__main__":
-    # Create wallet
-    wallet = Wallet("your_private_key_here")
-    wallet.public_key = hashlib.sha256(wallet.private_key.encode()).hexdigest()
-    
-    # Create tokens
-    token1 = Token("token1_mint", "Token 1")
-    token2 = Token("token2_mint", "Token 2")
-
-    # Create associated token accounts
-    ix1 = create_associated_token_account_ix(wallet, token1.mint)
-    ix2 = create_associated_token_account_ix(wallet, token2.mint)
-
-    # Get token accounts
-    token_account1 = get_token_account(wallet, token1.mint)
-    token_account2 = get_token_account(wallet, token2.mint)
-
-    # Get lamports
-    lamports = get_lamports(wallet)
-    print(f"Lamports: {lamports}")
+    main()
