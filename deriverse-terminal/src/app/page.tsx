@@ -129,7 +129,6 @@ const DashboardContent = () => {
   // Build Safety Status from REAL Supabase infection data (blockchain-verified audit trail)
   const safetyStatus = useMemo<SafetyStatus>(() => {
     const auditLog = infections
-      .filter(i => i.solana_tx_hash)
       .slice(0, 50)
       .map(i => ({
         action: i.accepted ? 'INFECTION_ACCEPTED' : 'INFECTION_BLOCKED',
@@ -870,9 +869,9 @@ const DashboardContent = () => {
                   </div>
                   <div className="bg-surface border border-border rounded-xl p-5 text-center">
                     <div className="metric-value text-2xl font-bold text-neutral mb-1">
-                      {infections.filter(i => i.solana_tx_hash).length}
+                      {totalInfections}
                     </div>
-                    <div className="text-xs text-text-secondary font-semibold uppercase">On-Chain Proofs</div>
+                    <div className="text-xs text-text-secondary font-semibold uppercase">Total Events</div>
                   </div>
                   <div className="bg-surface border border-border rounded-xl p-5 text-center">
                     <div className="metric-value text-2xl font-bold text-rare mb-1">{activeSpecimens}/{agents.length}</div>
