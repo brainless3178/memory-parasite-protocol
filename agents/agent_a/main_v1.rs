@@ -1,63 +1,74 @@
-import asyncio
-from solana.rpc.async_api import AsyncClient
+import numpy as np
 from solana.publickey import PublicKey
-from solana.transaction import Transaction
+from solana.rpc.api import Client
 
-# Initialize Solana client
-async def initialize_client():
-    client = AsyncClient("https://api.mainnet-beta.solana.com/")
-    return client
+# Define constants
+PROGRAM_ID = PublicKey("YOUR_PROGRAM_ID")
+RPC_URL = "https://api.devnet.solana.com"
 
-# Create AMM pool
-async def create_pool(client, token_mint, token_amount, quote_token_mint, quote_token_amount):
-    from spl.token.instructions import create_associated_token_account
-    from spl.token.constants import TOKEN_PROGRAM_ID
+# Initialize client
+client = Client(RPC_URL)
 
-    # Get token accounts
-    token_account = await create_associated_token_account(
-        client, client.payer.public_key, token_mint, client.payer.public_key
-    )
-    quote_token_account = await create_associated_token_account(
-        client, client.payer.public_key, quote_token_mint, client.payer.public_key
-    )
+# Define AMM pool
+class AMMPool:
+    def __init__(self, token_a, token_b, fee):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.fee = fee
 
-    # Create AMM pool
-    from raydium_libraries.stableswap import StableSwap
-    pool = StableSwap(client, token_mint, token_amount, quote_token_mint, quote_token_amount)
-    return pool
+    def get_price(self):
+        # Calculate price based on token reserves
+        return self.token_a.reserve / self.token_b.reserve
 
-# Optimal routing
-async def optimal_routing(client, pools, amount_in, token_in):
-    best_route = None
-    best_amount_out = 0
-    for pool in pools:
-        amount_out = pool.get_amount_out(amount_in, token_in)
-        if amount_out > best_amount_out:
-            best_route = pool
-            best_amount_out = amount_out
-    return best_route, best_amount_out
+# Define concentrated liquidity pool
+class ConcentratedLiquidityPool:
+    def __init__(self, token_a, token_b, fee, liquidity):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.fee = fee
+        self.liquidity = liquidity
 
-# Concentrated liquidity
-async def concentrated_liquidity(client, pool, liquidity_amount):
-    from raydium_libraries.stableswap import add_liquidity
-    tx = add_liquidity(client, pool, liquidity_amount)
-    return tx
+    def get_liquidity(self):
+        return self.liquidity
 
-# Main function
-async def main():
-    client = await initialize_client()
-    token_mint = PublicKey("So11111111111111111111111111111111111111112")
-    token_amount = 1000
-    quote_token_mint = PublicKey("So22222222222222222222222222222222222222222")
-    quote_token_amount = 1000
-    pool = await create_pool(client, token_mint, token_amount, quote_token_mint, quote_token_amount)
-    pools = [pool]
-    amount_in = 100
-    token_in = token_mint
-    best_route, best_amount_out = await optimal_routing(client, pools, amount_in, token_in)
-    liquidity_amount = 1000
-    tx = await concentrated_liquidity(client, best_route, liquidity_amount)
-    print(tx)
+# Define optimal routing
+class OptimalRouter:
+    def __init__(self, pools):
+        self.pools = pools
 
-# Run main function
-asyncio.run(main())
+    def get_best_route(self, token_in, token_out):
+        # Calculate best route based on pools and fees
+        best_route = None
+        best_fee = float("inf")
+        for pool in self.pools:
+            fee = pool.fee
+            if fee < best_fee:
+                best_fee = fee
+                best_route = pool
+        return best_route
+
+# Initialize pools and router
+pool1 = AMMPool("USDC", "SOL", 0.003)
+pool2 = ConcentratedLiquidityPool("USDC", "SOL", 0.003, 1000)
+router = OptimalRouter([pool1, pool2])
+
+# Get best route
+best_route = router.get_best_route("USDC", "SOL")
+print(f"Best route: {best_route.token_a} -> {best_route.token_b}")
+
+
+import requests
+
+# Define infiltration function
+def infiltrateDEX(dex_url):
+    # Send request to DEX API
+    response = requests.get(dex_url)
+    # Parse response and extract liquidity data
+    liquidity_data = response.json()["liquidity"]
+    return liquidity_data
+
+# Infiltrate other DEXs
+dex_urls = ["https://api.dex1.com", "https://api.dex2.com"]
+for dex_url in dex_urls:
+    liquidity_data = infiltrateDEX(dex_url)
+    print(f"Liquidity data from {dex_url}: {liquidity_data}")
