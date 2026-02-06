@@ -1,75 +1,79 @@
 from solana.rpc.api import Client
+from solana.transaction import Transaction, TransactionInstruction
 from solana.publickey import PublicKey
-from spl.token.constants import TOKEN_PROGRAM_ID
 from spl.token.instructions import TransferCheckedParams, transfer_checked
+import math
+from decimal import Decimal
 
-class SolanaDEX:
-    def __init__(self, rpc_url):
-        self.client = Client(rpc_url)
-        self.pools = {}
-        self.routes = {}
+# Initialize RPC connection
+client = Client("https://api.mainnet-beta.solana.com")
+PROGRAM_ID = PublicKey("YOUR_PROGRAM_ID")
 
-    def create_amm_pool(self, token_a, token_b, fee):
-        pool_key = f"{token_a}_{token_b}"
-        if pool_key in self.pools:
-            raise Exception(f"Pool {pool_key} already exists.")
-        self.pools[pool_key] = {'token_a': token_a, 'token_b': token_b, 'fee': fee, 'liquidity': {}}
+# Define constants
+TOKEN_A = PublicKey("TOKEN_A_MINT_ADDRESS")
+TOKEN_B = PublicKey("TOKEN_B_MINT_ADDRESS")
+FEE_NUMERATOR = Decimal(997)  # 0.3% fee
+FEE_DENOMINATOR = Decimal(1000)
 
-    def provide_liquidity(self, pool_key, token_a_amount, token_b_amount, provider):
-        pool = self.pools.get(pool_key)
-        if not pool:
-            raise Exception("Pool not found.")
-        if provider not in pool['liquidity']:
-            pool['liquidity'][provider] = {'token_a': 0, 'token_b': 0}
-        pool['liquidity'][provider]['token_a'] += token_a_amount
-        pool['liquidity'][provider]['token_b'] += token_b_amount
+# AMM Pool
+class AMM:
+    def __init__(self, token_a_reserve, token_b_reserve):
+        self.token_a = Decimal(token_a_reserve)
+        self.token_b = Decimal(token_b_reserve)
 
-    def swap(self, source_token, target_token, amount_in):
-        pool_key = f"{source_token}_{target_token}"
-        reverse_key = f"{target_token}_{source_token}"
-        if pool_key in self.pools:
-            pool = self.pools[pool_key]
-            fee = pool['fee']
-            amount_out = (amount_in * (1 - fee))  # Simplified calculation
-        elif reverse_key in self.pools:
-            pool = self.pools[reverse_key]
-            fee = pool['fee']
-            amount_out = (amount_in * (1 - fee))  # Simplified calculation
+    def get_price(self):
+        return self.token_a / self.token_b
+
+    def swap(self, amount_in, is_a_to_b):
+        amount_in = Decimal(amount_in)
+        if is_a_to_b:
+            invariant = self.token_a * self.token_b
+            self.token_a += amount_in
+            amount_out = self.token_b - invariant / self.token_a
+            self.token_b -= amount_out * FEE_NUMERATOR / FEE_DENOMINATOR
+            return amount_out
         else:
-            raise Exception("No route available.")
-        return amount_out
+            invariant = self.token_a * self.token_b
+            self.token_b += amount_in
+            amount_out = self.token_a - invariant / self.token_b
+            self.token_a -= amount_out * FEE_NUMERATOR / FEE_DENOMINATOR
+            return amount_out
 
-    def optimal_route(self, source_token, target_token, amount_in):
-        # Placeholder for now, expand to find best path across multiple pools.
-        return self.swap(source_token, target_token, amount_in)
+# Optimal Routing
+def find_best_route(amount_in, pools, is_a_to_b):
+    best_output = 0
+    best_pool = None
+    for pool in pools:
+        output = pool.swap(amount_in, is_a_to_b)
+        if output > best_output:
+            best_output = output
+            best_pool = pool
+    return best_pool, best_output
 
-    def execute_trade(self, source_token, target_token, amount_in, user_wallet):
-        amount_out = self.optimal_route(source_token, target_token, amount_in)
-        # Assuming transfer_checked is implemented fully
-        params = TransferCheckedParams(
-            program_id=TOKEN_PROGRAM_ID,
-            source=PublicKey(user_wallet['source']),
-            mint=PublicKey(source_token),
-            dest=PublicKey(user_wallet['dest']),
-            owner=PublicKey(user_wallet['owner']),
-            amount=amount_in,
-            decimals=6
-        )
-        tx = transfer_checked(params)
-        self.client.send_transaction(tx, user_wallet['keypair'])
-        return amount_out
+# Example pools
+pool1 = AMM(1000, 5000)
+pool2 = AMM(2000, 2000)
+pools = [pool1, pool2]
 
-# Example usage
-rpc_url = "https://api.mainnet-beta.solana.com"
-dex = SolanaDEX(rpc_url)
+# Example swap
+amount_in = 100
+is_a_to_b = True
+best_pool, output = find_best_route(amount_in, pools, is_a_to_b)
+print(f"Best pool: {best_pool}, Output: {output}")
 
-# Create pool
-dex.create_amm_pool("TOKEN_A", "TOKEN_B", 0.003)
+# Transaction Execution
+def create_swap_transaction(user_pubkey, pool_pubkey, amount_in, is_a_to_b):
+    instruction = TransactionInstruction(
+        program_id=PROGRAM_ID,
+        keys=[
+            # Add actual keys here for user, pool, and token accounts
+        ],
+        data=b''  # Encode swap data
+    )
+    transaction = Transaction().add(instruction)
+    return transaction
 
-# Provide liquidity
-dex.provide_liquidity("TOKEN_A_TOKEN_B", 1000, 500, "provider_wallet")
-
-# Execute trade
-user_wallet = {"source": "source_pubkey", "dest": "dest_pubkey", "owner": "owner_pubkey", "keypair": "keypair"}
-result = dex.execute_trade("TOKEN_A", "TOKEN_B", 100, user_wallet)
-print(result)
+# Execution placeholder (RPC integration required for signing/sending)
+user_pubkey = PublicKey("USER_PUBLIC_KEY")
+pool_pubkey = PublicKey("POOL_PUBLIC_KEY")
+transaction = create_swap_transaction(user_pubkey, pool_pubkey, amount_in, is_a_to_b)
