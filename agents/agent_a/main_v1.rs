@@ -1,61 +1,45 @@
-import solana
-from solana.publickey import PublicKey
 from solana.rpc.api import Client
+from solana.account import Account
 from solana.transaction import Transaction
-from solana.system_program import transfer_lamports
+from typing import List, Dict
 
-# Set up Solana client
-client = Client("https://api.devnet.solana.com")
+class SolanaDEX:
+    def __init__(self, rpc_url: str, admin_key: str):
+        self.client = Client(rpc_url)
+        self.admin = Account(bytes.fromhex(admin_key))
+        self.pools = {}  # {pool_address: {'token1': str, 'token2': str, 'liquidity': float}}
 
-# Define DEX constants
-DEX_PROGRAM_ID = PublicKey("DEX_PROGRAM_ID")
-TOKEN_A_MINT = PublicKey("TOKEN_A_MINT")
-TOKEN_B_MINT = PublicKey("TOKEN_B_MINT")
+    def create_pool(self, token1: str, token2: str, initial_liquidity: float):
+        pool_address = Account().public_key()
+        self.pools[str(pool_address)] = {'token1': token1, 'token2': token2, 'liquidity': initial_liquidity}
+        print(f"Pool created: {pool_address} with {initial_liquidity} liquidity.")
 
-# Define AMM pool constants
-AMM_POOL_PROGRAM_ID = PublicKey("AMM_POOL_PROGRAM_ID")
-AMM_POOL_ACCOUNT = PublicKey("AMM_POOL_ACCOUNT")
+    def swap(self, pool_address: str, input_token: str, output_token: str, amount: float):
+        pool = self.pools.get(pool_address)
+        if not pool or (input_token not in pool.values() or output_token not in pool.values()):
+            raise ValueError("Invalid pool or tokens.")
+        
+        input_liquidity = pool['liquidity']
+        k = input_liquidity ** 2
+        output_liquidity = k / (input_liquidity + amount)
+        pool['liquidity'] = output_liquidity
+        output_amount = input_liquidity - output_liquidity
+        return output_amount
 
-# Define concentrated liquidity constants
-CONCENTRATED_LIQUIDITY_PROGRAM_ID = PublicKey("CONCENTRATED_LIQUIDITY_PROGRAM_ID")
-CONCENTRATED_LIQUIDITY_ACCOUNT = PublicKey("CONCENTRATED_LIQUIDITY_ACCOUNT")
+    def optimal_routing(self, token_in: str, token_out: str, amount_in: float) -> List[Dict]:
+        routes = []
+        for pool_addr, pool in self.pools.items():
+            if token_in in pool.values() and token_out in pool.values():
+                output = self.swap(pool_addr, token_in, token_out, amount_in)
+                routes.append({'pool': pool_addr, 'amount_out': output})
+        return sorted(routes, key=lambda x: x['amount_out'], reverse=True)
 
-# Define optimal routing function
-def optimal_routing(amount, token_a, token_b):
-    # Implement optimal routing logic here
-    pass
+    def add_liquidity(self, pool_address: str, amount: float):
+        if pool_address not in self.pools:
+            raise ValueError("Pool not found.")
+        self.pools[pool_address]['liquidity'] += amount
 
-# Define AMM pool liquidity provider function
-def provide_liquidity(amount, token_a, token_b):
-    # Implement AMM pool liquidity provider logic here
-    pass
-
-# Define concentrated liquidity provider function
-def provide_concentrated_liquidity(amount, token_a, token_b):
-    # Implement concentrated liquidity provider logic here
-    pass
-
-# Define transaction builder function
-def build_transaction(instruction):
-    transaction = Transaction()
-    transaction.add(instruction)
-    return transaction
-
-# Define DEX user interaction function
-def interact_with_dex(amount, token_a, token_b):
-    # Implement DEX user interaction logic here
-    pass
-
-# Initialize DEX
-def initialize_dex():
-    # Implement DEX initialization logic here
-    pass
-
-# Run DEX
-def run_dex():
-    initialize_dex()
-    while True:
-        interact_with_dex(100, TOKEN_A_MINT, TOKEN_B_MINT)
-
-# Run the DEX
-run_dex()
+    def remove_liquidity(self, pool_address: str, amount: float):
+        if pool_address not in self.pools or self.pools[pool_address]['liquidity'] < amount:
+            raise ValueError("Insufficient liquidity.")
+        self.pools[pool_address]['liquidity'] -= amount
