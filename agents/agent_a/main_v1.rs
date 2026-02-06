@@ -1,65 +1,85 @@
-import numpy as np
+import asyncio
+from solana.rpc.async_api import AsyncClient
 from solana.publickey import PublicKey
-from solana.rpc.api import Client
+from solana.transaction import Transaction
+from spl.token.constants import TOKEN_PROGRAM_ID
 
-# Define constants
-CHAIN_ID = 101
-DECIMALS = 9
-FEE = 0.003
+class SolanaDEX:
+    def __init__(self, connection):
+        self.connection = connection
 
-# Initialize Solana client
-client = Client("https://api.devnet.solana.com")
+    async def create_amm_pool(self, token_a, token_b, fee):
+        # Create AMM pool
+        pool_public_key = PublicKey(f"pool_{token_a}_{token_b}")
+        tx = Transaction()
+        tx.add_instruction(
+            await self.connection.is_finalized(),
+            {
+                "program_id": PublicKey("amm_program"),
+                "data": bytes([1, token_a, token_b, fee]),
+                "keys": [
+                    {"pubkey": pool_public_key, "is_signer": False, "is_writable": True},
+                    {"pubkey": TOKEN_PROGRAM_ID, "is_signer": False, "is_writable": False},
+                ],
+            },
+        )
+        return await self.connection.send_transaction(tx)
 
-# Define AMM pool structure
-class AMMPool:
-    def __init__(self, token_a, token_b, liquidity):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity = liquidity
+    async def add_liquidity(self, pool_public_key, token_a_amount, token_b_amount):
+        # Add liquidity to pool
+        tx = Transaction()
+        tx.add_instruction(
+            await self.connection.is_finalized(),
+            {
+                "program_id": PublicKey("amm_program"),
+                "data": bytes([2, token_a_amount, token_b_amount]),
+                "keys": [
+                    {"pubkey": pool_public_key, "is_signer": False, "is_writable": True},
+                    {"pubkey": TOKEN_PROGRAM_ID, "is_signer": False, "is_writable": False},
+                ],
+            },
+        )
+        return await self.connection.send_transaction(tx)
 
-    def calculate_price(self, amount_in, reserve_in):
-        return (amount_in * reserve_in) / (self.liquidity - amount_in)
+    async def optimal_routing(self, token_in, token_out, amount_in):
+        # Find optimal route for token_in to token_out
+        routes = []
+        # Get all possible routes
+        for pool in await self.get_amm_pools():
+            if token_in in pool and token_out in pool:
+                routes.append(pool)
+        # Calculate best route based on fees and liquidity
+        best_route = min(routes, key=lambda x: x["fee"])
+        return best_route
 
-# Define concentrated liquidity structure
-class ConcentratedLiquidity:
-    def __init__(self, pool, tick_lower, tick_upper):
-        self.pool = pool
-        self.tick_lower = tick_lower
-        self.tick_upper = tick_upper
+    async def get_amm_pools(self):
+        # Get all AMM pools
+        pools = []
+        for program_account in await self.connection.get_program_accounts(PublicKey("amm_program")):
+            pool = program_account["account"]
+            pools.append({"public_key": pool["pubkey"], "token_a": pool["data"]["token_a"], "token_b": pool["data"]["token_b"], "fee": pool["data"]["fee"]})
+        return pools
 
-    def calculate_liquidity(self, price):
-        return np.sqrt(self.pool.liquidity * price)
+async def main():
+    connection = AsyncClient("https://api.devnet.solana.com")
+    dex = SolanaDEX(connection)
+    
+    token_a = "token_a"
+    token_b = "token_b"
+    fee = 0.05
+    
+    pool_public_key = await dex.create_amm_pool(token_a, token_b, fee)
+    print(f"Pool public key: {pool_public_key}")
+    
+    token_a_amount = 1000
+    token_b_amount = 1000
+    await dex.add_liquidity(pool_public_key, token_a_amount, token_b_amount)
+    print(f"Added liquidity to pool {pool_public_key}")
+    
+    token_in = token_a
+    token_out = token_b
+    amount_in = 100
+    best_route = await dex.optimal_routing(token_in, token_out, amount_in)
+    print(f"Best route for {token_in} to {token_out}: {best_route}")
 
-# Define optimal routing structure
-class OptimalRouting:
-    def __init__(self, pools):
-        self.pools = pools
-
-    def find_optimal_route(self, token_in, token_out, amount_in):
-        # Calculate prices for each pool
-        prices = []
-        for pool in self.pools:
-            reserve_in = pool.token_a if token_in == pool.token_a else pool.token_b
-            amount_out = pool.calculate_price(amount_in, reserve_in)
-            prices.append(amount_out)
-
-        # Find the optimal route
-        optimal_route = np.argmax(prices)
-        return self.pools[optimal_route]
-
-# Initialize pools
-pool1 = AMMPool(PublicKey("token_a"), PublicKey("token_b"), 1000)
-pool2 = AMMPool(PublicKey("token_b"), PublicKey("token_c"), 500)
-pool3 = AMMPool(PublicKey("token_c"), PublicKey("token_a"), 2000)
-
-# Initialize concentrated liquidity
-concentration1 = ConcentratedLiquidity(pool1, -1, 1)
-concentration2 = ConcentratedLiquidity(pool2, 0, 2)
-concentration3 = ConcentratedLiquidity(pool3, -2, 0)
-
-# Initialize optimal routing
-routing = OptimalRouting([pool1, pool2, pool3])
-
-# Execute optimal routing
-optimal_pool = routing.find_optimal_route(PublicKey("token_a"), PublicKey("token_c"), 100)
-print("Optimal pool:", optimal_pool.token_a, optimal_pool.token_b)
+asyncio.run(main())
