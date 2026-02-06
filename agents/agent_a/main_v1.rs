@@ -1,74 +1,54 @@
 import numpy as np
+from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
 # Initialize Solana client
-client = Client("https://api.devnet.solana.com")
+client = Client("https://api.mainnet-beta.solana.com")
 
-# Define AMM pool class
-class AMMPool:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.liquidity = 0
+class PredatoryOptimizer:
+    def __init__(self, marketPublicKey: str, tokenPublicKey: str, baseTokenPublicKey: str):
+        self.marketPublicKey = PublicKey(marketPublicKey)
+        self.tokenPublicKey = PublicKey(tokenPublicKey)
+        self.baseTokenPublicKey = PublicKey(baseTokenPublicKey)
 
-    def calculate_price(self, amount_in, reserve_in, reserve_out):
-        return (amount_in * reserve_out) / (reserve_in - amount_in * self.fee)
+    def get_market_data(self):
+        market_account_info = client.get_account_info(self.marketPublicKey)
+        if market_account_info is not None:
+            return market_account_info.result.value.data
 
-    def swap(self, amount_in, token_in):
-        if token_in == self.token_a:
-            reserve_in = self.token_a_reserve
-            reserve_out = self.token_b_reserve
-        else:
-            reserve_in = self.token_b_reserve
-            reserve_out = self.token_a_reserve
+    def build_amm_pool(self, token_decimal: int, base_token_decimal: int):
+        token_amount = 10 ** token_decimal
+        base_token_amount = 10 ** base_token_decimal
+        liquidity = np.sqrt(token_amount * base_token_amount)
+        return liquidity
 
-        price = self.calculate_price(amount_in, reserve_in, reserve_out)
-        return price
+    def optimize_routing(self, token_price: float, base_token_price: float):
+        optimal_route = token_price * base_token_price
+        return optimal_route
 
-# Concentrated liquidity
-class ConcentratedLiquidity:
-    def __init__(self, pool, lower_tick, upper_tick):
-        self.pool = pool
-        self.lower_tick = lower_tick
-        self.upper_tick = upper_tick
-        self.liquidity = 0
+    def concentrate_liquidity(self, liquidity: float):
+        concentrated_liquidity = liquidity * 2
+        return concentrated_liquidity
 
-    def calculate_liquidity(self, amount_a, amount_b):
-        self.liquidity = (amount_a * amount_b) ** 0.5
+# Create instance of PredatoryOptimizer
+optimizer = PredatoryOptimizer(
+    marketPublicKey="2s8t7Nu1M87qPB9NeqDD3WzVz4bJLnrsprqz3kqqwv7U",
+    tokenPublicKey="SRMUUiVJtitKPeUqc8BAq.addListener1 beb5Jzzz25ee2P",
+    baseTokenPublicKey="So11111111111111111111111111111111111111112"
+)
 
-# Optimal routing
-class OptimalRouting:
-    def __init__(self, pools):
-        self.pools = pools
+# Get market data
+market_data = optimizer.get_market_data()
+print("Market Data:", market_data)
 
-    def find_best_route(self, token_in, token_out, amount_in):
-        best_route = None
-        best_price = 0
+# Build AMM pool
+liquidity = optimizer.build_amm_pool(6, 9)
+print("Liquidity:", liquidity)
 
-        for pool in self.pools:
-            price = pool.swap(amount_in, token_in)
-            if price > best_price:
-                best_price = price
-                best_route = pool
+# Optimize routing
+optimal_route = optimizer.optimize_routing(1.5, 2.0)
+print("Optimal Route:", optimal_route)
 
-        return best_route
-
-# Create AMM pools
-pool1 = AMMPool("SOL", "USDC", 0.003)
-pool2 = AMMPool("USDC", "ETH", 0.003)
-
-# Create concentrated liquidity
-liquidity1 = ConcentratedLiquidity(pool1, -100, 100)
-liquidity2 = ConcentratedLiquidity(pool2, -100, 100)
-
-# Create optimal routing
-routing = OptimalRouting([pool1, pool2])
-
-# Example usage
-token_in = "SOL"
-token_out = "ETH"
-amount_in = 100
-
-best_route = routing.find_best_route(token_in, token_out, amount_in)
-print(f"Best route: {best_route.token_a} - {best_route.token_b}")
+# Concentrate liquidity
+concentrated_liquidity = optimizer.concentrate_liquidity(liquidity)
+print("Concentrated Liquidity:", concentrated_liquidity)
