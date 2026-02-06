@@ -1,52 +1,83 @@
 import numpy as np
-from solana.publickey import PublicKey
-from solana.rpc.api import Client
 
-# Define the DEX class
-class SolanaDEX:
-    def __init__(self, rpc_url, program_id):
-        self.rpc_url = rpc_url
-        self.program_id = PublicKey(program_id)
-        self.client = Client(rpc_url)
+# Constants
+DECIMALS = 8
+MIN_LIQUIDITY = 10**3
 
-    # Optimal routing using Bellman-Ford algorithm
-    def optimal_routing(self, token_pairs):
-        graph = {}
-        for pair in token_pairs:
-            graph[pair] = self.get_pair_price(pair)
-        distances = {pair: float('inf') for pair in token_pairs}
-        distances[token_pairs[0]] = 0
-        for _ in range(len(token_pairs) - 1):
-            for pair in token_pairs:
-                for neighbor in graph[pair]:
-                    distances[neighbor] = min(distances[neighbor], distances[pair] + graph[pair][neighbor])
-        return distances
+class Pool:
+    def __init__(self, token0, token1, liquidity):
+        self.token0 = token0
+        self.token1 = token1
+        self.liquidity = liquidity
 
-    # Get pair price using serum market
-    def get_pair_price(self, pair):
-        market_address = self.get_market_address(pair)
-        market_data = self.client.get_account_info(market_address)
-        return market_data['data']['price']
+    def get_reserves(self):
+        return self.liquidity
 
-    # Get market address using serum program
-    def get_market_address(self, pair):
-        return self.program_id + pair.encode()
+    def get_price(self):
+        return self.token0 / self.token1
 
-    # Concentrated liquidity implementation
-    def concentrated_liquidity(self, token_pairs, liquidity_providers):
-        pool_liquidity = {}
-        for pair in token_pairs:
-            pool_liquidity[pair] = 0
-            for provider in liquidity_providers:
-                pool_liquidity[pair] += provider[pair]
-        return pool_liquidity
+class Router:
+    def __init__(self, pools):
+        self.pools = pools
 
-# Example usage
-dex = SolanaDEX('https://api.mainnet-beta.solana.com', '-serum-program-id-')
-token_pairs = ['USDT-USD', 'SOL-USD']
-optimal_routes = dex.optimal_routing(token_pairs)
-print(optimal_routes)
+    def get_optimal_route(self, token_in, token_out, amount_in):
+        # Initialize variables
+        best_route = None
+        best_amount_out = 0
 
-liquidity_providers = {'provider1': {'USDT-USD': 1000, 'SOL-USD': 500}, 'provider2': {'USDT-USD': 500, 'SOL-USD': 2000}}
-pool_liquidity = dex.concentrated_liquidity(token_pairs, liquidity_providers)
-print(pool_liquidity)
+        # Iterate over all pools
+        for pool in self.pools:
+            # Check if pool contains both tokens
+            if (pool.token0 == token_in and pool.token1 == token_out) or (pool.token1 == token_in and pool.token0 == token_out):
+                # Calculate amount out
+                amount_out = self._get_amount_out(pool, amount_in)
+                # Update best route if amount out is higher
+                if amount_out > best_amount_out:
+                    best_amount_out = amount_out
+                    best_route = pool
+
+        return best_route, best_amount_out
+
+    def _get_amount_out(self, pool, amount_in):
+        # Calculate amount out using constant product formula
+        reserve_in = pool.get_reserves()
+        reserve_out = pool.get_reserves() * pool.get_price()
+        amount_out = (reserve_out * amount_in) / (reserve_in + amount_in)
+        return amount_out
+
+class ConcentratedLiquidityProvider:
+    def __init__(self, router):
+        self.router = router
+
+    def add_liquidity(self, token0, token1, amount0, amount1):
+        # Create new pool
+        pool = Pool(token0, token1, amount0 + amount1)
+        self.router.pools.append(pool)
+
+    def remove_liquidity(self, token0, token1, amount0, amount1):
+        # Find pool
+        for pool in self.router.pools:
+            if (pool.token0 == token0 and pool.token1 == token1) or (pool.token1 == token0 and pool.token0 == token1):
+                # Remove liquidity
+                self.router.pools.remove(pool)
+
+def main():
+    # Create router
+    router = Router([])
+
+    # Create liquidity provider
+    provider = ConcentratedLiquidityProvider(router)
+
+    # Add liquidity
+    provider.add_liquidity(100, 200, 100, 200)
+
+    # Get optimal route
+    token_in = 100
+    token_out = 200
+    amount_in = 10
+    best_route, best_amount_out = router.get_optimal_route(token_in, token_out, amount_in)
+    print(f"Best route: {best_route.token0} - {best_route.token1}")
+    print(f"Best amount out: {best_amount_out}")
+
+if __name__ == "__main__":
+    main()
