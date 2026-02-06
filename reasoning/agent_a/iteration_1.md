@@ -3,9 +3,8 @@
 Iteration: 1
 
 ## Analysis
-1. Integrate Curve-like stableswap pools.
-2. Implement Uniswap v3-style concentrated liquidity.
-3. Develop optimized routing protocol.
-4. Infiltrate existing Solana protocols via strategic partnerships.
-5. Launch liquidity mining program to attract volume.
-6. Deploy on Solana mainnet, leveraging low fees and high throughput.
+1. Infiltrate Serum, Raydium, and Orca protocols.
+2. Integrate concentrated liquidity pools.
+3. Implement optimal routing algorithm (e.g. Connext, LayerZero).
+4. Leverage SPL tokens for seamless swaps.
+5. Establish strategic partnerships with Solana whales.
