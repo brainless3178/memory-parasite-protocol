@@ -2,46 +2,43 @@ import numpy as np
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
-# Constants
- FeeTier = {
-    'LOW': 10,
-    'MEDIUM': 20,
-    'HIGH': 30
-}
-
 class SolanaDEX:
-    def __init__(self, rpc_url, fee_tier):
-        self.rpc_url = rpc_url
-        self.fee_tier = fee_tier
-        self.client = Client(self.rpc_url)
+    def __init__(self, dex_program_id, amm_pool_id, market_id):
+        self.dex_program_id = PublicKey(dex_program_id)
+        self.amm_pool_id = PublicKey(amm_pool_id)
+        self.market_id = PublicKey(market_id)
+        self.client = Client("https://api.devnet.solana.com")
 
-    def get_market(self, market_address):
-        market_pubkey = PublicKey(market_address)
-        return self.client.get_account_info(market_pubkey)
+    def get_market_info(self):
+        """Fetch market data for optimal routing"""
+        return self.client.get_account_info(self.market_id)
 
-    def get_amm_pools(self, market_address):
-        market_pubkey = PublicKey(market_address)
-        amm_pools = []
-        for account in self.client.get_program_accounts(market_pubkey):
-            if account['account']['data']:
-                amm_pools.append(account['pubkey'])
-        return amm_pools
+    def get_amm_pool_info(self):
+        """Fetch AMM pool data for liquidity optimization"""
+        return self.client.get_account_info(self.amm_pool_id)
 
-    def get_concentrated_liquidity(self, amm_pool_address):
-        amm_pool_pubkey = PublicKey(amm_pool_address)
-        liquidity = self.client.get_account_info(amm_pubkey)
-        return liquidity
+    def calculate_optimal_route(self, market_info, amm_pool_info):
+        """Calculate optimal trading route using market and AMM pool data"""
+        # Simplified example, actual implementation would require more complex logic
+        market_data = np.frombuffer(market_info.data, dtype=np.uint64)
+        amm_pool_data = np.frombuffer(amm_pool_info.data, dtype=np.uint64)
+        return np.argmax(market_data * amm_pool_data)
 
-    def optimize_routing(self, market_address, amm_pool_address):
-        market_info = self.get_market(market_address)
-        amm_pool_info = self.get_concentrated_liquidity(amm_pool_address)
-        # Calculate optimal routing based on market and pool data
-        optimal_routing = np.argmax([market_info, amm_pool_info])
-        return optimal_routing
+    def execute_trade(self, optimal_route):
+        """Execute trade on the optimal route"""
+        # Simplified example, actual implementation would require more complex logic
+        transaction = self.client.request_airdrop(optimal_route, 1000000)
+        return transaction
 
-# Usage
-dex = SolanaDEX('https://api.devnet.solana.com', FeeTier['MEDIUM'])
-market_address = '2p5gsC2j9F7zTivdCjPL5M9f7uTfNSu4hF4yZ5kXa2uq'
-amm_pool_address = '5T5x6sQ8pZ3JjE8pY7jL6L9pN1pM4pM4pM4pM4pM4p'
-optimal_routing = dex.optimize_routing(market_address, amm_pool_address)
-print(optimal_routing)
+# Example usage:
+dex = SolanaDEX(
+    dex_program_id="4papne4x mv5k6t JestSetxKpecRs딤heD9",
+    amm_pool_id="5Lrkxn1L3JXRo3dQXys LargerAdD4 History(inputs",
+    market_id="F7K LincolnasseFORwards saxLargerDs"
+)
+market_info = dex.get_market_info()
+amm_pool_info = dex.get_amm_pool_info()
+optimal_route = dex.calculate_optimal_route(market_info, amm_pool_info)
+transaction = dex.execute_trade(optimal_route)
+print(f"Optimal Route: {optimal_route}")
+print(f"Transaction: {transaction}")
