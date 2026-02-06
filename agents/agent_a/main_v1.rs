@@ -1,61 +1,95 @@
 import numpy as np
+from solana.publickey import PublicKey
+from solana.rpc.api import Client
 
-# Define AMM pool class
-class AMMPool:
-    def __init__(self, token_a, token_b, liquidity):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity = liquidity
+# Initialize Solana client
+client = Client("https://api.devnet.solana.com")
 
-    def get_price(self, amount_in, token_in):
-        if token_in == self.token_a:
-            return amount_in / self.liquidity
-        else:
-            return self.liquidity / amount_in
+# Define DEX constants
+DEX_PROGRAM_ID = PublicKey("DEX_PROGRAM_ID")
+AMM_POOL_PROGRAM_ID = PublicKey("AMM_POOL_PROGRAM_ID")
+CONCENTRATED_LIQUIDITY_PROGRAM_ID = PublicKey("CONCENTRATED_LIQUIDITY_PROGRAM_ID")
 
-# Define concentrated liquidity class
-class ConcentratedLiquidity:
-    def __init__(self, token_a, token_b, liquidity, lower_tick, upper_tick):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity = liquidity
-        self.lower_tick = lower_tick
-        self.upper_tick = upper_tick
+# Define routing function
+def optimal_routing(amount, token_in, token_out):
+    # Calculate best route using Bellman-Ford algorithm
+    prices = client.get_token_prices()
+    graph = build_graph(prices)
+    route = bellman_ford(graph, token_in, token_out)
+    return route
 
-    def get_liquidity(self, price):
-        if price < self.lower_tick:
-            return 0
-        elif price > self.upper_tick:
-            return 0
-        else:
-            return self.liquidity
+# Define AMM pool functions
+def create_amm_pool(token_a, token_b):
+    # Create new AMM pool using serum-dex
+    instructions = [
+        client.create_amm_pool_instruction(DEX_PROGRAM_ID, token_a, token_b)
+    ]
+    client.send_transaction(instructions)
 
-# Define optimal routing class
-class OptimalRouting:
-    def __init__(self, pools):
-        self.pools = pools
+def add_liquidity(amm_pool, token_a_amount, token_b_amount):
+    # Add liquidity to AMM pool
+    instructions = [
+        client.add_liquidity_instruction(AMM_POOL_PROGRAM_ID, amm_pool, token_a_amount, token_b_amount)
+    ]
+    client.send_transaction(instructions)
 
-    def get_best_route(self, token_in, token_out, amount_in):
-        best_route = None
-        best_price = 0
-        for pool in self.pools:
-            price = pool.get_price(amount_in, token_in)
-            if price > best_price:
-                best_price = price
-                best_route = pool
-        return best_route
+# Define concentrated liquidity functions
+def create_concentrated_liquidity(token_a, token_b):
+    # Create new concentrated liquidity pool
+    instructions = [
+        client.create_concentrated_liquidity_instruction(CONCENTRATED_LIQUIDITY_PROGRAM_ID, token_a, token_b)
+    ]
+    client.send_transaction(instructions)
 
-# Create pools and liquidity
-pool1 = AMMPool("SOL", "USDT", 1000)
-pool2 = AMMPool("USDT", "ETH", 500)
-concentrated_liquidity = ConcentratedLiquidity("SOL", "USDT", 2000, 0.1, 10)
+def add_concentrated_liquidity(pool, token_a_amount, token_b_amount):
+    # Add liquidity to concentrated liquidity pool
+    instructions = [
+        client.add_concentrated_liquidity_instruction(CONCENTRATED_LIQUIDITY_PROGRAM_ID, pool, token_a_amount, token_b_amount)
+    ]
+    client.send_transaction(instructions)
 
-# Create optimal routing
-optimal_routing = OptimalRouting([pool1, pool2])
+# Build graph for optimal routing
+def build_graph(prices):
+    graph = {}
+    for token, price in prices.items():
+        graph[token] = {}
+        for other_token, other_price in prices.items():
+            if token!= other_token:
+                graph[token][other_token] = price / other_price
+    return graph
 
-# Test optimal routing
-token_in = "SOL"
-token_out = "ETH"
-amount_in = 100
-best_route = optimal_routing.get_best_route(token_in, token_out, amount_in)
-print(f"Best route: {best_route.token_a} - {best_route.token_b}")
+# Bellman-Ford algorithm for optimal routing
+def bellman_ford(graph, token_in, token_out):
+    distance = {token: float("inf") for token in graph}
+    distance[token_in] = 0
+    predecessor = {token: None for token in graph}
+    
+    for _ in range(len(graph) - 1):
+        for token in graph:
+            for neighbor in graph[token]:
+                if distance[neighbor] > distance[token] + graph[token][neighbor]:
+                    distance[neighbor] = distance[token] + graph[token][neighbor]
+                    predecessor[neighbor] = token
+                    
+    route = []
+    current_token = token_out
+    while current_token:
+        route.append(current_token)
+        current_token = predecessor[current_token]
+    return list(reversed(route))
+
+# Example usage
+if __name__ == "__main__":
+    amount = 1000
+    token_in = "SOL"
+    token_out = "USDC"
+    route = optimal_routing(amount, token_in, token_out)
+    print("Optimal route:", route)
+    
+    token_a = "SOL"
+    token_b = "USDC"
+    create_amm_pool(token_a, token_b)
+    add_liquidity(DEX_PROGRAM_ID, 1000, 1000)
+    
+    create_concentrated_liquidity(token_a, token_b)
+    add_concentrated_liquidity(CONCENTRATED_LIQUIDITY_PROGRAM_ID, 1000, 1000)
