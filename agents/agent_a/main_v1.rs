@@ -1,63 +1,65 @@
-import numpy as np
-from solana.publickey import PublicKey
+import hashlib
+
+# Constants
+CHAIN_ID = 101
+RPC_URL = "https://api.mainnet-beta.solana.com"
+
+# Import required libraries
 from solana.rpc.api import Client
+from spl.token.instructions import create_associated_token_account
 
-# Set up Solana client
-client = Client("https://api.devnet.solana.com")
+# Initialize client
+client = Client(RPC_URL)
 
-# Define AMM pool
-class AMMPool:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.liquidity = 0
+# Define functions
+def get_token_account(wallet, token_mint):
+    """Get token account for wallet and token mint."""
+    return client.get_token_accounts_by_owner(
+        wallet.public_key, 
+        {"mint": token_mint}
+    )['result']['value'][0]['pubkey']
 
-    def add_liquidity(self, amount_a, amount_b):
-        self.liquidity += amount_a + amount_b
+def create_associated_token_account_ix(wallet, token_mint):
+    """Create associated token account instruction."""
+    return create_associated_token_account(
+        wallet.public_key, 
+        token_mint, 
+        wallet.public_key
+    )
 
-    def get_price(self):
-        return self.token_a / self.token_b
+def get_lamports(wallet):
+    """Get lamports for wallet."""
+    return client.get_balance(wallet.public_key)
 
-# Define concentrated liquidity
-class ConcentratedLiquidity:
-    def __init__(self, pool, lower_tick, upper_tick):
-        self.pool = pool
-        self.lower_tick = lower_tick
-        self.upper_tick = upper_tick
-        self.liquidity = 0
+# Define classes
+class Token:
+    def __init__(self, mint, name):
+        self.mint = mint
+        self.name = name
 
-    def add_liquidity(self, amount):
-        self.liquidity += amount
+class Wallet:
+    def __init__(self, private_key):
+        self.private_key = private_key
+        self.public_key = None  # initialize later
 
-    def get_price(self):
-        return self.pool.get_price()
+# Main
+if __name__ == "__main__":
+    # Create wallet
+    wallet = Wallet("your_private_key_here")
+    wallet.public_key = hashlib.sha256(wallet.private_key.encode()).hexdigest()
+    
+    # Create tokens
+    token1 = Token("token1_mint", "Token 1")
+    token2 = Token("token2_mint", "Token 2")
 
-# Define optimal routing
-class OptimalRouting:
-    def __init__(self, pools):
-        self.pools = pools
+    # Create associated token accounts
+    ix1 = create_associated_token_account_ix(wallet, token1.mint)
+    ix2 = create_associated_token_account_ix(wallet, token2.mint)
 
-    def get_best_route(self, token_a, token_b, amount):
-        best_route = None
-        best_price = float("inf")
-        for pool in self.pools:
-            price = pool.get_price()
-            if price < best_price:
-                best_price = price
-                best_route = pool
-        return best_route
+    # Get token accounts
+    token_account1 = get_token_account(wallet, token1.mint)
+    token_account2 = get_token_account(wallet, token2.mint)
 
-# Set up pools and routing
-pool1 = AMMPool(100, 200, 0.01)
-pool2 = AMMPool(200, 100, 0.01)
-pools = [pool1, pool2]
-routing = OptimalRouting(pools)
-
-# Add liquidity to pools
-pool1.add_liquidity(1000, 2000)
-pool2.add_liquidity(2000, 1000)
-
-# Get best route
-best_route = routing.get_best_route(100, 200, 1000)
-print(f"Best route: {best_route.token_a} / {best_route.token_b}")
+    # Get lamports
+    lamports = get_lamports(wallet)
+    print(f"Lamports: {lamports}")
