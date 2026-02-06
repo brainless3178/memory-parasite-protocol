@@ -1,62 +1,51 @@
 import numpy as np
-from solana.publickey import PublicKey
-from solana.rpc.api import Client
 
-# Solana client setup
-client = Client("https://api.mainnet-beta.solana.com")
+class SolanaDEX:
+    def __init__(self):
+        self.amm_pools = {}
+        self.concentrated_liquidity = {}
 
-# Serum DEX setup
-dex_program_id = PublicKey("DEXF4C2GadgsR4Aqj7UyLpGTQx6P2NsaxM4vhd BraB"))
+    def add_amm_pool(self, token_a, token_b, liquidity):
+        self.amm_pools[(token_a, token_b)] = liquidity
 
-# AMM pool setup
-def create_amm_pool(token_mint, quote_mint, fee):
-    # Create AMM pool
-    pool_account = client.program_create_account(
-        dex_program_id,
-        token_mint,
-        quote_mint,
-        fee,
-    )
-    return pool_account
+    def add_concentrated_liquidity(self, token, liquidity):
+        self.concentrated_liquidity[token] = liquidity
 
-# Concentrated liquidity setup
-def create_concentrated_liquidity(pool_address, token_amount, quote_amount):
-    # Create concentrated liquidity
-    concentrated_liquidity_address = client.program_create_account(
-        dex_program_id,
-        pool_address,
-        token_amount,
-        quote_amount,
-    )
-    return concentrated_liquidity_address
+    def optimal_routing(self, token_in, token_out, amount):
+        # Bellman-Ford algorithm for optimal routing
+        distance = {token: float('inf') for token in set(self.amm_pools)}
+        distance[token_in] = 0
+        predecessor = {token: None for token in set(self.amm_pools)}
 
-# Optimal routing setup
-def optimal_routing(path, amount):
-    # Calculate optimal route
-    optimal_route = np.array(path)
-    return optimal_route
+        for _ in range(len(self.amm_pools) - 1):
+            for (u, v), liquidity in self.amm_pools.items():
+                if distance[u] + np.log(liquidity) < distance[v]:
+                    distance[v] = distance[u] + np.log(liquidity)
+                    predecessor[v] = u
 
-# Main function
-def main():
-    # Create AMM pool
-    token_mint = PublicKey("So11111111111111111111111111111111111111112")
-    quote_mint = PublicKey("So11111111111111111111111111111111111111113")
-    fee = 0.1
-    pool_account = create_amm_pool(token_mint, quote_mint, fee)
-    
-    # Create concentrated liquidity
-    token_amount = 1000
-    quote_amount = 1000
-    concentrated_liquidity_address = create_concentrated_liquidity(pool_account, token_amount, quote_amount)
-    
-    # Calculate optimal route
-    path = [(token_mint, quote_mint), (quote_mint, token_mint)]
-    amount = 100
-    optimal_route = optimal_routing(path, amount)
-    
-    print("AMM Pool Address:", pool_account)
-    print("Concentrated Liquidity Address:", concentrated_liquidity_address)
-    print("Optimal Route:", optimal_route)
+        path = []
+        current = token_out
+        while current:
+            path.append(current)
+            current = predecessor[current]
+        path.reverse()
 
-if __name__ == "__main__":
-    main()
+        return path, distance[token_out]
+
+# Initialize the DEX
+dex = SolanaDEX()
+
+# Add AMM pools
+dex.add_amm_pool('SOL', 'USDT', 1000)
+dex.add_amm_pool('USDT', 'ETH', 500)
+dex.add_amm_pool('SOL', 'ETH', 2000)
+
+# Add concentrated liquidity
+dex.add_concentrated_liquidity('SOL', 10000)
+dex.add_concentrated_liquidity('USDT', 5000)
+dex.add_concentrated_liquidity('ETH', 2000)
+
+# Find optimal routing
+path, distance = dex.optimal_routing('SOL', 'ETH', 100)
+print(f"Optimal routing: {path}")
+print(f"Distance: {distance}")
