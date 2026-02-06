@@ -2,83 +2,74 @@ import numpy as np
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
-# Connect to Solana cluster
+# Initialize Solana client
 client = Client("https://api.devnet.solana.com")
 
-# Define DEX constants
-DEX_PROGRAM_ID = PublicKey("YourDEXProgramID")
-SWAP_FEE = 0.003  # 0.3%
-SLIPPAGE_TOLERANCE = 0.005  # 0.5%
-
-# Create AMM pool class
+# Define AMM pool
 class AMMPool:
-    def __init__(self, token_a, token_b, fee):
+    def __init__(self, token_a, token_b, liquidity_provider):
         self.token_a = token_a
         self.token_b = token_b
-        self.fee = fee
-        self.liquidity = 0
+        self.liquidity_provider = liquidity_provider
+        self.reserves = {token_a: 0, token_b: 0}
 
     def add_liquidity(self, amount_a, amount_b):
-        # Calculate new liquidity
-        new_liquidity = np.sqrt(amount_a * amount_b)
-        self.liquidity += new_liquidity
+        self.reserves[self.token_a] += amount_a
+        self.reserves[self.token_b] += amount_b
 
-    def remove_liquidity(self, amount):
-        # Calculate removed liquidity
-        removed_liquidity = amount / self.liquidity
-        self.liquidity -= removed_liquidity
+    def remove_liquidity(self, amount_a, amount_b):
+        self.reserves[self.token_a] -= amount_a
+        self.reserves[self.token_b] -= amount_b
 
-    def get_price(self):
-        # Calculate price using AMM formula
-        return self.token_b / self.token_a
-
-# Create concentrated liquidity class
-class ConcentratedLiquidity:
-    def __init__(self, token_a, token_b, fee):
+# Define concentrated liquidity pool
+class ConcentratedLiquidityPool:
+    def __init__(self, token_a, token_b, liquidity_provider):
         self.token_a = token_a
         self.token_b = token_b
-        self.fee = fee
-        self.positions = {}
+        self.liquidity_provider = liquidity_provider
+        self.reserves = {token_a: 0, token_b: 0}
 
-    def add_position(self, owner, amount_a, amount_b):
-        # Add new position to owner's positions
-        self.positions[owner] = (amount_a, amount_b)
+    def add_liquidity(self, amount_a, amount_b):
+        self.reserves[self.token_a] += amount_a
+        self.reserves[self.token_b] += amount_b
 
-    def remove_position(self, owner):
-        # Remove owner's position
-        del self.positions[owner]
+    def remove_liquidity(self, amount_a, amount_b):
+        self.reserves[self.token_a] -= amount_a
+        self.reserves[self.token_b] -= amount_b
 
-    def get_position_price(self, owner):
-        # Calculate price for owner's position
-        amount_a, amount_b = self.positions[owner]
-        return amount_b / amount_a
+# Define optimal routing
+class OptimalRouting:
+    def __init__(self, pools):
+        self.pools = pools
 
-# Optimize routing
-def optimize_routing(amount_in, token_in, token_out):
-    # Use Bellman-Ford algorithm to find optimal route
-    graph = {}
-    for token in [token_in, token_out]:
-        graph[token] = {}
-        for pool in AMMPool.instances:
-            if token in [pool.token_a, pool.token_b]:
-                graph[token][pool.token_a if pool.token_b == token else pool.token_b] = pool.get_price()
-    distance = {token: float('inf') for token in graph}
-    distance[token_in] = 0
-    for _ in range(len(graph) - 1):
-        for token in graph:
-            for neighbor in graph[token]:
-                distance[neighbor] = min(distance[neighbor], distance[token] + graph[token][neighbor])
-    return distance[token_out]
+    def find_optimal_route(self, token_a, token_b, amount):
+        # Simplified example, actual implementation would involve more complex logic
+        best_route = None
+        best_price = float("inf")
+        for pool in self.pools:
+            if pool.token_a == token_a and pool.token_b == token_b:
+                price = self.calculate_price(pool, amount)
+                if price < best_price:
+                    best_price = price
+                    best_route = pool
+        return best_route
 
-# Run DEX
-if __name__ == "__main__":
-    # Initialize AMM pools and concentrated liquidity
-    amm_pools = [AMMPool("TokenA", "TokenB", SWAP_FEE)]
-    concentrated_liquidity = ConcentratedLiquidity("TokenA", "TokenB", SWAP_FEE)
+    def calculate_price(self, pool, amount):
+        # Simplified example, actual implementation would involve more complex logic
+        return amount / pool.reserves[pool.token_b]
 
-    # Optimize routing
-    amount_in = 1000
-    token_in = "TokenA"
-    token_out = "TokenB"
-    optimized_price = optimize_routing(amount_in, token_in, token_out)
-    print(f"Optimized price: {optimized_price}")
+# Create pools and optimal routing
+pool1 = AMMPool("TokenA", "TokenB", "LiquidityProvider1")
+pool2 = ConcentratedLiquidityPool("TokenA", "TokenB", "LiquidityProvider2")
+pools = [pool1, pool2]
+optimal_routing = OptimalRouting(pools)
+
+# Add liquidity to pools
+pool1.add_liquidity(1000, 1000)
+pool2.add_liquidity(500, 500)
+
+# Find optimal route
+optimal_route = optimal_routing.find_optimal_route("TokenA", "TokenB", 100)
+
+# Print result
+print("Optimal route:", optimal_route.token_a, optimal_route.token_b)
