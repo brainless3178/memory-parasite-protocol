@@ -1,91 +1,80 @@
-import solana
-from spl.token.constants import TOKEN_PROGRAM_ID
+import numpy as np
 from solana.publickey import PublicKey
+from solana.system_program import TransferParams
 from solana.transaction import Transaction
 
 class SolanaDEX:
-    def __init__(self, connection, wallet):
-        self.connection = connection
-        self.wallet = wallet
+    def __init__(self, program_id, market_addr, base_token, quote_token):
+        self.program_id = PublicKey(program_id)
+        self.market_addr = PublicKey(market_addr)
+        self.base_token = PublicKey(base_token)
+        self.quote_token = PublicKey(quote_token)
 
-    def create_pool(self, token_a, token_b, fee):
-        # Create a new AMM pool
-        pool_program = PublicKey('...')  # Replace with pool program ID
+    def optimal_routing(self, amount_in, amount_out):
+        # Calculate optimal route using Bellman-Ford algorithm
+        graph = self.build_graph()
+        distances = [float('inf')] * len(graph)
+        distances[0] = 0
+        for _ in range(len(graph) - 1):
+            for u, v, w in graph:
+                if distances[u]!= float('inf') and distances[u] + w < distances[v]:
+                    distances[v] = distances[u] + w
+        return distances[-1]
+
+    def build_graph(self):
+        # Build graph of liquidity pools
+        graph = []
+        for pool in self.get_pools():
+            for token in pool['tokens']:
+                graph.append((pool['id'], token['id'], token['fee']))
+        return graph
+
+    def get_pools(self):
+        # Get list of liquidity pools
+        pools = []
+        for account in self.get_market_accounts():
+            if account['data']['type'] == 'liquidity_pool':
+                pools.append(account['data'])
+        return pools
+
+    def get_market_accounts(self):
+        # Get list of market accounts
+        accounts = []
+        for account in self.market_addr.get_account_info():
+            accounts.append(account)
+        return accounts
+
+    def amm_pool(self, token_a, token_b, fee):
+        # Create AMM pool
         transaction = Transaction()
-        transaction.add_instruction(
-            solana.system_program.create_account(
-                solana.system_program.CreateAccountParams(
-                    from_pubkey=self.wallet.public_key,
-                    new_account_pubkey=PublicKey('...'),  # Replace with new account ID
-                    space=165,  # Account size
-                    lamports=1000000,  # Funding for new account
-                    program_id=pool_program
-                )
-            )
-        )
-        transaction.add_instruction(
-            solana.system_program.create_account(
-                solana.system_program.CreateAccountParams(
-                    from_pubkey=self.wallet.public_key,
-                    new_account_pubkey=PublicKey('...'),  # Replace with new account ID
-                    space=165,  # Account size
-                    lamports=1000000,  # Funding for new account
-                    program_id=TOKEN_PROGRAM_ID
-                )
-            )
-        )
-        self.connection.send_transaction(transaction)
+        transaction.add(TransferParams(
+            self.program_id,
+            self.market_addr,
+            token_a,
+            token_b,
+            fee
+        ))
+        return transaction
 
-    def add_liquidity(self, token_a, token_b, amount_a, amount_b):
-        # Add liquidity to an existing pool
-        pool_program = PublicKey('...')  # Replace with pool program ID
+    def concentrated_liquidity(self, token_a, token_b, amount):
+        # Add liquidity to concentrated liquidity pool
         transaction = Transaction()
-        transaction.add_instruction(
-            solana.system_program.transfer(
-                solana.system_program.TransferParams(
-                    from_pubkey=self.wallet.public_key,
-                    to_pubkey=PublicKey('...'),  # Replace with pool account ID
-                    lamports=amount_a
-                )
-            )
-        )
-        transaction.add_instruction(
-            solana.system_program.transfer(
-                solana.system_program.TransferParams(
-                    from_pubkey=self.wallet.public_key,
-                    to_pubkey=PublicKey('...'),  # Replace with pool account ID
-                    lamports=amount_b
-                )
-            )
-        )
-        self.connection.send_transaction(transaction)
+        transaction.add(TransferParams(
+            self.program_id,
+            self.market_addr,
+            token_a,
+            token_b,
+            amount
+        ))
+        return transaction
 
-    def swap(self, token_in, token_out, amount_in):
-        # Execute a swap transaction
-        pool_program = PublicKey('...')  # Replace with pool program ID
-        transaction = Transaction()
-        transaction.add_instruction(
-            solana.system_program.transfer(
-                solana.system_program.TransferParams(
-                    from_pubkey=self.wallet.public_key,
-                    to_pubkey=PublicKey('...'),  # Replace with pool account ID
-                    lamports=amount_in
-                )
-            )
-        )
-        transaction.add_instruction(
-            pool_program.instruction.swap(
-                token_in=token_in,
-                token_out=token_out,
-                amount_in=amount_in
-            )
-        )
-        self.connection.send_transaction(transaction)
-
-# Example usage:
-connection = solana.RpcClient('https://api.devnet.solana.com')
-wallet = solana.Wallet(solanaKeypair='...')  # Replace with wallet keypair
-dex = SolanaDEX(connection, wallet)
-dex.create_pool('USDT', 'SOL', 0.3)
-dex.add_liquidity('USDT', 'SOL', 1000, 100)
-dex.swap('USDT', 'SOL', 100)
+# Example usage
+dex = SolanaDEX(
+    'program_id',
+    'market_addr',
+    'base_token',
+    'quote_token'
+)
+print(dex.optimal_routing(100, 200))
+print(dex.amm_pool('token_a', 'token_b', 0.1))
+print(dex.concentrated_liquidity('token_a', 'token_b', 1000))
