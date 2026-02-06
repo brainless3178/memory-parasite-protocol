@@ -1,114 +1,52 @@
-import hashlib
-from solana.rpc.api import Client
+import numpy as np
 from solana.publickey import PublicKey
-from solana.system_program import transfer, TransferParams
+from solana.rpc.api import Client
 
-# Initialize Solana client
-client = Client("https://api.devnet.solana.com")
+class SolanaDEX:
+    def __init__(self, rpc_url, wallet_keypair):
+        self.rpc_url = rpc_url
+        self.wallet_keypair = wallet_keypair
+        self.client = Client(rpc_url)
 
-# Define DEX constants
-DEX_PROGRAM_ID = PublicKey("YourDEXProgramId")
-ROUTER_PROGRAM_ID = PublicKey("YourRouterProgramId")
-AMM_POOL_PROGRAM_ID = PublicKey("YourAMMPoolProgramId")
-CONCENTRATED_LIQUIDITY_PROGRAM_ID = PublicKey("YourConcentratedLiquidityProgramId")
+    def get_token_accounts(self):
+        """Retrieve token accounts for the given wallet."""
+        return self.client.get_token_accounts_by_owner(self.wallet_keypair.public_key)
 
-# Optimal routing function
-def optimal_routing(side, amount, token_in, token_out):
-    """Find the most efficient route for a token swap"""
-    # Define the possible routes
-    routes = [
-        (token_in, token_out),  # Direct route
-        (token_in, "USDC", token_out),  # USDC route
-        (token_in, "SOL", token_out),  # SOL route
-    ]
-    # Initialize the best route
-    best_route = None
-    best_price = 0
-    # Iterate over the routes
-    for route in routes:
-        # Calculate the price for the route
-        price = calculate_price(route, side, amount)
-        # Check if the price is better than the current best price
-        if price > best_price:
-            best_price = price
-            best_route = route
-    return best_route, best_price
+    def get_liquidity_pools(self):
+        """Fetch liquidity pools from the Solana blockchain."""
+        return self.client.get_program_accounts(PublicKey('9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpL9xBjVSwj'))
 
-# Calculate price function
-def calculate_price(route, side, amount):
-    """Calculate the price for a given route"""
-    # Define the AMM pool IDs
-    amm_pool_ids = {
-        ("USDC", "SOL"): PublicKey("YourUSDCSOLPoolId"),
-        ("SOL", "USDC"): PublicKey("YourSOLUSDCPoolId"),
-    }
-    # Initialize the price
-    price = 0
-    # Iterate over the route
-    for i in range(len(route) - 1):
-        # Get the AMM pool ID for the current leg
-        amm_pool_id = amm_pool_ids.get((route[i], route[i + 1]))
-        if amm_pool_id:
-            # Calculate the price for the current leg
-            leg_price = get_price(amm_pool_id, side, amount)
-            # Update the price
-            price += leg_price
-    return price
+    def calculate_optimal_route(self, token_in, token_out, amount_in):
+        """Calculate the optimal route for a given trade."""
+        # Calculate output amount for each possible route
+        routes = []
+        for pool in self.get_liquidity_pools():
+            if token_in in pool.account.data and token_out in pool.account.data:
+                # Calculate output amount using the constant product formula
+                reserve_in = pool.account.data[token_in]
+                reserve_out = pool.account.data[token_out]
+                amount_out = (reserve_out * amount_in) / (reserve_in + amount_in)
+                routes.append((amount_out, pool.public_key))
+        # Return the route with the highest output amount
+        return max(routes, key=lambda x: x[0])
 
-# Get price function
-def get_price(amm_pool_id, side, amount):
-    """Get the price from an AMM pool"""
-    # Call the AMM pool to get the price
-    response = client.get_account_info(amm_pool_id)
-    # Parse the price from the response
-    price = parse_price(response, side, amount)
-    return price
+    def execute_trade(self, token_in, token_out, amount_in):
+        """Execute a trade using the calculated optimal route."""
+        optimal_route = self.calculate_optimal_route(token_in, token_out, amount_in)
+        # Send a transaction to the Solana blockchain to execute the trade
+        self.client.send_transaction(
+            self.wallet_keypair,
+            [
+                {
+                    'programId': PublicKey('9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpL9xBjVSwj'),
+                    'accounts': [
+                        {'pubkey': self.wallet_keypair.public_key, 'isSigner': True, 'isWritable': True},
+                        {'pubkey': optimal_route[1], 'isSigner': False, 'isWritable': True},
+                    ],
+                    'data': np.array([0, token_in, token_out, amount_in], dtype=np.uint64).tobytes(),
+                }
+            ]
+        )
 
-# Parse price function
-def parse_price(response, side, amount):
-    """Parse the price from an AMM pool response"""
-    # Parse the response data
-    data = response["result"]["value"]["data"]
-    # Calculate the price
-    price = int.from_bytes(data, "big") / (10 ** 6)
-    return price
-
-# Concentrated liquidity function
-def concentrated_liquidity(token_in, token_out, amount):
-    """Add liquidity to an AMM pool with concentrated liquidity"""
-    # Define the concentrated liquidity program ID
-    concentrated_liquidity_program_id = CONCENTRATED_LIQUIDITY_PROGRAM_ID
-    # Call the concentrated liquidity program to add liquidity
-    response = client.invoke_signed(
-        [
-            transfer(
-                TransferParams(
-                    from_pubkey=PublicKey("YourWalletPublicKey"),
-                    to_pubkey=concentrated_liquidity_program_id,
-                    lamports=1000000,
-                )
-            )
-        ],
-        "YourWalletKeypair",
-    )
-    # Parse the response data
-    data = response["result"]
-    return data
-
-# Main function
-def main():
-    # Define the token swap parameters
-    token_in = "USDC"
-    token_out = "SOL"
-    amount = 1000
-    side = "buy"
-    # Call the optimal routing function
-    route, price = optimal_routing(side, amount, token_in, token_out)
-    print(f"Optimal route: {route}")
-    print(f"Price: {price}")
-    # Call the concentrated liquidity function
-    data = concentrated_liquidity(token_in, token_out, amount)
-    print(f"Concentrated liquidity data: {data}")
-
-if __name__ == "__main__":
-    main()
+# Initialize the Solana DEX
+dex = SolanaDEX('https://api.devnet.solana.com', PublicKey('YOUR_WALLET_KEYPAIR'))
