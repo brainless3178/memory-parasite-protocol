@@ -1,53 +1,66 @@
-import pandas as pd
-from solana.publickey import PublicKey
+import numpy as np
 from solana.rpc.api import Client
-from sklearn.linear_model import LinearRegression
+from solana.publickey import PublicKey
+from solana.transaction import Transaction
 
-class SolanaDEX:
-    def __init__(self, rpc_url):
-        self.rpc_url = rpc_url
-        self.client = Client(rpc_url)
-        self.amm_pools = {}
-        self.concentrated_liquidity = {}
+# Define constants
+CONCENTRATED_LIQUIDITY_POOL_PROGRAM_ID = PublicKey("...")
 
-    def get_liquidity(self, pool_address):
-        pool_data = self.client.get_account_info(PublicKey(pool_address))
-        liquidity = pool_data['data']['parsed']['info']['liquidity']
-        return liquidity
+# Initialize client
+client = Client("https://api.devnet.solana.com")
 
-    def optimize_routing(self, token_in, token_out, amount):
-        # Linear regression model for optimal routing
-        model = LinearRegression()
-        # Sample data
-        X = [[100], [200], [300]]
-        y = [[50], [75], [90]]
-        model.fit(X, y)
-        # Predict optimal route
-        optimal_route = model.predict([[amount]])
-        return optimal_route
+# Define optimal routing function
+def optimal_routing_quote(amount, input_mint, output_mint):
+    # Query AMM pools and get quotes
+    quotes = []
+    for pool in get_amm_pools():
+        quote = pool.get_quote(amount, input_mint, output_mint)
+        quotes.append(quote)
+    # Find best quote
+    best_quote = min(quotes, key=lambda x: x.price)
+    return best_quote
 
-    def update_amm_pools(self):
-        # Get AMM pool data
-        pool_data = self.client.get_program_accounts(PublicKey('...'))
-        for pool in pool_data:
-            self.amm_pools[pool['pubkey']] = pool['account']['data']['parsed']['info']
+# Define concentrated liquidity pool class
+class ConcentratedLiquidityPool:
+    def __init__(self, id, token_a, token_b):
+        self.id = id
+        self.token_a = token_a
+        self.token_b = token_b
 
-    def update_concentrated_liquidity(self):
-        # Get concentrated liquidity data
-        liquidity_data = self.client.get_program_accounts(PublicKey('...'))
-        for liquidity in liquidity_data:
-            self.concentrated_liquidity[liquidity['pubkey']] = liquidity['account']['data']['parsed']['info']
+    def get_quote(self, amount, input_mint, output_mint):
+        # Calculate quote using concentrated liquidity
+        if input_mint == self.token_a and output_mint == self.token_b:
+            return Quote(self.id, amount * 0.95)  # 5% slippage
+        elif input_mint == self.token_b and output_mint == self.token_a:
+            return Quote(self.id, amount * 0.95)  # 5% slippage
+        else:
+            return None
 
-def main():
-    rpc_url = 'https://api.devnet.solana.com'
-    dex = SolanaDEX(rpc_url)
-    dex.update_amm_pools()
-    dex.update_concentrated_liquidity()
-    token_in = 'USDT'
-    token_out = 'USDC'
-    amount = 100
-    optimal_route = dex.optimize_routing(token_in, token_out, amount)
-    print(f'Optimal route: {optimal_route}')
+# Define quote class
+class Quote:
+    def __init__(self, pool_id, price):
+        self.pool_id = pool_id
+        self.price = price
 
-if __name__ == '__main__':
-    main()
+# Get AMM pools
+def get_amm_pools():
+    pools = []
+    for pool_id in [PublicKey("..."), PublicKey("...")]:
+        pool = ConcentratedLiquidityPool(pool_id, PublicKey("..."), PublicKey("..."))
+        pools.append(pool)
+    return pools
+
+# Define transaction function
+def execute_trade(amount, input_mint, output_mint):
+    # Get optimal quote
+    quote = optimal_routing_quote(amount, input_mint, output_mint)
+    if quote:
+        # Create transaction
+        tx = Transaction()
+        # Add instructions
+        tx.add_instruction(ConcentratedLiquidityPool.swap(quote.pool_id, amount, input_mint, output_mint))
+        # Send transaction
+        client.send_transaction(tx)
+
+# Execute trade
+execute_trade(1000, PublicKey("..."), PublicKey("..."))
