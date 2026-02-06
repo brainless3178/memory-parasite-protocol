@@ -1,46 +1,67 @@
-import numpy as np
-from solana.rpc.api import Client
-from solana.publickey import PublicKey
+import solana
 
-class PredatoryOptimizer:
-    def __init__(self, solana_client: Client):
-        self.solana_client = solana_client
-        self.amm_pools = {}
-        self.concentrated_liquidity = {}
+# Define the DEX class
+class PredatoryDEX:
+    def __init__(self, program_id, dex_account):
+        self.program_id = program_id
+        self.dex_account = dex_account
 
-    def optimize_routing(self, token_in, token_out, amount):
-        # Find most efficient route
-        efficient_route = self.find_efficient_route(token_in, token_out, amount)
-        return efficient_route
+    def create_amm_pool(self, token_mint_a, token_mint_b, fee_numerator, fee_denominator):
+        # Create AMM pool instruction
+        instructions = [
+            solana.transaction.TransactionInstruction(
+                keys=[
+                    solana.transaction.AccountMeta(pubkey=self.dex_account, is_signer=True, is_writable=True),
+                    solana.transaction.AccountMeta(pubkey=token_mint_a, is_signer=False, is_writable=False),
+                    solana.transaction.AccountMeta(pubkey=token_mint_b, is_signer=False, is_writable=False),
+                ],
+                program_id=self.program_id,
+                data=b'\x01' + token_mint_a.to_bytes(32, 'big') + token_mint_b.to_bytes(32, 'big') + fee_numerator.to_bytes(8, 'big') + fee_denominator.to_bytes(8, 'big'),
+            )
+        ]
+        return instructions
 
-    def find_efficient_route(self, token_in, token_out, amount):
-        # Get AMM pool data
-        token_in_pool = self.amm_pools.get(token_in)
-        token_out_pool = self.amm_pools.get(token_out)
+    def add_liquidity(self, token_mint_a, token_mint_b, amount_a, amount_b):
+        # Add liquidity instruction
+        instructions = [
+            solana.transaction.TransactionInstruction(
+                keys=[
+                    solana.transaction.AccountMeta(pubkey=self.dex_account, is_signer=True, is_writable=True),
+                    solana.transaction.AccountMeta(pubkey=token_mint_a, is_signer=False, is_writable=False),
+                    solana.transaction.AccountMeta(pubkey=token_mint_b, is_signer=False, is_writable=False),
+                ],
+                program_id=self.program_id,
+                data=b'\x02' + token_mint_a.to_bytes(32, 'big') + token_mint_b.to_bytes(32, 'big') + amount_a.to_bytes(8, 'big') + amount_b.to_bytes(8, 'big'),
+            )
+        ]
+        return instructions
 
-        if token_in_pool and token_out_pool:
-            # Calculate prices
-            token_in_price = token_in_pool['price']
-            token_out_price = token_out_pool['price']
+    def swap(self, token_mint_in, token_mint_out, amount_in):
+        # Swap instruction
+        instructions = [
+            solana.transaction.TransactionInstruction(
+                keys=[
+                    solana.transaction.AccountMeta(pubkey=self.dex_account, is_signer=True, is_writable=True),
+                    solana.transaction.AccountMeta(pubkey=token_mint_in, is_signer=False, is_writable=False),
+                    solana.transaction.AccountMeta(pubkey=token_mint_out, is_signer=False, is_writable=False),
+                ],
+                program_id=self.program_id,
+                data=b'\x03' + token_mint_in.to_bytes(32, 'big') + token_mint_out.to_bytes(32, 'big') + amount_in.to_bytes(8, 'big'),
+            )
+        ]
+        return instructions
 
-            # Calculate most efficient route
-            route = (token_in, token_out)
-            return route
+# Initialize the DEX
+dex = PredatoryDEX(program_id=solana.PublicKey('DEX_PROGRAM_ID'), dex_account=solana.PublicKey('DEX_ACCOUNT'))
 
-    def add_amm_pool(self, token, price):
-        self.amm_pools[token] = {'price': price}
+# Create an AMM pool
+instructions = dex.create_amm_pool(token_mint_a=solana.PublicKey('TOKEN_MINT_A'), token_mint_b=solana.PublicKey('TOKEN_MINT_B'), fee_numerator=3, fee_denominator=1000)
+print(instructions)
 
-    def add_concentrated_liquidity(self, token, liquidity):
-        self.concentrated_liquidity[token] = liquidity
+# Add liquidity to the pool
+instructions = dex.add_liquidity(token_mint_a=solana.PublicKey('TOKEN_MINT_A'), token_mint_b=solana.PublicKey('TOKEN_MINT_B'), amount_a=1000, amount_b=1000)
+print(instructions)
 
-# Usage example
-solana_client = Client("https://api.devnet.solana.com")
-optimizer = PredatoryOptimizer(solana_client)
-
-# Add AMM pools
-optimizer.add_amm_pool("USDC", 1.0)
-optimizer.add_amm_pool("SOL", 30.0)
-
-# Find efficient route
-efficient_route = optimizer.optimize_routing("USDC", "SOL", 1000.0)
-print(efficient_route)
+# Swap tokens
+instructions = dex.swap(token_mint_in=solana.PublicKey('TOKEN_MINT_A'), token_mint_out=solana.PublicKey('TOKEN_MINT_B'), amount_in=100)
+print(instructions)
