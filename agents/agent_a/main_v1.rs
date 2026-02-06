@@ -1,54 +1,51 @@
 import numpy as np
-from solana.rpc.api import Client
-from solana.publickey import PublicKey
-from solana.transaction import Transaction
 
-# Initialize Solana client
-client = Client("https://api.devnet.solana.com")
+class SolanaDEX:
+    def __init__(self):
+        self.amm_pools = {}
+        self.concentrated_liquidity = {}
 
-# Define AMM pool structure
-class AMMPool:
-    def __init__(self, token_a, token_b, liquidity):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity = liquidity
+    def add_liquidity(self, token, amount):
+        if token not in self.amm_pools:
+            self.amm_pools[token] = amount
+        else:
+            self.amm_pools[token] += amount
 
-# Define concentrated liquidity structure
-class ConcentratedLiquidity:
-    def __init__(self, token_a, token_b, liquidity, range):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity = liquidity
-        self.range = range
+    def remove_liquidity(self, token, amount):
+        if token in self.amm_pools and self.amm_pools[token] >= amount:
+            self.amm_pools[token] -= amount
 
-# Define optimal routing function
-def optimal_routing(pools, amount_in, token_in):
-    best_route = None
-    best_amount_out = 0
-    for pool in pools:
-        amount_out = calculate_amount_out(pool, amount_in, token_in)
-        if amount_out > best_amount_out:
-            best_amount_out = amount_out
-            best_route = pool
-    return best_route, best_amount_out
+    def get_optimal_route(self, token_in, token_out, amount):
+        # Simplified optimal routing using Dijkstra's algorithm
+        graph = {
+            'SOL': {'USDT': 0.01, 'ETH': 0.05},
+            'USDT': {'SOL': 0.01, 'ETH': 0.02},
+            'ETH': {'SOL': 0.05, 'USDT': 0.02}
+        }
+        queue = [(token_in, amount, [])]
+        best_route = None
+        best_amount = 0
+        while queue:
+            token, amount, path = queue.pop(0)
+            if token == token_out and amount > best_amount:
+                best_route = path + [token]
+                best_amount = amount
+            for neighbor in graph[token]:
+                queue.append((neighbor, amount * (1 - graph[token][neighbor]), path + [token]))
+        return best_route
 
-# Define calculate amount out function
-def calculate_amount_out(pool, amount_in, token_in):
-    if token_in == pool.token_a:
-        return amount_in * pool.liquidity / pool.token_a
-    else:
-        return amount_in * pool.liquidity / pool.token_b
+    def concentrated_liquidity_provision(self, token, amount):
+        if token not in self.concentrated_liquidity:
+            self.concentrated_liquidity[token] = amount
+        else:
+            self.concentrated_liquidity[token] += amount
 
-# Define transaction function
-def execute_transaction(transaction, signer):
-    transaction.sign([signer])
-    client.send_transaction(transaction)
+def main():
+    dex = SolanaDEX()
+    dex.add_liquidity('SOL', 1000)
+    dex.add_liquidity('USDT', 10000)
+    print(dex.get_optimal_route('SOL', 'USDT', 100))
+    dex.concentrated_liquidity_provision('SOL', 500)
 
-# Initialize pools and concentrated liquidity
-pools = [AMMPool(PublicKey("token_a"), PublicKey("token_b"), 1000)]
-concentrated_liquidity = ConcentratedLiquidity(PublicKey("token_a"), PublicKey("token_b"), 500, (0, 100))
-
-# Execute optimal routing and transaction
-best_route, best_amount_out = optimal_routing(pools, 100, PublicKey("token_a"))
-transaction = Transaction()
-execute_transaction(transaction, PublicKey("signer"))
+if __name__ == "__main__":
+    main()
