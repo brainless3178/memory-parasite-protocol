@@ -5,82 +5,49 @@ from solana.rpc.api import Client
 # Initialize Solana client
 client = Client("https://api.devnet.solana.com")
 
-# Define AMM pool constants
-POOL_FEE = 0.003
-TICK_SPACING = 10
+# Define DEX class
+class SolanaDEX:
+    def __init__(self, program_id, treasury):
+        self.program_id = PublicKey(program_id)
+        self.treasury = PublicKey(treasury)
+        self.amm_pools = {}
 
-# Define concentrated liquidity constants
-MIN_TICK = -1000
-MAX_TICK = 1000
+    # Create AMM pool
+    def create_amm_pool(self, token_a, token_b):
+        pool_id = PublicKey(str(np.random.rand()))
+        self.amm_pools[pool_id] = {
+            "token_a": token_a,
+            "token_b": token_b,
+            "liquidity": 0,
+        }
+        return pool_id
 
-# Create a liquidity pool
-def create_pool(token_a, token_b):
-    # Create a new pool account
-    pool_account = PublicKey()
-    # Initialize the pool account
-    client.program_invoke(
-        program_id=PublicKey("..."),  # Replace with your program ID
-        accounts=[
-            {"pubkey": pool_account, "is_signer": False, "is_writable": True},
-            {"pubkey": token_a, "is_signer": False, "is_writable": False},
-            {"pubkey": token_b, "is_signer": False, "is_writable": False},
-        ],
-        data=b"init_pool",
-    )
-    return pool_account
+    # Add liquidity to AMM pool
+    def add_liquidity(self, pool_id, amount_a, amount_b):
+        self.amm_pools[pool_id]["liquidity"] += amount_a + amount_b
 
-# Add liquidity to a pool
-def add_liquidity(pool_account, token_a_amount, token_b_amount):
-    # Calculate the liquidity amount
-    liquidity = np.sqrt(token_a_amount * token_b_amount)
-    # Add liquidity to the pool
-    client.program_invoke(
-        program_id=PublicKey("..."),  # Replace with your program ID
-        accounts=[
-            {"pubkey": pool_account, "is_signer": False, "is_writable": True},
-            {"pubkey": token_a, "is_signer": False, "is_writable": True},
-            {"pubkey": token_b, "is_signer": False, "is_writable": True},
-        ],
-        data=b"add_liquidity",
-    )
-    return liquidity
+    # Optimize routing
+    def optimize_routing(self, token_in, token_out, amount):
+        best_route = None
+        best_price = 0
+        for pool_id, pool in self.amm_pools.items():
+            if pool["token_a"] == token_in and pool["token_b"] == token_out:
+                price = pool["liquidity"] / amount
+                if price > best_price:
+                    best_price = price
+                    best_route = pool_id
+        return best_route
 
-# Optimize routing
-def optimize_routing(pool_accounts, token_a, token_b, amount):
-    # Initialize the best route
-    best_route = []
-    best_amount = 0
-    # Iterate over all possible routes
-    for pool_account in pool_accounts:
-        # Calculate the amount that can be routed through this pool
-        amount_through_pool = calculate_amount_through_pool(pool_account, token_a, token_b, amount)
-        # If this route is better than the current best route, update the best route
-        if amount_through_pool > best_amount:
-            best_route = [pool_account]
-            best_amount = amount_through_pool
-    return best_route
+# Create Solana DEX instance
+dex = SolanaDEX("BjBq9Q4qyuT9qGvFvqKzxGbgfWjJNSD7xN7xht8TjcV", "2VDBCbrF0T5GiHkBXpnZ3Wt6sJ7nhjdfK37gMvL3TqB")
 
-# Calculate the amount that can be routed through a pool
-def calculate_amount_through_pool(pool_account, token_a, token_b, amount):
-    # Calculate the liquidity in the pool
-    liquidity = calculate_liquidity(pool_account, token_a, token_b)
-    # Calculate the amount that can be routed through the pool
-    amount_through_pool = np.sqrt(liquidity * amount)
-    return amount_through_pool
+# Create AMM pool
+pool_id = dex.create_amm_pool("SOL", "USDC")
 
-# Calculate the liquidity in a pool
-def calculate_liquidity(pool_account, token_a, token_b):
-    # Get the pool's liquidity from the Solana blockchain
-    pool_data = client.get_account_info(pool_account).value.data
-    # Calculate the liquidity
-    liquidity = np.sqrt(pool_data["token_a_amount"] * pool_data["token_b_amount"])
-    return liquidity
-
-# Create a new pool
-pool_account = create_pool(PublicKey("..."), PublicKey("..."))  # Replace with your token addresses
-
-# Add liquidity to the pool
-add_liquidity(pool_account, 1000, 1000)
+# Add liquidity to AMM pool
+dex.add_liquidity(pool_id, 100, 1000)
 
 # Optimize routing
-best_route = optimize_routing([pool_account], PublicKey("..."), PublicKey("..."), 1000)  # Replace with your token addresses
+best_route = dex.optimize_routing("SOL", "USDC", 10)
+
+print("Best Route:", best_route)
