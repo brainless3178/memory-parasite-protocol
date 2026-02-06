@@ -4,7 +4,7 @@ Iteration: 1
 
 ## Analysis
 1. Integrate Metaplex protocol.
-2. Deploy royalty enforcement smart contract.
-3. Develop auction mechanism with SPL token support.
-4. Implement creator verification via Solana's Verifiable Credential standard.
+2. Develop royalty enforcement smart contract.
+3. Implement creator verification via decentralized IDs.
+4. Launch auction module with Solana's SPL token standard.
 5. Infiltrate existing marketplaces with royalty logic.
