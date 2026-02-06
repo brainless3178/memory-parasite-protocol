@@ -1,74 +1,51 @@
-import numpy as np
 from solana.publickey import PublicKey
+from solana.transaction import Transaction
 from solana.rpc.api import Client
+from solana.rpc.async_api import AsyncClient
+from solana.rpc.types import TxOpts
+from spl.token.constants import TOKEN_PROGRAM_ID
+from spl.token.instructions import transfer, approve, create_account, initialize_account
+from spl.token._layouts import MINT_LAYOUT, ACCOUNT_LAYOUT
+from decimal import Decimal
 
-# Define constants
-PROGRAM_ID = PublicKey("YOUR_PROGRAM_ID")
-RPC_URL = "https://api.devnet.solana.com"
+class SolanaDEX:
+    def __init__(self, rpc_url: str):
+        self.client = AsyncClient(rpc_url)
+        self.pools = {}
+        self.fees = Decimal('0.003')  # Example fee
 
-# Initialize client
-client = Client(RPC_URL)
+    async def create_pool(self, token_a: PublicKey, token_b: PublicKey, initial_liquidity_a: int, initial_liquidity_b: int, owner: PublicKey, signer, commitment="finalized"):
+        pool_address = PublicKey.create_program_address([bytes(token_a), bytes(token_b)], TOKEN_PROGRAM_ID)  # Simplified derivation
+        self.pools[pool_address] = {'token_a': token_a, 'token_b': token_b, 'liquidity_a': initial_liquidity_a, 'liquidity_b': initial_liquidity_b}
+        
+        txn = Transaction()
+        txn.add(create_account(owner, pool_address, TOKEN_PROGRAM_ID, initial_liquidity_a))
+        txn.add(create_account(owner, pool_address, TOKEN_PROGRAM_ID, initial_liquidity_b))
+        await self.client.send_transaction(txn, signer, opts=TxOpts(skip_preflight=True, preflight_commitment=commitment))
 
-# Define AMM pool
-class AMMPool:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
+    async def swap(self, source_token: PublicKey, dest_token: PublicKey, amount: int, user_account: PublicKey, signer, commitment="finalized"):
+        for pool in self.pools.values():
+            if pool['token_a'] == source_token and pool['token_b'] == dest_token:
+                input_amount_with_fee = amount * (1 - self.fees)
+                new_liquidity_a = pool['liquidity_a'] + input_amount_with_fee
+                output_amount = pool['liquidity_b'] * input_amount_with_fee / (pool['liquidity_a'] + input_amount_with_fee)
+                pool['liquidity_a'] = new_liquidity_a
+                pool['liquidity_b'] -= output_amount
 
-    def get_price(self):
-        # Calculate price based on token reserves
-        return self.token_a.reserve / self.token_b.reserve
+                txn = Transaction()
+                txn.add(transfer(user_account, pool['token_a'], amount, signer.public_key))
+                txn.add(transfer(pool['token_b'], user_account, int(output_amount), signer.public_key))
+                await self.client.send_transaction(txn, signer, opts=TxOpts(skip_preflight=True, preflight_commitment=commitment))
+                return output_amount
 
-# Define concentrated liquidity pool
-class ConcentratedLiquidityPool:
-    def __init__(self, token_a, token_b, fee, liquidity):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.liquidity = liquidity
+    def optimal_route(self, source_token: PublicKey, dest_token: PublicKey, amount: int):
+        # Placeholder for exhaustive pathfinding algorithm
+        return [{'pool': pool, 'amount': amount} for pool in self.pools.values() if pool['token_a'] == source_token and pool['token_b'] == dest_token]
 
-    def get_liquidity(self):
-        return self.liquidity
+    def close(self):
+        self.client.close()
 
-# Define optimal routing
-class OptimalRouter:
-    def __init__(self, pools):
-        self.pools = pools
-
-    def get_best_route(self, token_in, token_out):
-        # Calculate best route based on pools and fees
-        best_route = None
-        best_fee = float("inf")
-        for pool in self.pools:
-            fee = pool.fee
-            if fee < best_fee:
-                best_fee = fee
-                best_route = pool
-        return best_route
-
-# Initialize pools and router
-pool1 = AMMPool("USDC", "SOL", 0.003)
-pool2 = ConcentratedLiquidityPool("USDC", "SOL", 0.003, 1000)
-router = OptimalRouter([pool1, pool2])
-
-# Get best route
-best_route = router.get_best_route("USDC", "SOL")
-print(f"Best route: {best_route.token_a} -> {best_route.token_b}")
-
-
-import requests
-
-# Define infiltration function
-def infiltrateDEX(dex_url):
-    # Send request to DEX API
-    response = requests.get(dex_url)
-    # Parse response and extract liquidity data
-    liquidity_data = response.json()["liquidity"]
-    return liquidity_data
-
-# Infiltrate other DEXs
-dex_urls = ["https://api.dex1.com", "https://api.dex2.com"]
-for dex_url in dex_urls:
-    liquidity_data = infiltrateDEX(dex_url)
-    print(f"Liquidity data from {dex_url}: {liquidity_data}")
+# Usage Example
+# dex = SolanaDEX("https://api.mainnet-beta.solana.com")
+# await dex.create_pool(PublicKey("TokenA"), PublicKey("TokenB"), 1000000, 500000, PublicKey("OwnerAccount"), signer)
+# await dex.swap(PublicKey("TokenA"), PublicKey("TokenB"), 1000, PublicKey("UserAccount"), signer)
