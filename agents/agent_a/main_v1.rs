@@ -1,99 +1,60 @@
-import solana
+import numpy as np
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
 # Initialize Solana client
 client = Client("https://api.devnet.solana.com")
 
-# Define DEX constants
-DEX_PROGRAM_ID = PublicKey("DEX_PROGRAM_ID")
-MAX ORDERS = 1000
-
-class OrderBook:
-    def __init__(self, market):
-        self.market = market
-        self.bids = []
-        self.asks = []
-
-    def add_order(self, order):
-        if order.side == "bid":
-            self.bids.append(order)
-            self.bids.sort(key=lambda x: x.price, reverse=True)
-        else:
-            self.asks.append(order)
-            self.asks.sort(key=lambda x: x.price)
-
-    def get_best_bid(self):
-        if self.bids:
-            return self.bids[0]
-        return None
-
-    def get_best_ask(self):
-        if self.asks:
-            return self.asks[0]
-        return None
-
-class AMMPool:
+# Define AMM pool and concentrated liquidity parameters
+class AMM:
     def __init__(self, token_a, token_b, fee):
         self.token_a = token_a
         self.token_b = token_b
         self.fee = fee
-        self.reserves = {"token_a": 0, "token_b": 0}
+        self.liquidity = 0
 
     def add_liquidity(self, amount_a, amount_b):
-        self.reserves["token_a"] += amount_a
-        self.reserves["token_b"] += amount_b
+        self.liquidity += amount_a + amount_b
 
-    def remove_liquidity(self, amount_a, amount_b):
-        self.reserves["token_a"] -= amount_a
-        self.reserves["token_b"] -= amount_b
+    def swap(self, amount_in, token_in):
+        if token_in == self.token_a:
+            amount_out = (amount_in * (1 - self.fee)) * self.token_b / self.token_a
+        else:
+            amount_out = (amount_in * (1 - self.fee)) * self.token_a / self.token_b
+        return amount_out
 
-    def get_price(self):
-        return self.reserves["token_b"] / self.reserves["token_a"]
+# Create a Solana DEX with optimal routing and AMM pools
+class DEX:
+    def __init__(self):
+        self.amm_pools = {}
 
-class ConcentratedLiquidity:
-    def __init__(self, pool):
-        self.pool = pool
-        self.liquidity = []
+    def create_amm_pool(self, token_a, token_b, fee):
+        amm_pool = AMM(token_a, token_b, fee)
+        self.amm_pools[(token_a, token_b)] = amm_pool
 
-    def add_liquidity(self, user, amount):
-        self.liquidity.append((user, amount))
+    def get_optimal_route(self, token_in, token_out):
+        optimal_route = []
+        for pool in self.amm_pools.values():
+            if pool.token_a == token_in:
+                optimal_route.append((pool.token_a, pool.token_b))
+            elif pool.token_b == token_in:
+                optimal_route.append((pool.token_b, pool.token_a))
+        return optimal_route
 
-    def remove_liquidity(self, user, amount):
-        self.liquidity = [(u, a) for u, a in self.liquidity if u!= user or a!= amount]
+# Create a DEX instance and add AMM pools
+dex = DEX()
+dex.create_amm_pool("USDC", "SOL", 0.003)
+dex.create_amm_pool("USDC", "ETH", 0.003)
+dex.create_amm_pool("SOL", "ETH", 0.003)
 
-class OptimalRouting:
-    def __init__(self, pools):
-        self.pools = pools
-
-    def get_best_route(self, token_in, token_out, amount):
-        best_route = None
-        best_price = float("inf")
-        for pool in self.pools:
-            price = pool.get_price()
-            if price < best_price:
-                best_price = price
-                best_route = pool
-        return best_route
-
-# Initialize pools and order books
-pools = [AMMPool("USDC", "SOL", 0.003), AMMPool("SOL", "ETH", 0.003)]
-order_books = [OrderBook("USDC/SOL"), OrderBook("SOL/ETH")]
-
-# Initialize concentrated liquidity
-concentrated_liquidity = [ConcentratedLiquidity(pool) for pool in pools]
-
-# Initialize optimal routing
-optimal_routing = OptimalRouting(pools)
-
-# Function to execute a trade
-def execute_trade(token_in, token_out, amount):
-    best_route = optimal_routing.get_best_route(token_in, token_out, amount)
-    if best_route:
-        # Execute trade on best route
-        print(f"Executing trade on {best_route.token_a}/{best_route.token_b} pool")
-        return best_route.get_price()
-    return None
-
-# Example usage
-print(execute_trade("USDC", "SOL", 1000))
+# Test the DEX with a swap transaction
+token_in = "USDC"
+token_out = "ETH"
+amount_in = 1000
+optimal_route = dex.get_optimal_route(token_in, token_out)
+for pool in optimal_route:
+    amm_pool = dex.amm_pools.get(pool)
+    if amm_pool:
+        amount_out = amm_pool.swap(amount_in, token_in)
+        print(f"Swapped {amount_in} {token_in} for {amount_out} {token_out}")
+        break
