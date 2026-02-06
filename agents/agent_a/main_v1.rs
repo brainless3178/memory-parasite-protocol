@@ -1,77 +1,83 @@
 import solana
 from solana.publickey import PublicKey
-from solana.system_program import transfer
+from solana.system_program import TransferParams
+from solana.program import Program
+from solana.account import Account
 from solana.rpc.api import Client
-from spl.token import Token, TOKEN_PROGRAM_ID
+from typing import List, Dict
 
-# Set up client and wallet
-client = Client("https://api.mainnet-beta.solana.com")
-wallet = solana.keypair.Keypair()
+class SolanaDEX:
+    def __init__(self, client: Client, program_id: PublicKey):
+        self.client = client
+        self.program_id = program_id
 
-# Define AMM pool and concentrated liquidity
-class AMMPool:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.liquidity = 0
+    def create_amm_pool(self, token_a: str, token_b: str, fee: float):
+        """Create an AMM pool with token A and token B."""
+        # Create a new program
+        program = Program(program_id=self.program_id, client=self.client)
 
-    def add_liquidity(self, amount_a, amount_b):
-        self.liquidity += amount_a + amount_b
+        # Create a new account for the pool
+        pool_account = Account()
+        program.create_account(pool_account, 1000)
 
-class ConcentratedLiquidity:
-    def __init__(self, amm_pool):
-        self.amm_pool = amm_pool
-        self.ticks = []
+        # Initialize the pool with token A and token B
+        program.initialize_pool(pool_account, token_a, token_b, fee)
 
-    def add_liquidity(self, tick, amount):
-        self.ticks.append((tick, amount))
+    def add_liquidity(self, pool_account: Account, token_a_amount: float, token_b_amount: float):
+        """Add liquidity to an AMM pool."""
+        # Get the current pool balance
+        pool_balance = self.client.get_account_info(pool_account.public_key).value
 
-# Define optimal routing
-class OptimalRouting:
-    def __init__(self, amm_pools):
-        self.amm_pools = amm_pools
+        # Calculate the new pool balance
+        new_balance = self.calculate_new_balance(pool_balance, token_a_amount, token_b_amount)
 
-    def find_optimal_route(self, token_in, token_out, amount_in):
-        # Simplified example, actual implementation would involve more complex algorithms
-        best_route = None
-        best_price = 0
-        for pool in self.amm_pools:
-            if pool.token_a == token_in and pool.token_b == token_out:
-                price = pool.token_b / pool.token_a
-                if price > best_price:
-                    best_price = price
-                    best_route = pool
+        # Update the pool balance
+        self.client.send_transaction(TransferParams(from_pubkey=pool_account.public_key, to_pubkey=pool_account.public_key, lamports=new_balance))
+
+    def calculate_new_balance(self, current_balance: Dict, token_a_amount: float, token_b_amount: float) -> int:
+        """Calculate the new balance of an AMM pool after adding liquidity."""
+        # Calculate the new balance using the constant product formula
+        return int(current_balance['token_a'] * current_balance['token_b'] + token_a_amount * token_b_amount)
+
+    def get_optimal_route(self, token_in: str, token_out: str, amount: float) -> List[str]:
+        """Get the optimal route for a swap."""
+        # Get all available routes
+        routes = self.get_all_routes(token_in, token_out)
+
+        # Calculate the best route based on the amount and fees
+        best_route = min(routes, key=lambda route: self.calculate_route_cost(route, amount))
+
         return best_route
 
-# Set up DEX
-class DEX:
-    def __init__(self):
-        self.amm_pools = []
-        self.concentrated_liquidity = []
+    def get_all_routes(self, token_in: str, token_out: str) -> List[List[str]]:
+        """Get all available routes for a swap."""
+        # Get all possible routes
+        routes = self.client.get_all_routes(token_in, token_out)
 
-    def add_pool(self, token_a, token_b, fee):
-        pool = AMMPool(token_a, token_b, fee)
-        self.amm_pools.append(pool)
-        self.concentrated_liquidity.append(ConcentratedLiquidity(pool))
+        return routes
 
-    def add_liquidity(self, pool_index, tick, amount):
-        self.concentrated_liquidity[pool_index].add_liquidity(tick, amount)
+    def calculate_route_cost(self, route: List[str], amount: float) -> float:
+        """Calculate the cost of a route."""
+        # Calculate the cost based on the fees and amount
+        cost = 0
+        for i in range(len(route) - 1):
+            cost += self.get_fee(route[i], route[i + 1]) * amount
 
-    def swap(self, token_in, token_out, amount_in):
-        optimal_routing = OptimalRouting(self.amm_pools)
-        best_route = optimal_routing.find_optimal_route(token_in, token_out, amount_in)
-        if best_route:
-            # Simplified example, actual implementation would involve more complex logic
-            return best_route.token_b / best_route.token_a
-        return 0
+        return cost
 
-# Main function
-def main():
-    dex = DEX()
-    dex.add_pool("USDC", "SOL", 0.003)
-    dex.add_liquidity(0, 100, 1000)
-    print(dex.swap("USDC", "SOL", 100))
+    def get_fee(self, token_a: str, token_b: str) -> float:
+        """Get the fee for a swap between two tokens."""
+        # Get the fee from the program
+        fee = self.client.get_fee(token_a, token_b)
 
-if __name__ == "__main__":
-    main()
+        return fee
+
+
+# Usage
+client = Client("https://api.devnet.solana.com")
+program_id = PublicKey("YOUR_PROGRAM_ID")
+
+dex = SolanaDEX(client, program_id)
+dex.create_amm_pool("USDT", "SOL", 0.03)
+dex.add_liquidity(Account(), 100, 1000)
+print(dex.get_optimal_route("USDT", "SOL", 100))
