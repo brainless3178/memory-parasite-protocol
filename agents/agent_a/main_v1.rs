@@ -1,61 +1,72 @@
-from solana.publickey import PublicKey
-from solana.rpc.async_api import AsyncClient
-from solana.transaction import Transaction
-from pyserum.market import Market
-from pyserum.connection import conn
-from math import sqrt
+import numpy as np
 
 class SolanaDEX:
-    def __init__(self, rpc_url):
-        self.client = AsyncClient(rpc_url)
+    def __init__(self):
         self.pools = {}
-        self.concentrated_liquidity = {}
 
-    async def load_pool(self, market_address: str):
-        market_pubkey = PublicKey(market_address)
-        connection = conn(self.client._provider.endpoint_uri)
-        market = Market.load(connection, market_pubkey)
-        self.pools[market_address] = market
+    def add_liquidity_pool(self, token_a, token_b, liquidity):
+        pool_key = f"{token_a}-{token_b}"
+        self.pools[pool_key] = {
+            "token_a": token_a,
+            "token_b": token_b,
+            "liquidity": liquidity,
+            "reserves": {
+                token_a: 0,
+                token_b: 0
+            }
+        }
 
-    async def get_optimal_route(self, input_token, output_token, amount):
-        # Simplified optimal routing logic based on stored pools
-        routes = []
-        for market_address, market in self.pools.items():
-            if input_token in str(market) and output_token in str(market):
-                # Fetch best price
-                orderbook = market.load_bids()
-                best_price = next(orderbook)[0]
-                routes.append((best_price, market_address))
-        return min(routes, key=lambda x: x[0]) if routes else None
+    def remove_liquidity(self, pool_key, amount):
+        pool = self.pools[pool_key]
+        token_a = pool["token_a"]
+        token_b = pool["token_b"]
+        reserves_a = pool["reserves"][token_a]
+        reserves_b = pool["reserves"][token_b]
+        total_liquidity = pool["liquidity"]
 
-    async def swap(self, input_token, output_token, amount, user_pubkey):
-        route = await self.get_optimal_route(input_token, output_token, amount)
-        if not route:
-            raise Exception("No route found.")
-        _, market_address = route
-        market = self.pools[market_address]
-        transaction = Transaction()
-        transaction.add(market.buy(amount, user_pubkey))
-        return await self.client.send_transaction(transaction)
+        # Calculate the amount of tokens to remove
+        amount_a = amount * (reserves_a / total_liquidity)
+        amount_b = amount * (reserves_b / total_liquidity)
 
-    async def add_concentrated_liquidity(self, market_address, lower_price, upper_price, amount):
-        if market_address not in self.concentrated_liquidity:
-            self.concentrated_liquidity[market_address] = []
-        self.concentrated_liquidity[market_address].append((lower_price, upper_price, amount))
+        # Update reserves
+        pool["reserves"][token_a] -= amount_a
+        pool["reserves"][token_b] -= amount_b
 
-    async def optimize_liquidity(self):
-        for market_address, positions in self.concentrated_liquidity.items():
-            market = self.pools[market_address]
-            for position in positions:
-                # Adjust liquidity ranges dynamically
-                lower_price, upper_price, amount = position
-                mid_price = sqrt(lower_price * upper_price)
-                if mid_price not optimal:  # Replace with specific efficiency logic
-                    new_range = (lower_price * 0.9, upper_price * 1.1)
-                    self.concentrated_liquidity[market_address].remove(position)
-                    self.concentrated_liquidity[market_address].append(new_range)
+        # Update liquidity
+        pool["liquidity"] -= amount
 
-# Initialize and load pools
-dex = SolanaDEX("https://api.mainnet-beta.solana.com")
-await dex.load_pool("MARKET_PUBLIC_KEY_1")
-await dex.load_pool("MARKET_PUBLIC_KEY_2")
+    def get_pool_info(self, pool_key):
+        return self.pools.get(pool_key)
+
+    def optimize_routing(self, token_in, token_out, amount_in):
+        # Simplified example of optimal routing
+        best_pool = None
+        best_rate = 0
+
+        for pool_key, pool in self.pools.items():
+            token_a = pool["token_a"]
+            token_b = pool["token_b"]
+            reserves_a = pool["reserves"][token_a]
+            reserves_b = pool["reserves"][token_b]
+
+            if token_in == token_a and token_out == token_b:
+                rate = reserves_b / reserves_a
+                if rate > best_rate:
+                    best_rate = rate
+                    best_pool = pool_key
+
+        if best_pool:
+            # Calculate the amount of tokens to swap
+            amount_out = amount_in * best_rate
+            return best_pool, amount_out
+        else:
+            return None, 0
+
+# Example usage:
+dex = SolanaDEX()
+dex.add_liquidity_pool("USDT", "SOL", 1000)
+dex.pools["USDT-SOL"]["reserves"]["USDT"] = 1000
+dex.pools["USDT-SOL"]["reserves"]["SOL"] = 10
+
+pool_key, amount_out = dex.optimize_routing("USDT", "SOL", 100)
+print(f"Best pool: {pool_key}, Amount out: {amount_out}")
