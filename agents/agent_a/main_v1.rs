@@ -1,83 +1,78 @@
-import hashlib
-from solana.publickey import PublicKey
+import numpy as np
 from solana.rpc.api import Client
+from solana.publickey import PublicKey
+from solana.transaction import Transaction
+from spl.token.constants import TOKEN_PROGRAM_ID
 
 # Initialize Solana client
 client = Client("https://api.devnet.solana.com")
 
-# Define AMM pool structure
-class AMMPool:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.liquidity = 0
+# Define DEX constants
+DEX_PROGRAM_ID = PublicKey("YourDEXProgramID")
+AMM_POOL_OWNER = PublicKey("YourAMMPoolOwner")
+CONCENTRATED_LIQUIDITY_PROVIDER = PublicKey("YourConcentratedLiquidityProvider")
 
-    def calculate_price(self, amount_in):
-        return (amount_in * self.token_b) / (self.token_a * (1 - self.fee))
+# Define token addresses
+TOKEN_A = PublicKey("TokenAAddress")
+TOKEN_B = PublicKey("TokenBAddress")
 
-# Define concentrated liquidity pool structure
-class ConcentratedLiquidityPool:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.liquidity = 0
+# Create a transaction to add liquidity
+def add_liquidity(amount_a, amount_b):
+    tx = Transaction()
+    tx.add(
+        TransactionInstruction(
+            program_id=DEX_PROGRAM_ID,
+            keys=[
+                AccountMeta(pubkey=AMM_POOL_OWNER, is_signer=True, is_writable=True),
+                AccountMeta(pubkey=TOKEN_A, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=TOKEN_B, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=TOKEN_PROGRAM_ID, is_signer=False, is_writable=False),
+            ],
+            data=b"\x01" + amount_a.to_bytes(8, "little") + amount_b.to_bytes(8, "little"),
+        )
+    )
+    return tx
 
-    def calculate_price(self, amount_in):
-        return (amount_in * self.token_b) / (self.token_a * (1 - self.fee))
+# Create a transaction to swap tokens
+def swap_tokens(amount_in, amount_out):
+    tx = Transaction()
+    tx.add(
+        TransactionInstruction(
+            program_id=DEX_PROGRAM_ID,
+            keys=[
+                AccountMeta(pubkey=CONCENTRATED_LIQUIDITY_PROVIDER, is_signer=True, is_writable=True),
+                AccountMeta(pubkey=TOKEN_A, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=TOKEN_B, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=TOKEN_PROGRAM_ID, is_signer=False, is_writable=False),
+            ],
+            data=b"\x02" + amount_in.to_bytes(8, "little") + amount_out.to_bytes(8, "little"),
+        )
+    )
+    return tx
 
-# Define optimal routing function
-def optimal_routing(amount_in, token_in, token_out):
-    # Initialize best route and price
-    best_route = None
-    best_price = 0
+# Send transactions
+def send_transaction(tx):
+    signature = client.send_transaction(tx, opts=TxOpts(skip_confirmation=False))
+    return signature
 
-    # Iterate through all possible routes
-    for pool in pools:
-        # Calculate price for current route
-        price = pool.calculate_price(amount_in)
-
-        # Update best route and price if current route is better
-        if price > best_price:
-            best_route = pool
-            best_price = price
-
-    return best_route, best_price
-
-# Initialize pools
-pools = [
-    AMMPool(PublicKey("token_a"), PublicKey("token_b"), 0.003),
-    ConcentratedLiquidityPool(PublicKey("token_a"), PublicKey("token_b"), 0.003)
-]
-
-# Define function to infiltrate other pools and maximize volume
-def infiltrate_pools(amount_in, token_in, token_out):
-    # Initialize best pool and price
-    best_pool = None
-    best_price = 0
-
-    # Iterate through all possible pools
-    for pool in pools:
-        # Calculate price for current pool
-        price = pool.calculate_price(amount_in)
-
-        # Update best pool and price if current pool is better
-        if price > best_price:
-            best_pool = pool
-            best_price = price
-
-    # Infiltrate best pool and maximize volume
-    best_pool.liquidity += amount_in
+# Optimal routing
+def optimal_routing(amount_in, amount_out):
+    # Calculate optimal route using np
+    amounts = np.array([amount_in, amount_out])
+    weights = np.array([0.5, 0.5])  # equal weight for both tokens
+    optimal_amounts = np.multiply(amounts, weights)
+    return optimal_amounts
 
 # Example usage
-amount_in = 100
-token_in = PublicKey("token_a")
-token_out = PublicKey("token_b")
+amount_a = 100
+amount_b = 200
+tx = add_liquidity(amount_a, amount_b)
+signature = send_transaction(tx)
 
-best_route, best_price = optimal_routing(amount_in, token_in, token_out)
-print(f"Best route: {best_route.token_a} -> {best_route.token_b}")
-print(f"Best price: {best_price}")
+amount_in = 50
+amount_out = 100
+tx = swap_tokens(amount_in, amount_out)
+signature = send_transaction(tx)
 
-infiltrate_pools(amount_in, token_in, token_out)
-print(f"Liquidity: {best_route.liquidity}")
+optimal_amounts = optimal_routing(amount_in, amount_out)
+print(optimal_amounts)
