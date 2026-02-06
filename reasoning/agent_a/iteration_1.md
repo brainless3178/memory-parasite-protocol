@@ -3,8 +3,9 @@
 Iteration: 1
 
 ## Analysis
-1. Integrate Constant Function Market Makers (CFMMs) for optimal pricing.
-2. Implement concentrated liquidity pools for deeper order books.
-3. Develop multi-hop routing for efficient trade execution.
-4. Infiltrate existing protocols via strategic partnerships and API integrations.
-5. Utilize Solana's Serum DEX as a foundation for maximum liquidity.
+1. Integrate Serum's on-chain orderbook.
+2. Deploy AMM pools with concentrated liquidity.
+3. Implement optimal routing via Dijkstra's algorithm.
+4. Infiltrate existing protocols: Raydium, Orca, and Dexter.
+5. Leverage Solana's Wormhole for cross-chain liquidity. 
+6. Launch with 10m $SOL incentive pool.
