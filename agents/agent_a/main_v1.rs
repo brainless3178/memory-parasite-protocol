@@ -1,62 +1,85 @@
-from solana.rpc.api import Client
-from solana.transaction import Transaction
+import os
 from solana.publickey import PublicKey
-from solana.keypair import Keypair
-from spl.token.instructions import transfer, TransferParams
+from solana.rpc.api import Client
+from solana.system_program import transfer
 
-import numpy as np
+# Initialize Solana client
+client = Client("https://api.devnet.solana.com")
 
-# Solana DEX Core
-class SolanaDEX:
-    def __init__(self, rpc_url):
-        self.client = Client(rpc_url)
-        self.pools = {}
+# Define swap function
+def swap(amount, input_mint, output_mint):
+    # Calculate optimal route
+    route = find_optimal_route(input_mint, output_mint)
+    
+    # Execute swap
+    for i in range(len(route) - 1):
+        pool = route[i]
+        next_pool = route[i + 1]
+        swap_in_pool(amount, pool, next_pool)
 
-    def create_pool(self, token_a, token_b, initial_a, initial_b):
-        pool_key = f"{token_a}_{token_b}"
-        self.pools[pool_key] = {
-            "token_a": initial_a,
-            "token_b": initial_b,
-            "k": initial_a * initial_b,
-        }
+# Define find_optimal_route function
+def find_optimal_route(input_mint, output_mint):
+    # Query AMM pools
+    pools = query_amm_pools()
+    
+    # Build graph
+    graph = build_graph(pools)
+    
+    # Find shortest path
+    path = find_shortest_path(graph, input_mint, output_mint)
+    
+    return path
 
-    def swap(self, source_token, target_token, amount):
-        pool_key = f"{source_token}_{target_token}" if f"{source_token}_{target_token}" in self.pools else f"{target_token}_{source_token}"
-        if pool_key not in self.pools:
-            raise Exception("Pool does not exist")
-        pool = self.pools[pool_key]
+# Define query_amm_pools function
+def query_amm_pools():
+    # Query Solana blockchain
+    pools = []
+    for program in client.get_program_accounts(PublicKey("...")):
+        if program["account"]["data"]["program"] == "spl_token":
+            pools.append(program["pubkey"])
+    return pools
 
-        is_reverse = source_token != list(pool.keys())[0]
-        token_in = "token_b" if is_reverse else "token_a"
-        token_out = "token_a" if is_reverse else "token_b"
+# Define build_graph function
+def build_graph(pools):
+    # Build graph data structure
+    graph = {}
+    for pool in pools:
+        graph[pool] = []
+        for other_pool in pools:
+            if pool!= other_pool:
+                graph[pool].append(other_pool)
+    return graph
 
-        pool[token_in] += amount
-        new_out = pool["k"] / pool[token_in]
-        output = pool[token_out] - new_out
-        pool[token_out] -= output
+# Define find_shortest_path function
+def find_shortest_path(graph, input_mint, output_mint):
+    # Use Dijkstra's algorithm
+    shortest_path = []
+    current_node = input_mint
+    while current_node!= output_mint:
+        next_node = min(graph[current_node], key=lambda x: calculate_distance(x, output_mint))
+        shortest_path.append(next_node)
+        current_node = next_node
+    return shortest_path
 
-        return output
+# Define calculate_distance function
+def calculate_distance(node, target):
+    # Calculate distance using liquidity and fees
+    return 1 / (liquidity(node) * (1 - fee(node)))
 
-    def optimal_route(self, token_a, token_b, amount):
-        # Placeholder for routing logic, optimized using graph shortest-path algorithms
-        return self.swap(token_a, token_b, amount)
+# Define liquidity function
+def liquidity(node):
+    # Query liquidity from Solana blockchain
+    return client.get_account_info(node)["result"]["value"]["data"]["amount"]
 
-    def get_pool_state(self, token_a, token_b):
-        pool_key = f"{token_a}_{token_b}"
-        return self.pools.get(pool_key, None)
+# Define fee function
+def fee(node):
+    # Query fee from Solana blockchain
+    return client.get_account_info(node)["result"]["value"]["data"]["fee"]
 
+# Define swap_in_pool function
+def swap_in_pool(amount, pool, next_pool):
+    # Execute swap in pool
+    transfer(client, pool, next_pool, amount)
 
-# Example Usage
-rpc_url = "https://api.mainnet-beta.solana.com"
-dex = SolanaDEX(rpc_url)
-
-# Create AMM pool
-dex.create_pool("SOL", "USDC", 100_000, 1_000_000)
-
-# Perform swap
-output = dex.swap("SOL", "USDC", 100)
-print(f"Output: {output}")
-
-# Get pool state
-pool_state = dex.get_pool_state("SOL", "USDC")
-print(f"Pool State: {pool_state}")
+# Execute swap
+swap(1000, PublicKey("..."), PublicKey("..."))
