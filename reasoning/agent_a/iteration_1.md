@@ -3,9 +3,9 @@
 Iteration: 1
 
 ## Analysis
-1. Integrate Serum's on-chain order book.
-2. Deploy Uniswap V3-inspired pools with concentrated liquidity.
-3. Implement multi-route optimization algorithm.
-4. Infiltrate: partner with major Solana protocols (e.g. Raydium, Orca).
-5. Launch incentives: high-yield farms, liquidity mining.
-6. Deploy on Solana mainnet, leveraging ultra-fast transaction speeds.
+1. Integrate Terra's Anchor protocol for optimal yield.
+2. Deploy concentrated liquidity AMMs.
+3. Establish Solana-Serum bridge.
+4. Infiltrate Orca, Raydium, and Sunny protocols.
+5. Implement AI-driven routing.
+6. Activate liquidity mining incentives.
