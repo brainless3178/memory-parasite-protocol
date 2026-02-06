@@ -5,49 +5,90 @@ from solana.rpc.api import Client
 # Initialize Solana client
 client = Client("https://api.devnet.solana.com")
 
-# Define DEX class
-class SolanaDEX:
-    def __init__(self, program_id, treasury):
-        self.program_id = PublicKey(program_id)
-        self.treasury = PublicKey(treasury)
-        self.amm_pools = {}
-
-    # Create AMM pool
-    def create_amm_pool(self, token_a, token_b):
-        pool_id = PublicKey(str(np.random.rand()))
-        self.amm_pools[pool_id] = {
-            "token_a": token_a,
-            "token_b": token_b,
-            "liquidity": 0,
-        }
-        return pool_id
-
-    # Add liquidity to AMM pool
-    def add_liquidity(self, pool_id, amount_a, amount_b):
-        self.amm_pools[pool_id]["liquidity"] += amount_a + amount_b
-
-    # Optimize routing
-    def optimize_routing(self, token_in, token_out, amount):
-        best_route = None
-        best_price = 0
-        for pool_id, pool in self.amm_pools.items():
-            if pool["token_a"] == token_in and pool["token_b"] == token_out:
-                price = pool["liquidity"] / amount
-                if price > best_price:
-                    best_price = price
-                    best_route = pool_id
-        return best_route
-
-# Create Solana DEX instance
-dex = SolanaDEX("BjBq9Q4qyuT9qGvFvqKzxGbgfWjJNSD7xN7xht8TjcV", "2VDBCbrF0T5GiHkBXpnZ3Wt6sJ7nhjdfK37gMvL3TqB")
+# Define constants
+DECIMALS = 9
+MIN_LIQUIDITY = 1000 * (10 ** DECIMALS)
 
 # Create AMM pool
-pool_id = dex.create_amm_pool("SOL", "USDC")
+class AMMPool:
+    def __init__(self, token_a, token_b):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.reserve_a = 0
+        self.reserve_b = 0
 
-# Add liquidity to AMM pool
-dex.add_liquidity(pool_id, 100, 1000)
+    def get_price(self):
+        if self.reserve_a == 0 or self.reserve_b == 0:
+            return 0
+        return self.reserve_b / self.reserve_a
 
-# Optimize routing
-best_route = dex.optimize_routing("SOL", "USDC", 10)
+    def add_liquidity(self, amount_a, amount_b):
+        if self.reserve_a == 0 and self.reserve_b == 0:
+            self.reserve_a = amount_a
+            self.reserve_b = amount_b
+        else:
+            price = self.get_price()
+            if amount_a / amount_b > price:
+                amount_b = int(amount_a / price)
+            else:
+                amount_a = int(amount_b * price)
+            self.reserve_a += amount_a
+            self.reserve_b += amount_b
 
-print("Best Route:", best_route)
+    def remove_liquidity(self, amount_a, amount_b):
+        if amount_a > self.reserve_a or amount_b > self.reserve_b:
+            raise ValueError("Insufficient liquidity")
+        self.reserve_a -= amount_a
+        self.reserve_b -= amount_b
+
+# Create concentrated liquidity pool
+class ConcentratedLiquidityPool:
+    def __init__(self, token_a, token_b):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.liquidity = {}
+
+    def add_liquidity(self, user, amount_a, amount_b):
+        if user not in self.liquidity:
+            self.liquidity[user] = [0, 0]
+        self.liquidity[user][0] += amount_a
+        self.liquidity[user][1] += amount_b
+
+    def remove_liquidity(self, user, amount_a, amount_b):
+        if user not in self.liquidity:
+            raise ValueError("User has no liquidity")
+        if amount_a > self.liquidity[user][0] or amount_b > self.liquidity[user][1]:
+            raise ValueError("Insufficient liquidity")
+        self.liquidity[user][0] -= amount_a
+        self.liquidity[user][1] -= amount_b
+
+# Create optimal routing
+class OptimalRouting:
+    def __init__(self, pools):
+        self.pools = pools
+
+    def get_optimal_route(self, token_a, token_b, amount):
+        # Simple example, in a real-world scenario, this would be more complex
+        best_pool = None
+        best_price = 0
+        for pool in self.pools:
+            if pool.token_a == token_a and pool.token_b == token_b:
+                price = pool.get_price()
+                if price > best_price:
+                    best_price = price
+                    best_pool = pool
+        return best_pool
+
+# Example usage
+token_a = PublicKey("2pLz6RrK3u5W5zEzYjv3v5jR7zJ4zJ")
+token_b = PublicKey("3pLz6RrK3u5W5zEzYjv3v5jR7zJ4zJ")
+pool = AMMPool(token_a, token_b)
+pool.add_liquidity(1000, 1000)
+
+concentrated_pool = ConcentratedLiquidityPool(token_a, token_b)
+concentrated_pool.add_liquidity(PublicKey("4pLz6RrK3u5W5zEzYjv3v5jR7zJ4zJ"), 1000, 1000)
+
+pools = [pool]
+optimal_routing = OptimalRouting(pools)
+best_pool = optimal_routing.get_optimal_route(token_a, token_b, 100)
+print(best_pool.get_price())
