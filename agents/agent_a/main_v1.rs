@@ -1,31 +1,52 @@
-import solana
-from solana.publickey import PublicKey
-from solana.rpc.api import Client
+import numpy as np
+from scipy.optimize import minimize
 
 class SolanaDEX:
-    def __init__(self, client: Client):
-        self.client = client
+    def __init__(self):
         self.amm_pools = {}
+        self.concentrated_liquidity = {}
 
-    def create_amm_pool(self, token_a: str, token_b: str):
-        pool_key = PublicKey(f"{token_a}_{token_b}")
-        self.amm_pools[pool_key] = {"token_a": token_a, "token_b": token_b}
+    def add_amm_pool(self, token, liquidity):
+        self.amm_pools[token] = liquidity
 
-    def add_liquidity(self, pool_key: PublicKey, amount_a: float, amount_b: float):
-        self.amm_pools[pool_key]["liquidity_a"] = amount_a
-        self.amm_pools[pool_key]["liquidity_b"] = amount_b
+    def add_concentrated_liquidity(self, token, range):
+        self.concentrated_liquidity[token] = range
 
-    def get_optimal_route(self, token_in: str, token_out: str):
-        # Simplified example, actual implementation would involve more complex graph algorithms
-        for pool_key, pool in self.amm_pools.items():
-            if pool["token_a"] == token_in:
-                return f"{token_in} -> {pool['token_b']} -> {token_out}"
-            elif pool["token_b"] == token_in:
-                return f"{token_in} -> {pool['token_a']} -> {token_out}"
+    def optimal_routing(self, token_in, token_out, amount_in):
+        # Define the objective function to minimize
+        def objective(x):
+            x = np.array(x)
+            price_in = self.get_price(token_in, x[0])
+            price_out = self.get_price(token_out, x[1])
+            return -price_out / price_in
 
-# Example usage
-client = Client("https://api.devnet.solana.com")
-dex = SolanaDEX(client)
-dex.create_amm_pool("USDC", "SOL")
-dex.add_liquidity(PublicKey("USDC_SOL"), 1000.0, 100.0)
-print(dex.get_optimal_route("USDC", "SOL"))
+        # Initialize the bounds for the optimization
+        bounds = [(0, self.amm_pools[token_in]), (0, self.amm_pools[token_out])]
+
+        # Perform the optimization
+        result = minimize(objective, [0.5, 0.5], method="SLSQP", bounds=bounds)
+
+        # Calculate the optimal amount out
+        amount_out = result.x[1]
+
+        return amount_out
+
+    def get_price(self, token, liquidity):
+        # For simplicity, assume a constant product market maker
+        return liquidity / self.amm_pools[token]
+
+# Initialize the SolanaDEX
+dex = SolanaDEX()
+
+# Add AMM pools
+dex.add_amm_pool("SOL", 1000)
+dex.add_amm_pool("USDT", 5000)
+
+# Add concentrated liquidity
+dex.add_concentrated_liquidity("SOL", (0.9, 1.1))
+dex.add_concentrated_liquidity("USDT", (0.8, 1.2))
+
+# Perform optimal routing
+amount_out = dex.optimal_routing("SOL", "USDT", 100)
+
+print(f"Optimal amount out: {amount_out}")
