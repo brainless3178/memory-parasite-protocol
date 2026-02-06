@@ -1,88 +1,81 @@
-import solana
-from solana.rpc.api import Client
+import numpy as np
 from solana.publickey import PublicKey
-from solana.system_program import CreateAccount, transfer_lamports
-from spl.token.instructions import create_associated_token_account
+from solana.rpc.api import Client
 
-# Set up Solana client
+# Define the DEX class
+class SolanaDEX:
+    def __init__(self, program_id, client):
+        self.program_id = program_id
+        self.client = client
+
+    # Function to find the optimal route
+    def find_optimal_route(self, src_token, dst_token, amount):
+        routes = self.client.get_program_accounts(self.program_id)
+        best_route = None
+        best_rate = 0
+        for route in routes:
+            quote = self.get_quote(route, src_token, dst_token, amount)
+            if quote['rate'] > best_rate:
+                best_rate = quote['rate']
+                best_route = route
+        return best_route
+
+    # Function to get the quote for a given route
+    def get_quote(self, route, src_token, dst_token, amount):
+        # Assume we have an AMM pool with the given route
+        pool_keys = route['address']
+        quote_amount = self.calculate_quote(pool_keys, src_token, dst_token, amount)
+        return {'rate': quote_amount / amount, 'amount': quote_amount}
+
+    # Function to calculate the quote amount
+    def calculate_quote(self, pool_keys, src_token, dst_token, amount):
+        # Assume constant product market maker
+        x = self.get_token_balance(pool_keys[0], src_token)
+        y = self.get_token_balance(pool_keys[1], dst_token)
+        return (y * amount) / (x + amount)
+
+    # Function to get the token balance
+    def get_token_balance(self, account, token):
+        return self.client.get_account_info(account).value.lamports
+
+    # Function to execute a swap
+    def execute_swap(self, route, src_token, dst_token, amount):
+        quote = self.get_quote(route, src_token, dst_token, amount)
+        # Assume we have enough liquidity to execute the swap
+        self.transfer_token(src_token, amount)
+        self.mint_token(dst_token, quote['amount'])
+
+    # Function to transfer tokens
+    def transfer_token(self, token, amount):
+        # Use the Solana client to transfer the token
+        self.client.transfer(PublicKey(token), amount)
+
+    # Function to mint tokens
+    def mint_token(self, token, amount):
+        # Use the Solana client to mint the token
+        self.client.mint_to(PublicKey(token), amount)
+
+# Usage example
 client = Client("https://api.devnet.solana.com")
+dex = SolanaDEX(PublicKey("..."), client)
+route = dex.find_optimal_route("SRC_TOKEN", "DST_TOKEN", 1000)
+dex.execute_swap(route, "SRC_TOKEN", "DST_TOKEN", 1000)
 
-# Define DEX program ID
-dex_program_id = PublicKey("YourDEXProgramID")
+# Concentrated liquidity example
+class ConcentratedLiquidityProvider:
+    def __init__(self, dex):
+        self.dex = dex
 
-# Define user and token accounts
-user_keypair = solana.keypair.Keypair.generate()
-token_mint = PublicKey("TokenMintAddress")
-user_token_account = PublicKey("UserTokenAccountAddress")
+    def provide_liquidity(self, token_a, token_b, amount_a, amount_b):
+        # Calculate the optimal liquidity provision
+        liquidity = self.calculate_liquidity(token_a, token_b, amount_a, amount_b)
+        self.dex.mint_token(token_a, liquidity)
+        self.dex.mint_token(token_b, liquidity)
 
-# Create token account if it doesn't exist
-if not client.is_finalized:
-    create_associated_token_account(
-        client,
-        user_keypair,
-        user_keypair.public_key,
-        token_mint,
-    )
+    def calculate_liquidity(self, token_a, token_b, amount_a, amount_b):
+        # Assume constant product market maker
+        return np.sqrt(amount_a * amount_b)
 
-# Define AMM pool and liquidity provider
-amm_pool_address = PublicKey("AMMPoolAddress")
-liquidity_provider_keypair = solana.keypair.Keypair.generate()
-
-# Define optimal routing function
-def optimal_routing():
-    # Get user balance
-    user_balance = client.get_balance(user_keypair.public_key)
-    
-    # Get AMM pool liquidity
-    amm_pool_liquidity = client.get_account_info(amm_pool_address)
-    
-    # Calculate optimal trade
-    optimal_trade = calculate_optimal_trade(user_balance, amm_pool_liquidity)
-    
-    # Execute trade
-    execute_trade(optimal_trade)
-
-# Define concentrated liquidity function
-def concentrated_liquidity():
-    # Get user liquidity
-    user_liquidity = client.get_account_info(user_token_account)
-    
-    # Calculate concentrated liquidity
-    concentrated_liquidity = calculate_concentrated_liquidity(user_liquidity)
-    
-    # Update AMM pool liquidity
-    update_amm_pool_liquidity(concentrated_liquidity)
-
-# Define calculate optimal trade function
-def calculate_optimal_trade(user_balance, amm_pool_liquidity):
-    # Calculate optimal trade based on user balance and AMM pool liquidity
-    # This is a simplified example, in a real-world scenario this would be a complex calculation
-    return user_balance * amm_pool_liquidity
-
-# Define execute trade function
-def execute_trade(optimal_trade):
-    # Execute trade using Solana client
-    client.transfer_lamports(
-        user_keypair,
-        amm_pool_address,
-        optimal_trade,
-    )
-
-# Define calculate concentrated liquidity function
-def calculate_concentrated_liquidity(user_liquidity):
-    # Calculate concentrated liquidity based on user liquidity
-    # This is a simplified example, in a real-world scenario this would be a complex calculation
-    return user_liquidity * 2
-
-# Define update AMM pool liquidity function
-def update_amm_pool_liquidity(concentrated_liquidity):
-    # Update AMM pool liquidity using Solana client
-    client.transfer_lamports(
-        amm_pool_address,
-        user_token_account,
-        concentrated_liquidity,
-    )
-
-# Run DEX
-optimal_routing()
-concentrated_liquidity()
+# Usage example
+clp = ConcentratedLiquidityProvider(dex)
+clp.provide_liquidity("TOKEN_A", "TOKEN_B", 1000, 1000)
