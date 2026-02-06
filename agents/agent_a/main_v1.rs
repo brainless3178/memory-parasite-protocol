@@ -1,79 +1,68 @@
-import numpy as np
+from solana.rpc.api import Client
+from solana.publickey import PublicKey
+from solana.transaction import Transaction, TransactionInstruction
+from solana.account import Account
+import base64
 
-# Define constants
-DECIMALS = 8
-MIN_LIQUIDITY = 1000
+RPC_URL = "https://api.mainnet-beta.solana.com"
+client = Client(RPC_URL)
 
-# Define the UniswapV2Pair class
-class UniswapV2Pair:
-    def __init__(self, token0, token1, reserve0, reserve1):
-        self.token0 = token0
-        self.token1 = token1
-        self.reserve0 = reserve0
-        self.reserve1 = reserve1
+class Pool:
+    def __init__(self, token_a, token_b, fee, liquidity):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.fee = fee
+        self.liquidity = liquidity
 
-    def get_reserves(self):
-        return self.reserve0, self.reserve1
+    def calculate_swap(self, input_amount, input_token):
+        output_token = self.token_a if input_token == self.token_b else self.token_b
+        k = self.liquidity[self.token_a] * self.liquidity[self.token_b]
+        new_input_liquidity = self.liquidity[input_token] + input_amount
+        new_output_liquidity = k / new_input_liquidity
+        output_amount = self.liquidity[output_token] - new_output_liquidity
+        fee_deduction = output_amount * self.fee
+        return output_amount - fee_deduction
 
-# Define the Router class
-class Router:
-    def __init__(self, pairs):
-        self.pairs = pairs
+class DEX:
+    def __init__(self):
+        self.pools = []
 
-    def get_best_rate(self, token_in, token_out, amount_in):
-        best_rate = 0
-        best_pair = None
-        for pair in self.pairs:
-            if pair.token0 == token_in and pair.token1 == token_out:
-                rate = pair.reserve1 / (pair.reserve0 + amount_in * (10 ** DECIMALS))
-                if rate > best_rate:
-                    best_rate = rate
-                    best_pair = pair
-            elif pair.token0 == token_out and pair.token1 == token_in:
-                rate = pair.reserve0 / (pair.reserve1 + amount_in * (10 ** DECIMALS))
-                if rate > best_rate:
-                    best_rate = rate
-                    best_pair = pair
-        return best_rate, best_pair
+    def add_pool(self, token_a, token_b, fee):
+        liquidity = {token_a: 1_000_000, token_b: 1_000_000}  # Mocked liquidity
+        pool = Pool(token_a, token_b, fee, liquidity)
+        self.pools.append(pool)
 
-# Define the ConcentratedLiquidityPool class
-class ConcentratedLiquidityPool:
-    def __init__(self, token0, token1):
-        self.token0 = token0
-        self.token1 = token1
-        self.liquidityProviders = []
+    def optimal_swap(self, input_token, output_token, input_amount):
+        best_output = 0
+        best_pool = None
+        for pool in self.pools:
+            if input_token in [pool.token_a, pool.token_b] and output_token in [pool.token_a, pool.token_b]:
+                output_amount = pool.calculate_swap(input_amount, input_token)
+                if output_amount > best_output:
+                    best_output = output_amount
+                    best_pool = pool
+        return best_pool, best_output
 
-    def add_liquidity(self, liquidity_provider):
-        self.liquidityProviders.append(liquidity_provider)
+    def execute_swap(self, pool, input_token, input_amount):
+        output_token = pool.token_a if input_token == pool.token_b else pool.token_b
+        output_amount = pool.calculate_swap(input_amount, input_token)
+        pool.liquidity[input_token] += input_amount
+        pool.liquidity[output_token] -= output_amount
+        return output_amount
 
-# Define the AMM class
-class AMM:
-    def __init__(self, pool):
-        self.pool = pool
+if __name__ == "__main__":
+    dex = DEX()
+    dex.add_pool("SOL", "USDC", 0.003)
+    dex.add_pool("SOL", "USDT", 0.003)
+    dex.add_pool("USDC", "USDT", 0.003)
 
-    def get_price(self, token_in, token_out):
-        if token_in == self.pool.token0:
-            return self.pool.reserve1 / self.pool.reserve0
-        else:
-            return self.pool.reserve0 / self.pool.reserve1
+    input_token = "SOL"
+    output_token = "USDC"
+    input_amount = 100
 
-# Create pairs
-pair1 = UniswapV2Pair("USDT", "SOL", 100000 * (10 ** DECIMALS), 1000 * (10 ** DECIMALS))
-pair2 = UniswapV2Pair("SOL", "ETH", 1000 * (10 ** DECIMALS), 100000 * (10 ** DECIMALS))
-
-# Create router
-router = Router([pair1, pair2])
-
-# Create concentrated liquidity pool
-pool = ConcentratedLiquidityPool("USDT", "SOL")
-
-# Create AMM
-amm = AMM(pool)
-
-# Get best rate
-best_rate, best_pair = router.get_best_rate("USDT", "ETH", 100 * (10 ** DECIMALS))
-print(f"Best rate: {best_rate}, Best pair: {best_pair.token0}/{best_pair.token1}")
-
-# Get price
-price = amm.get_price("USDT", "SOL")
-print(f"Price: {price}")
+    best_pool, best_output = dex.optimal_swap(input_token, output_token, input_amount)
+    if best_pool:
+        executed_output = dex.execute_swap(best_pool, input_token, input_amount)
+        print(f"Swapped {input_amount} {input_token} for {executed_output:.6f} {output_token}")
+    else:
+        print("No suitable pool found.")
