@@ -5,46 +5,62 @@ from solana.rpc.api import Client
 # Initialize Solana client
 client = Client("https://api.devnet.solana.com")
 
-# Define AMM pool and concentrated liquidity
+# Define AMM pool structure
 class AMMPool:
-    def __init__(self, token_a, token_b, liquidity):
+    def __init__(self, token_a, token_b, fee):
         self.token_a = token_a
         self.token_b = token_b
-        self.liquidity = liquidity
+        self.fee = fee
+        self.liquidity = 0
+
+    def add_liquidity(self, amount_a, amount_b):
+        self.liquidity += amount_a + amount_b
+
+    def remove_liquidity(self, amount_a, amount_b):
+        self.liquidity -= amount_a + amount_b
 
     def get_price(self):
         return self.token_a / self.token_b
 
+# Define concentrated liquidity structure
 class ConcentratedLiquidity:
-    def __init__(self, token_a, token_b, liquidity, lower_tick, upper_tick):
+    def __init__(self, token_a, token_b, fee):
         self.token_a = token_a
         self.token_b = token_b
-        self.liquidity = liquidity
-        self.lower_tick = lower_tick
-        self.upper_tick = upper_tick
+        self.fee = fee
+        self.liquidity = 0
 
-# Define optimal routing
+    def add_liquidity(self, amount_a, amount_b):
+        self.liquidity += amount_a + amount_b
+
+    def remove_liquidity(self, amount_a, amount_b):
+        self.liquidity -= amount_a + amount_b
+
+    def get_price(self):
+        return self.token_a / self.token_b
+
+# Define optimal routing structure
 class OptimalRouting:
     def __init__(self, pools):
         self.pools = pools
 
-    def get_best_route(self, token_a, token_b):
+    def find_best_route(self, token_a, token_b, amount):
         best_route = None
-        best_price = float("inf")
+        best_price = 0
         for pool in self.pools:
             price = pool.get_price()
-            if price < best_price and pool.token_a == token_a and pool.token_b == token_b:
+            if price > best_price:
                 best_price = price
                 best_route = pool
         return best_route
 
 # Initialize pools and routing
-pool1 = AMMPool(100, 200, 1000)
-pool2 = AMMPool(200, 300, 2000)
-pool3 = ConcentratedLiquidity(100, 200, 1000, -10, 10)
-pools = [pool1, pool2, pool3]
+pool1 = AMMPool(100, 200, 0.01)
+pool2 = ConcentratedLiquidity(300, 400, 0.02)
+pools = [pool1, pool2]
 routing = OptimalRouting(pools)
 
-# Get best route
-best_route = routing.get_best_route(100, 200)
-print(best_route.get_price())
+# Find best route and execute trade
+best_route = routing.find_best_route(100, 200, 1000)
+print("Best route:", best_route.token_a, "/", best_route.token_b)
+print("Best price:", best_route.get_price())
