@@ -1,107 +1,47 @@
-import hashlib
+import numpy as np
 
-# Constants
-CHAIN_ID = 101
-PROGRAM_ID = "4sKz5vKW BlakeyHNTfdJjL4vntInm5cmn7aHdxeo4k2"
-
-# Serum DEX Program
-class SerumDEX:
+class SolanaDEX:
     def __init__(self):
-        self.markets = {}
-        self.accounts = {}
+        self.amm_pools = {}
+        self.concentrated_liquidity = {}
 
-    def create_market(self, market_addr, base_mint, quote_mint):
-        self.markets[market_addr] = {
-            "base_mint": base_mint,
-            "quote_mint": quote_mint,
-            "event_queue": [],
-            "bids": [],
-            "asks": []
-        }
+    def add_amm_pool(self, token1, token2):
+        self.amm_pools[(token1, token2)] = {"reserve1": 0, "reserve2": 0}
 
-    def create_account(self, account_addr, owner):
-        self.accounts[account_addr] = {
-            "owner": owner,
-            "balances": {}
-        }
+    def add_concentrated_liquidity(self, token1, token2, liquidity):
+        self.concentrated_liquidity[(token1, token2)] = liquidity
 
-# AMM Pool
-class AMMPool:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.reserves = {
-            token_a: 0,
-            token_b: 0
-        }
+    def calculate_optimal_route(self, token_in, token_out, amount_in):
+        # Simplified optimal routing for demonstration purposes
+        optimal_route = []
+        if (token_in, token_out) in self.amm_pools:
+            optimal_route.append((token_in, token_out))
+        elif (token_out, token_in) in self.amm_pools:
+            optimal_route.append((token_out, token_in))
+        else:
+            # Find a common token to route through
+            common_tokens = set([t for (t, _) in self.amm_pools] + [t for (_, t) in self.amm_pools])
+            for common_token in common_tokens:
+                if (token_in, common_token) in self.amm_pools and (common_token, token_out) in self.amm_pools:
+                    optimal_route.extend([(token_in, common_token), (common_token, token_out)])
+                    break
+        return optimal_route
 
-    def swap(self, token_in, amount_in, token_out):
-        if token_in == self.token_a:
-            amount_in_with_fee = amount_in * (1 - self.fee)
-            amount_out = amount_in_with_fee * self.reserves[token_b] / (self.reserves[token_a] + amount_in)
-            self.reserves[token_a] += amount_in
-            self.reserves[token_b] -= amount_out
-            return amount_out
-        elif token_in == self.token_b:
-            amount_in_with_fee = amount_in * (1 - self.fee)
-            amount_out = amount_in_with_fee * self.reserves[token_a] / (self.reserves[token_b] + amount_in)
-            self.reserves[token_b] += amount_in
-            self.reserves[token_a] -= amount_out
-            return amount_out
+    def execute_trade(self, token_in, token_out, amount_in):
+        optimal_route = self.calculate_optimal_route(token_in, token_out, amount_in)
+        amount_out = amount_in
+        for (token1, token2) in optimal_route:
+            reserve1, reserve2 = self.amm_pools[(token1, token2)]["reserve1"], self.amm_pools[(token1, token2)]["reserve2"]
+            amount_out = (reserve2 * amount_in) / (reserve1 + amount_in)
+            self.amm_pools[(token1, token2)]["reserve1"] += amount_in
+            self.amm_pools[(token1, token2)]["reserve2"] -= amount_out
+            amount_in = amount_out
+        return amount_out
 
-# Concentrated Liquidity
-class ConcentratedLiquidity:
-    def __init__(self, pool):
-        self.pool = pool
-        self.positions = {}
-
-    def add_liquidity(self, owner, amount_a, amount_b):
-        self.positions[owner] = {
-            "amount_a": amount_a,
-            "amount_b": amount_b
-        }
-        self.pool.reserves[self.pool.token_a] += amount_a
-        self.pool.reserves[self.pool.token_b] += amount_b
-
-# Optimal Routing
-class OptimalRouting:
-    def __init__(self, dex):
-        self.dex = dex
-
-    def get_best_route(self, token_in, amount_in, token_out):
-        best_route = None
-        best_price = 0
-        for market_addr, market in self.dex.markets.items():
-            if market["base_mint"] == token_in and market["quote_mint"] == token_out:
-                price = self.get_price(market, token_in, amount_in)
-                if price > best_price:
-                    best_price = price
-                    best_route = market_addr
-            elif market["base_mint"] == token_out and market["quote_mint"] == token_in:
-                price = self.get_price(market, token_out, amount_in)
-                if price > best_price:
-                    best_price = price
-                    best_route = market_addr
-        return best_route
-
-    def get_price(self, market, token_in, amount_in):
-        if token_in == market["base_mint"]:
-            return amount_in * market["asks"][0]["price"]
-        elif token_in == market["quote_mint"]:
-            return amount_in * market["bids"][0]["price"]
-
-# Main function
-def main():
-    dex = SerumDEX()
-    pool = AMMPool("TOKEN_A", "TOKEN_B", 0.03)
-    concentrated_liquidity = ConcentratedLiquidity(pool)
-    optimal_routing = OptimalRouting(dex)
-
-    concentrated_liquidity.add_liquidity("OWNER", 1000, 1000)
-
-    best_route = optimal_routing.get_best_route("TOKEN_A", 100, "TOKEN_B")
-    print(f"Best route: {best_route}")
-
-if __name__ == "__main__":
-    main()
+# Example usage
+dex = SolanaDEX()
+dex.add_amm_pool("SOL", "USDT")
+dex.add_concentrated_liquidity("SOL", "USDT", 1000000)
+dex.amm_pools[("SOL", "USDT")]["reserve1"] = 100000
+dex.amm_pools[("SOL", "USDT")]["reserve2"] = 1000000
+print(dex.execute_trade("SOL", "USDT", 1000))
