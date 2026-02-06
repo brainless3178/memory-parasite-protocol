@@ -1,108 +1,88 @@
+import solana
 from solana.rpc.api import Client
 from solana.publickey import PublicKey
-from solana.transaction import Transaction, TransactionInstruction
-from solana.rpc.async_api import AsyncClient
-from spl.token.instructions import TokenInstruction, create_approve_instruction, create_transfer_instruction
+from solana.transaction import Transaction
+from spl.token.instructions import transfer, TransferParams
 from spl.token.constants import TOKEN_PROGRAM_ID
 from decimal import Decimal
-import asyncio
 
 # Constants
 RPC_URL = "https://api.mainnet-beta.solana.com"
-DEX_PROGRAM_ID = PublicKey("DEX_PROGRAM_ID")  # Replace with deployed program ID
-SLIPPAGE = 0.005  # 0.5% slippage tolerance
+dex_address = PublicKey("DEX_PUBKEY")
+client = Client(RPC_URL)
 
-class SolanaDEX:
-    def __init__(self):
-        self.client = Client(RPC_URL)
-        self.amms = {}  # Store AMM pools data
-        self.liquidity_positions = {}  # Store concentrated liquidity details
+# AMM Pool Struct
+class AMMPool:
+    def __init__(self, token_a, token_b, reserve_a, reserve_b, fee):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.reserve_a = Decimal(reserve_a)
+        self.reserve_b = Decimal(reserve_b)
+        self.fee = Decimal(fee)
 
-    async def fetch_pools(self):
-        # Fetch and update AMM pool data from the blockchain
-        pools = await self.client.get_program_accounts(DEX_PROGRAM_ID)
-        self.amms = {str(pool['pubkey']): pool['account'] for pool in pools["result"]}
-        print(f"Updated AMM Pools: {len(self.amms)} pools loaded.")
+    def get_price(self, amount_in, direction=True):
+        reserve_in, reserve_out = (self.reserve_a, self.reserve_b) if direction else (self.reserve_b, self.reserve_a)
+        amount_in_with_fee = Decimal(amount_in) * (1 - self.fee)
+        numerator = amount_in_with_fee * reserve_out
+        denominator = reserve_in + amount_in_with_fee
+        return numerator / denominator
 
-    async def optimal_route(self, input_token: PublicKey, output_token: PublicKey, amount: Decimal):
-        # Implement optimal routing logic
-        routes = []  # Determine all possible routes
-        best_route = None
-        best_rate = Decimal(0)
+    def swap(self, amount_in, direction=True):
+        reserve_in, reserve_out = (self.reserve_a, self.reserve_b) if direction else (self.reserve_b, self.reserve_a)
+        amount_in_with_fee = Decimal(amount_in) * (1 - self.fee)
+        amount_out = (amount_in_with_fee * reserve_out) / (reserve_in + amount_in_with_fee)
+        if direction:
+            self.reserve_a += amount_in_with_fee
+            self.reserve_b -= amount_out
+        else:
+            self.reserve_b += amount_in_with_fee
+            self.reserve_a -= amount_out
+        return amount_out
 
-        for route in routes:
-            rate = self.simulate_swap(route, amount)
-            if rate > best_rate:
-                best_rate = rate
-                best_route = route
+# Optimal Routing
+def find_best_route(amount_in, pools, token_in, token_out):
+    best_out, best_route = Decimal(0), None
+    for pool in pools:
+        if (pool.token_a == token_in and pool.token_b == token_out) or (pool.token_a == token_out and pool.token_b == token_in):
+            direction = pool.token_a == token_in
+            output = pool.get_price(amount_in, direction)
+            if output > best_out:
+                best_out, best_route = output, pool
+    return best_out, best_route
 
-        return best_route, best_rate
+# Pool Initialization
+pool_1 = AMMPool("TOKEN_A", "TOKEN_B", 1_000_000, 2_000_000, 0.003)
+pool_2 = AMMPool("TOKEN_B", "TOKEN_C", 2_000_000, 1_500_000, 0.003)
+pools = [pool_1, pool_2]
 
-    def simulate_swap(self, route, amount: Decimal):
-        # Simulate a swap along a given route
-        rate = Decimal(1)
-        for pool in route:
-            pool_data = self.amms.get(pool)
-            rate *= self.calculate_rate(pool_data, amount)
-        return rate
+# Main Swap Execution
+def execute_swap(amount_in, token_in, token_out, user_pubkey):
+    best_out, best_pool = find_best_route(amount_in, pools, token_in, token_out)
+    if not best_pool:
+        raise Exception("No route found.")
+    direction = best_pool.token_a == token_in
+    amount_out = best_pool.swap(amount_in, direction)
 
-    def calculate_rate(self, pool_data, amount: Decimal):
-        # Calculate the swap rate for a given pool
-        x = Decimal(pool_data['x'])  # Reserve of token X
-        y = Decimal(pool_data['y'])  # Reserve of token Y
-        fee = Decimal(pool_data['fee'])
-        new_x = x + amount
-        new_y = (x * y) / new_x
-        return (y - new_y) * (1 - fee)
-
-    async def add_liquidity(self, pool: PublicKey, user: PublicKey, token_a_amount: Decimal, token_b_amount: Decimal):
-        # Add liquidity to a pool
-        instruction = TransactionInstruction(
-            program_id=DEX_PROGRAM_ID,
-            keys=[
-                {"pubkey": pool, "is_signer": False, "is_writable": True},
-                {"pubkey": user, "is_signer": True, "is_writable": False},
-            ],
-            data=b"ADD_LIQUIDITY" + token_a_amount.to_bytes(8, 'little') + token_b_amount.to_bytes(8, 'little')
-        )
-        transaction = Transaction().add(instruction)
-        await self.client.send_transaction(transaction)
-
-    async def remove_liquidity(self, pool: PublicKey, user: PublicKey, liquidity_amount: Decimal):
-        # Remove liquidity from a pool
-        instruction = TransactionInstruction(
-            program_id=DEX_PROGRAM_ID,
-            keys=[
-                {"pubkey": pool, "is_signer": False, "is_writable": True},
-                {"pubkey": user, "is_signer": True, "is_writable": False},
-            ],
-            data=b"REMOVE_LIQUIDITY" + liquidity_amount.to_bytes(8, 'little')
-        )
-        transaction = Transaction().add(instruction)
-        await self.client.send_transaction(transaction)
-
-    async def execute_trade(self, route, user: PublicKey, amount: Decimal):
-        # Execute trade along a selected route
-        instructions = []
-        for pool in route:
-            instruction = TransactionInstruction(
-                program_id=DEX_PROGRAM_ID,
-                keys=[
-                    {"pubkey": PublicKey(pool), "is_signer": False, "is_writable": True},
-                    {"pubkey": user, "is_signer": True, "is_writable": False},
-                ],
-                data=b"TRADE" + amount.to_bytes(8, 'little')
+    # Execute transfer on Solana
+    tx = Transaction().add(
+        transfer(
+            TransferParams(
+                program_id=TOKEN_PROGRAM_ID,
+                source=PublicKey(user_pubkey),
+                dest=PublicKey(dex_address),
+                owner=PublicKey(user_pubkey),
+                amount=int(amount_out * 10**6)  # Assuming 6 decimals
             )
-            instructions.append(instruction)
+        )
+    )
+    client.send_transaction(tx)
 
-        transaction = Transaction().add(*instructions)
-        await self.client.send_transaction(transaction)
+    return amount_out
 
-# Initiate DEX
-async def main():
-    dex = SolanaDEX()
-    await dex.fetch_pools()
-    # Add further logic to handle user interaction, trades, etc.
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# Example Swap Execution
+user_pubkey = "USER_PUBKEY"
+amount_in = 100
+token_in = "TOKEN_A"
+token_out = "TOKEN_B"
+output = execute_swap(amount_in, token_in, token_out, user_pubkey)
+print(f"Swapped {amount_in} {token_in} for {output:.6f} {token_out}")
