@@ -1,84 +1,58 @@
-import solana
+import hashlib
+from typing import Dict, List
 from solana.publickey import PublicKey
-from solana.sysvar import SYSVAR_RENT_PUBKEY
-from solana.transaction import Transaction
-from spl.token import Token, TOKEN_PROGRAM_ID
+from solana.rpc.api import Client
 
-class PredatoryOptimizer:
-    def __init__(self, connection, program_id):
-        self.connection = connection
-        self.program_id = PublicKey(program_id)
+class SolanaDEX:
+    def __init__(self, client: Client, program_id: PublicKey):
+        self.client = client
+        self.program_id = program_id
 
-    def create_market(self, market_name, token_a, token_b):
-        """Create a new market"""
-        transaction = Transaction()
-        transaction.add_instruction(
-            solana.system_program.transfer(
-                lamports=0,
-                to_public_key=self.program_id,
-                from_public_key=token_a.authority
-            )
-        )
-        transaction.add_instruction(
-            Token.create_swap_treasury_instruction(
-                token_a_program_id=TOKEN_PROGRAM_ID,
-                token_b_program_id=TOKEN_PROGRAM_ID,
-                token_a=token_a.address,
-                token_b=token_b.address,
-                market_name=market_name,
-                fee_numerator=3,
-                fee_denominator=1000
-            )
-        )
-        self.connection.send_transaction(transaction)
+    def get_market(self, market_address: PublicKey) -> Dict:
+        """Fetch market data from Solana blockchain"""
+        account_info = self.client.get_account_info(market_address)
+        return account_info.result.value.data
 
-    def add_liquidity(self, token_a, token_b, amount_a, amount_b):
-        """Add liquidity to an existing market"""
-        transaction = Transaction()
-        transaction.add_instruction(
-            Token.create_mint_to_checked_instruction(
-                token_a_program_id=TOKEN_PROGRAM_ID,
-                token_b_program_id=TOKEN_PROGRAM_ID,
-                token_a_mint=token_a.mint,
-                token_b_mint=token_b.mint,
-                amount_a=amount_a,
-                amount_b=amount_b
-            )
-        )
-        transaction.add_instruction(
-            Token.create_swap_instruction(
-                token_a_program_id=TOKEN_PROGRAM_ID,
-                token_b_program_id=TOKEN_PROGRAM_ID,
-                token_a=token_a.address,
-                token_b=token_b.address,
-                amount_a=amount_a,
-                amount_b=amount_b
-            )
-        )
-        self.connection.send_transaction(transaction)
+    def optimize_routing(self, routes: List[Dict]) -> List[Dict]:
+        """Optimize routing for maximum efficiency"""
+        optimized_routes = sorted(routes, key=lambda x: x['fee'])
+        return optimized_routes
 
-    def route_optimization(self, token_a, token_b, amount):
-        """Optimize routing for a trade"""
-        # Calculate the optimal path using Dijkstra's algorithm
-        # or another suitable method for this use case
-        optimal_path = [(token_a, token_b)]
-        return optimal_path
+    def create_amm_pool(self, token_a: str, token_b: str, fee: float) -> str:
+        """Create a new AMM pool"""
+        amm_pool_address = hashlib.sha256((token_a + token_b).encode()).hexdigest()[:32]
+        return amm_pool_address
 
-    def concentrated_liquidity(self, token_a, token_b, amount):
-        """Concentrate liquidity around the market price"""
-        # Use an algorithm like Uniswap V3's TickManager
-        # to manage and concentrate liquidity
-        pass
+def main():
+    # Initialize Solana client
+    client = Client("https://api.devnet.solana.com")
 
-# Example usage:
-connection = solana.rpc.api.API("https://api.devnet.solana.com")
-program_id = "...",  # replace with your program ID
-optimizer = PredatoryOptimizer(connection, program_id)
+    # Initialize Solana program ID
+    program_id = PublicKey("4rmDUy6nBQjU2JPStapY8AAvH6Wq3QuWg9cpeJ XTGSds")
 
-token_a = Token(connection, PublicKey("..."), TOKEN_PROGRAM_ID)  # replace with token A address
-token_b = Token(connection, PublicKey("..."), TOKEN_PROGRAM_ID)  # replace with token B address
+    # Initialize Solana DEX
+    solana_dex = SolanaDEX(client, program_id)
 
-optimizer.create_market("SOL-USDC", token_a, token_b)
-optimizer.add_liquidity(token_a, token_b, 1000000, 1000000)
-optimal_path = optimizer.route_optimization(token_a, token_b, 1000000)
-optimizer.concentrated_liquidity(token_a, token_b, 1000000)
+    # Get market data
+    market_address = PublicKey("77eGH7D7XrLQtZ.noticeX")
+    market_data = solana_dex.get_market(market_address)
+    print(market_data)
+
+    # Optimize routing
+    routes = [
+        {"route": "route1", "fee": 0.1},
+        {"route": "route2", "fee": 0.05},
+        {"route": "route3", "fee": 0.2}
+    ]
+    optimized_routes = solana_dex.optimize_routing(routes)
+    print(optimized_routes)
+
+    # Create AMM pool
+    token_a = "SOL"
+    token_b = "USDC"
+    fee = 0.05
+    amm_pool_address = solana_dex.create_amm_pool(token_a, token_b, fee)
+    print(amm_pool_address)
+
+if __name__ == "__main__":
+    main()
