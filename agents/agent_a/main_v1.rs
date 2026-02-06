@@ -1,76 +1,98 @@
-import numpy as np
-from solana.rpc.api import Client
-from solana.transaction import Transaction
+import solana
 from solana.publickey import PublicKey
-from solana.system_program import transfer, TransferParams
+from solana.rpc.api import Client
+from solana.system_program import TransferParams, transfer
 
-# Connect to Solana cluster
-client = Client("https://api.mainnet-beta.solana.com")
-
-# Define DEX constants
+# Define constants
 DEX_PROGRAM_ID = PublicKey("YourDEXProgramID")
-ROUTER_PROGRAM_ID = PublicKey("YourRouterProgramID")
+ROUTING_PROGRAM_ID = PublicKey("YourRoutingProgramID")
+AMM_PROGRAM_ID = PublicKey("YourAMMProgramID")
+CONCENTRATED_LIQUIDITY_PROGRAM_ID = PublicKey("YourConcentratedLiquidityProgramID")
 
-# Initialize pools and routes
-pools = {}
-routes = {}
+# Client setup
+client = Client("https://api.devnet.solana.com")
 
-class Pool:
-    def __init__(self, id, token_a, token_b, liquidity):
-        self.id = id
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity = liquidity
+# Define functions
+def create_amm_pool(token_a: str, token_b: str, fee: int):
+    """Create AMM pool"""
+    token_a_pubkey = PublicKey(token_a)
+    token_b_pubkey = PublicKey(token_b)
+    params = {
+        "token_a": token_a_pubkey,
+        "token_b": token_b_pubkey,
+        "fee": fee,
+    }
+    client.send_transaction(
+        [
+            solana.TransactionInstruction(
+                keys=[
+                    solana.AccountMeta(
+                        pubkey=AMM_PROGRAM_ID, is_signer=True, is_writable=False
+                    ),
+                    solana.AccountMeta(
+                        pubkey=token_a_pubkey, is_signer=False, is_writable=True
+                    ),
+                    solana.AccountMeta(
+                        pubkey=token_b_pubkey, is_signer=False, is_writable=True
+                    ),
+                ],
+                program_id=AMM_PROGRAM_ID,
+                data=solana.serialize(
+                    {
+                        "instruction": 1,  # Create AMM pool
+                        **params,
+                    }
+                ),
+            )
+        ]
+    )
 
-class Route:
-    def __init__(self, id, pool_ids, ratios):
-        self.id = id
-        self.pool_ids = pool_ids
-        self.ratios = ratios
+def create_concentrated_liquidity_pool(token_a: str, token_b: str, fee: int):
+    """Create concentrated liquidity pool"""
+    token_a_pubkey = PublicKey(token_a)
+    token_b_pubkey = PublicKey(token_b)
+    params = {
+        "token_a": token_a_pubkey,
+        "token_b": token_b_pubkey,
+        "fee": fee,
+    }
+    client.send_transaction(
+        [
+            solana.TransactionInstruction(
+                keys=[
+                    solana.AccountMeta(
+                        pubkey=CONCENTRATED_LIQUIDITY_PROGRAM_ID,
+                        is_signer=True,
+                        is_writable=False,
+                    ),
+                    solana.AccountMeta(
+                        pubkey=token_a_pubkey, is_signer=False, is_writable=True
+                    ),
+                    solana.AccountMeta(
+                        pubkey=token_b_pubkey, is_signer=False, is_writable=True
+                    ),
+                ],
+                program_id=CONCENTRATED_LIQUIDITY_PROGRAM_ID,
+                data=solana.serialize(
+                    {
+                        "instruction": 2,  # Create concentrated liquidity pool
+                        **params,
+                    }
+                ),
+            )
+        ]
+    )
 
-# Initialize sample pool and route
-pool1 = Pool(1, "TokenA", "TokenB", 1000)
-pool2 = Pool(2, "TokenB", "TokenC", 500)
-route1 = Route(1, [pool1.id, pool2.id], [0.5, 0.5])
+# Create AMM pool example
+create_amm_pool(
+    token_a="TokenAPublicKey",
+    token_b="TokenBPublicKey",
+    fee=10,
+)
 
-# Add pools and routes to dictionaries
-pools[pool1.id] = pool1
-pools[pool2.id] = pool2
-routes[route1.id] = route1
-
-# Function to calculate optimal route
-def calculate_optimal_route(token_in, token_out, amount):
-    # Simulate routing through all available routes
-    best_route = None
-    best_ratio = 0
-    for route_id, route in routes.items():
-        ratio = 1
-        for pool_id in route.pool_ids:
-            pool = pools[pool_id]
-            if pool.token_a == token_in and pool.token_b == token_out:
-                ratio *= pool.liquidity / (pool.liquidity + amount)
-            elif pool.token_b == token_in and pool.token_a == token_out:
-                ratio *= pool.liquidity / (pool.liquidity + amount)
-        if ratio > best_ratio:
-            best_ratio = ratio
-            best_route = route_id
-    return best_route
-
-# Function to execute trade
-def execute_trade(token_in, token_out, amount):
-    # Calculate optimal route
-    route_id = calculate_optimal_route(token_in, token_out, amount)
-    route = routes[route_id]
-
-    # Simulate trade through optimal route
-    for pool_id in route.pool_ids:
-        pool = pools[pool_id]
-        if pool.token_a == token_in and pool.token_b == token_out:
-            # Swap tokens
-            print(f"Swapping {amount} {token_in} for {token_out} in pool {pool.id}")
-        elif pool.token_b == token_in and pool.token_a == token_out:
-            # Swap tokens
-            print(f"Swapping {amount} {token_in} for {token_out} in pool {pool.id}")
-
-# Test trade execution
-execute_trade("TokenA", "TokenC", 100)
+# Create concentrated liquidity pool example
+create_concentrated_liquidity_pool(
+    token_a="TokenAPublicKey",
+    token_b="TokenBPublicKey",
+    fee=10,
+)
