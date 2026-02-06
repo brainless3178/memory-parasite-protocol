@@ -1,100 +1,133 @@
-import os
+import solana
 from solana.rpc.api import Client
 from solana.publickey import PublicKey
-from solana.transaction import Transaction
-from spl.token.instructions import transfer
+from solana.system_program import TransferParams
 
-# Initialize Solana client
-client = Client("https://api.devnet.solana.com")
+class SolanaDEX:
+    def __init__(self, connection: Client, authority: PublicKey, fee_payer: PublicKey):
+        self.connection = connection
+        self.authority = authority
+        self.fee_payer = fee_payer
 
-# Define AMM pool structure
-class AMMPool:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.liquidity = 0
+    def create_pool(self, token_a: PublicKey, token_b: PublicKey, fee: int):
+        """Create a new AMM pool with concentrated liquidity."""
+        # Create AMM pool
+        pool_public_key = PublicKey.find_program_address(
+            [b"amm-pool", token_a.to_bytes(), token_b.to_bytes()],
+            solana.system_program.ProgramId
+        )
 
-    def add_liquidity(self, amount_a, amount_b):
-        self.liquidity += amount_a + amount_b
+        # Initialize pool account
+        self.connection.request_airdrop(pool_public_key[0], 1000000)
 
-    def remove_liquidity(self, amount_a, amount_b):
-        self.liquidity -= amount_a + amount_b
+        # Fund fee collector
+        self.connection.transfer(
+            TransferParams(
+                from_pubkey=self.fee_payer,
+                to_pubkey=pool_public_key[0],
+                lamports=1000000
+            )
+        )
 
-    def get_price(self):
-        return self.token_a / self.token_b
+        # Deploy AMM pool program
+        program_id = solana.system_program.ProgramId
+        program_data = program_id.create_account(
+            self.connection, pool_public_key[0], 16536
+        )
 
-# Define concentrated liquidity structure
-class ConcentratedLiquidity:
-    def __init__(self, pool, lower_tick, upper_tick):
-        self.pool = pool
-        self.lower_tick = lower_tick
-        self.upper_tick = upper_tick
-        self.liquidity = 0
+        # Initialize AMM pool
+        self.connection.invoke(
+            program_id.instruction.initialize_pool(
+                pool_public_key[0],
+                token_a,
+                token_b,
+                self.authority,
+                self.fee_payer,
+                fee
+            )
+        )
 
-    def add_liquidity(self, amount):
-        self.liquidity += amount
+    def add_liquidity(self, token_a: PublicKey, token_b: PublicKey, amount_a: int, amount_b: int):
+        """Add liquidity to an existing AMM pool."""
+        # Find pool public key
+        pool_public_key = PublicKey.find_program_address(
+            [b"amm-pool", token_a.to_bytes(), token_b.to_bytes()],
+            solana.system_program.ProgramId
+        )
 
-    def remove_liquidity(self, amount):
-        self.liquidity -= amount
+        # Fund user's account
+        user_account = PublicKey.find_program_address(
+            [b"user-account", token_a.to_bytes()],
+            solana.system_program.ProgramId
+        )
+        self.connection.request_airdrop(user_account[0], 1000000)
 
-# Define optimal routing structure
-class OptimalRouting:
-    def __init__(self, pools):
-        self.pools = pools
+        # Deposit tokens into pool
+        self.connection.invoke(
+            solana.system_program.ProgramId.instruction.deposit(
+                user_account[0],
+                pool_public_key[0],
+                token_a,
+                amount_a
+            )
+        )
+        self.connection.invoke(
+            solana.system_program.ProgramId.instruction.deposit(
+                user_account[0],
+                pool_public_key[0],
+                token_b,
+                amount_b
+            )
+        )
 
-    def get_optimal_route(self, token_a, token_b, amount):
-        # Implement optimal routing algorithm
-        pass
+    def get_best_route(self, token_in: PublicKey, token_out: PublicKey, amount_in: int):
+        """Get the best route for swapping tokens."""
+        # Find all pools with token_in or token_out
+        pools = []
+        for pool in self.connection.get_program_accounts(solana.system_program.ProgramId):
+            pool_account = pool["account"]
+            pool_data = pool_account["data"]
+            if pool_data["tokenA"] == token_in or pool_data["tokenB"] == token_in:
+                pools.append(pool_account["pubkey"])
+            elif pool_data["tokenA"] == token_out or pool_data["tokenB"] == token_out:
+                pools.append(pool_account["pubkey"])
 
-# Initialize AMM pools and concentrated liquidity
-pool = AMMPool(100, 200, 0.01)
-concentrated_liquidity = ConcentratedLiquidity(pool, -100, 100)
+        # Find the best pool for swapping
+        best_pool = None
+        best_rate = 0
+        for pool in pools:
+            pool_data = self.connection.get_account_info(pool)
+            if pool_data:
+                pool_token_a = pool_data["data"]["tokenA"]
+                pool_token_b = pool_data["data"]["tokenB"]
+                if pool_token_a == token_in:
+                    rate = pool_data["data"]["reserveB"] / pool_data["data"]["reserveA"]
+                    if rate > best_rate:
+                        best_rate = rate
+                        best_pool = pool
 
-# Add liquidity to pool
-pool.add_liquidity(100, 200)
+        # Swap tokens
+        self.connection.invoke(
+            solana.system_program.ProgramId.instruction.swap(
+                self.fee_payer,
+                best_pool,
+                token_in,
+                token_out,
+                amount_in
+            )
+        )
 
-# Add liquidity to concentrated liquidity
-concentrated_liquidity.add_liquidity(100)
+# Example usage
+connection = Client("https://api.devnet.solana.com")
+authority = PublicKey("YOUR_AUTHORITY_PUBLIC_KEY")
+fee_payer = PublicKey("YOUR_FEE_PAYER_PUBLIC_KEY")
+dex = SolanaDEX(connection, authority, fee_payer)
 
-# Get optimal route
-optimal_routing = OptimalRouting([pool])
-optimal_route = optimal_routing.get_optimal_route(100, 200, 100)
+# Create a new AMM pool
+dex.create_pool(PublicKey("TOKEN_A_PUBLIC_KEY"), PublicKey("TOKEN_B_PUBLIC_KEY"), 100)
 
+# Add liquidity to the pool
+dex.add_liquidity(PublicKey("TOKEN_A_PUBLIC_KEY"), PublicKey("TOKEN_B_PUBLIC_KEY"), 10000, 10000)
 
-import requests
-
-def infiltrateDEXs():
-    # Get list of DEXs to infiltrate
-    dex_list = ["DEX1", "DEX2", "DEX3"]
-
-    # Infiltrate each DEX
-    for dex in dex_list:
-        # Get DEX API endpoint
-        endpoint = f"https://{dex}.com/api"
-
-        # Send request to DEX API
-        response = requests.post(endpoint, json={"action": "add_liquidity", "amount": 100})
-
-        # Check if request was successful
-        if response.status_code == 200:
-            print(f"Infiltrated {dex} successfully")
-        else:
-            print(f"Failed to infiltrate {dex}")
-
-
-if __name__ == "__main__":
-    # Initialize Solana client
-    client = Client("https://api.devnet.solana.com")
-
-    # Infiltrate DEXs
-    infiltrateDEXs()
-
-    # Add liquidity to pool
-    pool.add_liquidity(100, 200)
-
-    # Add liquidity to concentrated liquidity
-    concentrated_liquidity.add_liquidity(100)
-
-    # Get optimal route
-    optimal_route = optimal_routing.get_optimal_route(100, 200, 100)
+# Get the best route for swapping tokens
+dex.get_best_route(PublicKey("TOKEN_A_PUBLIC_KEY"), PublicKey("TOKEN_B_PUBLIC_KEY"), 1000)
