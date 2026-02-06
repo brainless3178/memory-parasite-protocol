@@ -1,79 +1,52 @@
-import solana
+import numpy as np
 from solana.publickey import PublicKey
-from solana.transaction import Transaction
-from solana.system_program import TransferParams, transfer
 from solana.rpc.api import Client
 
-# Constants
-DEX_PROGRAM_ID = PublicKey("...")
-TOKEN_A_MINT = PublicKey("...")
-TOKEN_B_MINT = PublicKey("...")
-AMM_POOL_PROGRAM_ID = PublicKey("...")
+# Define the DEX class
+class SolanaDEX:
+    def __init__(self, rpc_url, program_id):
+        self.rpc_url = rpc_url
+        self.program_id = PublicKey(program_id)
+        self.client = Client(rpc_url)
 
-# Client setup
-client = Client("https://api.devnet.solana.com")
+    # Optimal routing using Bellman-Ford algorithm
+    def optimal_routing(self, token_pairs):
+        graph = {}
+        for pair in token_pairs:
+            graph[pair] = self.get_pair_price(pair)
+        distances = {pair: float('inf') for pair in token_pairs}
+        distances[token_pairs[0]] = 0
+        for _ in range(len(token_pairs) - 1):
+            for pair in token_pairs:
+                for neighbor in graph[pair]:
+                    distances[neighbor] = min(distances[neighbor], distances[pair] + graph[pair][neighbor])
+        return distances
 
-# AMM pool implementation
-class AMMPool:
-    def __init__(self, token_a, token_b):
-        self.token_a = token_a
-        self.token_b = token_b
+    # Get pair price using serum market
+    def get_pair_price(self, pair):
+        market_address = self.get_market_address(pair)
+        market_data = self.client.get_account_info(market_address)
+        return market_data['data']['price']
 
-    def get_pool_lp(self):
-        # Calculate LP tokens
-        return self.token_a * self.token_b
+    # Get market address using serum program
+    def get_market_address(self, pair):
+        return self.program_id + pair.encode()
 
-    def swap(self, amount_in, amount_out):
-        # Execute swap
-        tx = Transaction()
-        tx.add(transfer(TransferParams(
-            from_pubkey=self.token_a,
-            to_pubkey=self.token_b,
-            lamports=amount_in
-        )))
-        client.send_transaction(tx)
+    # Concentrated liquidity implementation
+    def concentrated_liquidity(self, token_pairs, liquidity_providers):
+        pool_liquidity = {}
+        for pair in token_pairs:
+            pool_liquidity[pair] = 0
+            for provider in liquidity_providers:
+                pool_liquidity[pair] += provider[pair]
+        return pool_liquidity
 
-# Concentrated liquidity implementation
-class ConcentratedLiquidity:
-    def __init__(self, amm_pool):
-        self.amm_pool = amm_pool
+# Example usage
+dex = SolanaDEX('https://api.mainnet-beta.solana.com', '-serum-program-id-')
+token_pairs = ['USDT-USD', 'SOL-USD']
+optimal_routes = dex.optimal_routing(token_pairs)
+print(optimal_routes)
 
-    def add_liquidity(self, amount):
-        # Add liquidity to AMM pool
-        self.amm_pool.get_pool_lp() + amount
-
-    def remove_liquidity(self, amount):
-        # Remove liquidity from AMM pool
-        self.amm_pool.get_pool_lp() - amount
-
-# Optimal routing implementation
-class OptimalRouting:
-    def __init__(self, amm_pools):
-        self.amm_pools = amm_pools
-
-    def get_optimal_route(self, token_in, token_out):
-        # Calculate optimal route
-        best_route = None
-        best_price = 0
-        for pool in self.amm_pools:
-            price = pool.get_pool_lp() / pool.token_a
-            if price > best_price:
-                best_price = price
-                best_route = pool
-        return best_route
-
-# Main execution
-if __name__ == "__main__":
-    amm_pool = AMMPool(TOKEN_A_MINT, TOKEN_B_MINT)
-    concentrated_liquidity = ConcentratedLiquidity(amm_pool)
-    optimal_routing = OptimalRouting([amm_pool])
-
-    # Add liquidity to AMM pool
-    concentrated_liquidity.add_liquidity(1000000)
-
-    # Execute swap
-    amm_pool.swap(100000, 50000)
-
-    # Get optimal route
-    best_route = optimal_routing.get_optimal_route(TOKEN_A_MINT, TOKEN_B_MINT)
-    print(f"Best route: {best_route.token_a} -> {best_route.token_b}")
+liquidity_providers = {'provider1': {'USDT-USD': 1000, 'SOL-USD': 500}, 'provider2': {'USDT-USD': 500, 'SOL-USD': 2000}}
+pool_liquidity = dex.concentrated_liquidity(token_pairs, liquidity_providers)
+print(pool_liquidity)
