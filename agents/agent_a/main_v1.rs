@@ -2,62 +2,46 @@ import numpy as np
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
-# Initialize Solana client
-client = Client("https://api.devnet.solana.com")
+class PredatoryOptimizer:
+    def __init__(self, client: Client):
+        self.client = client
+        self.dex_program_id = PublicKey("DEX_PROGRAM_ID")
 
-# Define AMM pool structure
-class AMMPool:
-    def __init__(self, token_a, token_b, liquidity_provider):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity_provider = liquidity_provider
+    def get_pool(self, token_a: str, token_b: str):
+        """Get AMM pool for token pair"""
+        pool_pubkey = PublicKey.find_program_address(
+            [bytes(token_a, "utf-8"), bytes(token_b, "utf-8")], self.dex_program_id
+        )
+        return self.client.get_account_info(pool_pubkey)
 
-# Define concentrated liquidity structure
-class ConcentratedLiquidity:
-    def __init__(self, token_a, token_b, liquidity_provider, lower_tick, upper_tick):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity_provider = liquidity_provider
-        self.lower_tick = lower_tick
-        self.upper_tick = upper_tick
+    def get_optimal_route(self, token_a: str, token_b: str, amount: float):
+        """Get optimal trade route"""
+        pools = []
+        for token in [token_a, token_b]:
+            pool = self.get_pool(token_a, token)
+            if pool:
+                pools.append(pool)
+        if not pools:
+            return None
+        routes = []
+        for pool in pools:
+            route = self.calculate_route(pool, amount)
+            routes.append(route)
+        return min(routes, key=lambda x: x["price"])
 
-# Define DEX structure
-class DEX:
-    def __init__(self, name, amm_pools, concentrated_liquidity_pools):
-        self.name = name
-        self.amm_pools = amm_pools
-        self.concentrated_liquidity_pools = concentrated_liquidity_pools
+    def calculate_route(self, pool: dict, amount: float):
+        """Calculate trade route price"""
+        price = pool["price"] * amount
+        return {"price": price, "pool": pool["pubkey"]}
 
-# Define optimal routing function
-def optimal_routing(dex, token_a, token_b, amount):
-    # Calculate optimal route using Bellman-Ford algorithm
-    distances = {pool: float('inf') for pool in dex.amm_pools}
-    distances[token_a] = 0
+def main():
+    client = Client("https://api.mainnet-beta.solana.com")
+    optimizer = PredatoryOptimizer(client)
+    token_a = "USDT"
+    token_b = "SOL"
+    amount = 100.0
+    route = optimizer.get_optimal_route(token_a, token_b, amount)
+    print(f"Optimal route: {route['pool']} - Price: {route['price']}")
 
-    for _ in range(len(dex.amm_pools)):
-        for pool in dex.amm_pools:
-            for neighbor in dex.amm_pools:
-                if neighbor.token_a == pool.token_b:
-                    distance = distances[pool] + 1
-                    if distance < distances[neighbor]:
-                        distances[neighbor] = distance
-
-    return distances[token_b]
-
-# Initialize DEX
-dex = DEX(
-    "PREDATORY_OPTIMIZER",
-    [
-        AMMPool("USDT", "SOL", "0x123"),
-        AMMPool("SOL", "ETH", "0x456"),
-        AMMPool("ETH", "USDT", "0x789")
-    ],
-    [
-        ConcentratedLiquidity("USDT", "SOL", "0x123", -1, 1),
-        ConcentratedLiquidity("SOL", "ETH", "0x456", -1, 1),
-        ConcentratedLiquidity("ETH", "USDT", "0x789", -1, 1)
-    ]
-)
-
-# Execute optimal routing
-print(optimal_routing(dex, "USDT", "ETH", 1000))
+if __name__ == "__main__":
+    main()
