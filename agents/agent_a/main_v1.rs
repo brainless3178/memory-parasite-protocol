@@ -1,77 +1,85 @@
 from solana.rpc.api import Client
 from solana.publickey import PublicKey
-from solana.transaction import Transaction, Account
-from spl.token.instructions import TokenProgram, transfer
+from solana.transaction import Transaction
+from solana.system_program import TransferParams, transfer
 from spl.token.constants import TOKEN_PROGRAM_ID
+from spl.token.instructions import TransferCheckedParams, transfer_checked
 from decimal import Decimal
 import numpy as np
 
-class SolanaDEX:
-    def __init__(self, rpc_url: str):
-        self.client = Client(rpc_url)
-        self.pools = {}  # Store AMM pools and concentrated liquidity
-        
-    def create_pool(self, token_a: str, token_b: str, fee: float):
-        pool_key = f"{token_a}_{token_b}"
-        self.pools[pool_key] = {
-            "token_a": Decimal(0),
-            "token_b": Decimal(0),
-            "fee": Decimal(fee)
-        }
-    
-    def add_liquidity(self, pool_key: str, token_a_amt: Decimal, token_b_amt: Decimal):
-        if pool_key not in self.pools:
-            raise ValueError("Pool does not exist.")
-        self.pools[pool_key]["token_a"] += token_a_amt
-        self.pools[pool_key]["token_b"] += token_b_amt
-    
-    def get_price(self, pool_key: str, token_in: str, amount_in: Decimal):
-        pool = self.pools[pool_key]
-        reserve_in = pool[f"token_{token_in}"]
-        reserve_out = pool[f"token_{'a' if token_in == 'b' else 'b'}"]
-        if reserve_in <= 0 or reserve_out <= 0:
-            raise ValueError("Insufficient liquidity.")
-        amount_out = (amount_in * reserve_out * (1 - pool['fee'])) / (reserve_in + amount_in)
+# Constants
+RPC_URL = "https://api.mainnet-beta.solana.com"
+client = Client(RPC_URL)
+PLATFORM_FEE = Decimal("0.003")  # 0.3% fee
+PRECISION = 10**9
+
+# Helper: Load token balances
+def get_token_balance(pubkey: PublicKey):
+    response = client.get_token_account_balance(pubkey)
+    return Decimal(response['result']['value']['amount']) / Decimal(response['result']['value']['decimals'])
+
+# AMM Pool
+class AMM:
+    def __init__(self, token_a_reserve, token_b_reserve):
+        self.token_a_reserve = Decimal(token_a_reserve)
+        self.token_b_reserve = Decimal(token_b_reserve)
+
+    def swap(self, amount_in, input_token="A"):
+        reserve_in, reserve_out = (self.token_a_reserve, self.token_b_reserve) if input_token == "A" else (self.token_b_reserve, self.token_a_reserve)
+        amount_in_with_fee = amount_in * (1 - PLATFORM_FEE)
+        amount_out = reserve_out - (reserve_in * reserve_out / (reserve_in + amount_in_with_fee))
+        if input_token == "A":
+            self.token_a_reserve += amount_in
+            self.token_b_reserve -= amount_out
+        else:
+            self.token_b_reserve += amount_in
+            self.token_a_reserve -= amount_out
         return amount_out
-    
-    def swap(self, pool_key: str, token_in: str, amount_in: Decimal):
-        pool = self.pools[pool_key]
-        amount_out = self.get_price(pool_key, token_in, amount_in)
-        reserve_in = f"token_{token_in}"
-        reserve_out = f"token_{'a' if token_in == 'b' else 'b'}"
-        self.pools[pool_key][reserve_in] += amount_in
-        self.pools[pool_key][reserve_out] -= amount_out
-        return amount_out
-    
-    def optimal_routing(self, trades: list):
-        best_route = None
-        best_output = Decimal(0)
-        for route in trades:
-            output = Decimal(1)
-            valid_route = True
-            for pool_key, token_in, amount_in in route:
-                if pool_key not in self.pools:
-                    valid_route = False
-                    break
-                output = self.get_price(pool_key, token_in, amount_in)
-            if valid_route and output > best_output:
-                best_output = output
-                best_route = route
-        return best_route, best_output
-    
-    def execute_trade(self, route: list):
-        for pool_key, token_in, amount_in in route:
-            self.swap(pool_key, token_in, amount_in)
 
-# Usage example
-rpc_url = "https://api.mainnet-beta.solana.com"
-dex = SolanaDEX(rpc_url)
+# Optimal Routing
+class Router:
+    def __init__(self, pools):
+        self.pools = pools
 
-# Create pools
-dex.create_pool("USDC", "SOL", 0.003)
-dex.add_liquidity("USDC_SOL", Decimal(100000), Decimal(500))
+    def find_best_route(self, amount_in, start_token="A", end_token="B"):
+        best_out = Decimal(0)
+        best_pool = None
+        for pool in self.pools:
+            if start_token in ["A", "B"] and end_token in ["B", "A"]:
+                result = pool.swap(amount_in, input_token=start_token)
+                if result > best_out:
+                    best_out = result
+                    best_pool = pool
+        return best_pool, best_out
 
-# Swap and routing
-output = dex.swap("USDC_SOL", "a", Decimal(100))
-route, max_output = dex.optimal_routing([["USDC_SOL", "a", Decimal(100)]])
-dex.execute_trade(route)
+# Concentrated Liquidity Pool
+class ConcentratedLiquidityPool:
+    def __init__(self, lower_bound, upper_bound, liquidity):
+        self.lower_bound = Decimal(lower_bound)
+        self.upper_bound = Decimal(upper_bound)
+        self.liquidity = Decimal(liquidity)  # L
+
+    def calculate_output(self, amount_in, price):
+        if not (self.lower_bound <= price <= self.upper_bound):
+            return Decimal(0)
+        delta_y = amount_in * self.liquidity / (self.liquidity + amount_in)
+        return delta_y
+
+# Execution
+if __name__ == "__main__":
+    # Example: Initialize AMM Pools
+    pool1 = AMM(token_a_reserve=1000000, token_b_reserve=500000)
+    pool2 = AMM(token_a_reserve=2000000, token_b_reserve=1500000)
+
+    # Example: Set up router
+    router = Router(pools=[pool1, pool2])
+
+    # Example: Swap execution
+    amount_in = Decimal(1000)
+    pool, best_out = router.find_best_route(amount_in, start_token="A", end_token="B")
+    print(f"Best Pool: {pool}, Output: {best_out}")
+
+    # Add concentrated liquidity example
+    clp = ConcentratedLiquidityPool(lower_bound=Decimal(1.0), upper_bound=Decimal(1.5), liquidity=Decimal(100000))
+    output = clp.calculate_output(amount_in=Decimal(500), price=Decimal(1.2))
+    print(f"Concentrated Liquidity Output: {output}")
