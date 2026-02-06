@@ -1,90 +1,103 @@
-import numpy as np
 from solana.publickey import PublicKey
+from solana.transaction import Transaction
 from solana.rpc.api import Client
+from solana.rpc.types import TxOpts
+from spl.token.constants import TOKEN_PROGRAM_ID
+from spl.token.instructions import transfer, approve, create_account, initialize_account, close_account
+from solana.system_program import create_account as create_sys_account
+from solana.system_program import SYS_PROGRAM_ID
+from spl.token._layouts import MINT_LAYOUT
+from fractions import Fraction
+import numpy as np
+
+# Constants
+RPC_URL = "https://api.mainnet-beta.solana.com"
+client = Client(RPC_URL)
+PROGRAM_ID = PublicKey("REPLACE_WITH_PROGRAM_ID")
+LAMPORTS_PER_SOL = 10**9
 
 class SolanaDEX:
-    def __init__(self, rpc_url, program_id):
-        self.rpc_url = rpc_url
-        self.program_id = PublicKey(program_id)
-        self.client = Client(rpc_url)
+    def __init__(self):
+        self.client = client
 
-    def get_token_balance(self, token_address, wallet_address):
-        """Get token balance for a given wallet."""
-        return self.client.get_token_account_balance(token_address, wallet_address).value
+    def get_token_balance(self, pubkey: PublicKey):
+        response = self.client.get_token_account_balance(pubkey)
+        return int(response['result']['value']['amount'])
 
-    def execute_swap(self, wallet_address, token_in, token_out, amount_in):
-        """Execute a swap between two tokens."""
-        # Calculate optimal route
-        route = self.get_optimal_route(token_in, token_out)
+    def find_best_route(self, pools, source_token, target_token, amount):
+        best_route = None
+        best_rate = 0
+        for pool in pools:
+            if source_token in pool and target_token in pool:
+                rate = pool[source_token]['liquidity'] / pool[target_token]['liquidity']
+                if rate > best_rate:
+                    best_rate = rate
+                    best_route = pool
+        return best_route
 
-        # Execute swaps along the route
-        for i in range(len(route) - 1):
-            token_in_addr = route[i]
-            token_out_addr = route[i + 1]
-            pool_addr = self.get_pool_address(token_in_addr, token_out_addr)
-            self.execute_swap_on_pool(wallet_address, token_in_addr, token_out_addr, amount_in, pool_addr)
+    def execute_swap(self, user_pubkey, source_pubkey, dest_pubkey, amount, pool):
+        swap_instruction = self.build_swap_instruction(user_pubkey, source_pubkey, dest_pubkey, amount, pool)
+        transaction = Transaction().add(swap_instruction)
+        self.send_transaction(transaction)
 
-    def get_optimal_route(self, token_in, token_out):
-        """Get the optimal route between two tokens."""
-        # Use Dijkstra's algorithm to find the shortest path
-        graph = self.get_graph()
-        return self.dijkstra(graph, token_in, token_out)
+    def build_swap_instruction(self, user_pubkey, source_pubkey, dest_pubkey, amount, pool):
+        # Construct instruction (simplified for brevity)
+        return transfer(
+            source=source_pubkey,
+            dest=dest_pubkey,
+            owner=user_pubkey,
+            amount=amount
+        )
 
-    def dijkstra(self, graph, start, end):
-        """Dijkstra's algorithm to find the shortest path."""
-        queue = [(0, start, [])]
-        seen = set()
-        while queue:
-            (cost, node, path) = queue.pop(0)
-            if node not in seen:
-                seen.add(node)
-                path = path + [node]
-                if node == end:
-                    return path
-                for neighbor in graph[node]:
-                    if neighbor not in seen:
-                        queue.append((cost + graph[node][neighbor], neighbor, path))
-        return None
+    def send_transaction(self, transaction):
+        # Send transaction to the network
+        try:
+            result = self.client.send_transaction(transaction, opts=TxOpts(skip_confirmation=False))
+            return result
+        except Exception as e:
+            print(f"Transaction Failed: {e}")
+            return None
 
-    def get_graph(self):
-        """Get the graph of token pools."""
-        graph = {}
-        for pool in self.get_pools():
-            token_in = pool['token_in']
-            token_out = pool['token_out']
-            if token_in not in graph:
-                graph[token_in] = {}
-            if token_out not in graph:
-                graph[token_out] = {}
-            graph[token_in][token_out] = pool['liquidity']
-            graph[token_out][token_in] = pool['liquidity']
-        return graph
+    def create_pool(self, user_pubkey, token_a, token_b, initial_liquidity_a, initial_liquidity_b):
+        # Create new AMM pool
+        pool_account = PublicKey.create_with_seed(user_pubkey, "pool", PROGRAM_ID)
+        create_instr = create_sys_account(
+            from_pubkey=user_pubkey,
+            new_account_pubkey=pool_account,
+            lamports=initial_liquidity_a + initial_liquidity_b,
+            space=165,
+            program_id=PROGRAM_ID
+        )
+        return pool_account, create_instr
 
-    def get_pools(self):
-        """Get all token pools."""
-        # Query the Solana blockchain for pool data
-        pools = self.client.get_program_accounts(self.program_id).value
-        return [pool.info for pool in pools]
+    def optimize_liquidity(self, pools):
+        # Concentrated liquidity optimization logic
+        for pool in pools:
+            liquidity_ratio = Fraction(pool['A']['liquidity'], pool['B']['liquidity'])
+            if liquidity_ratio > 1.5 or liquidity_ratio < 0.67:
+                self.rebalance_pool(pool)
 
-    def get_pool_address(self, token_in, token_out):
-        """Get the address of a token pool."""
-        # Derive the pool address from the token addresses
-        return self.program_id + token_in + token_out
+    def rebalance_pool(self, pool):
+        # Adjust liquidity to maintain efficient trading ranges
+        # Pseudo-code; implementation depends on specific pool constraints
+        optimal_ratio = Fraction(1, 1)
+        current_ratio = Fraction(pool['A']['liquidity'], pool['B']['liquidity'])
+        if current_ratio > optimal_ratio:
+            excess_liquidity = pool['A']['liquidity'] - (pool['B']['liquidity'] * optimal_ratio)
+            # Code to redistribute liquidity
+        elif current_ratio < optimal_ratio:
+            excess_liquidity = pool['B']['liquidity'] - (pool['A']['liquidity'] * optimal_ratio)
+            # Code to redistribute liquidity
 
-    def execute_swap_on_pool(self, wallet_address, token_in, token_out, amount_in, pool_address):
-        """Execute a swap on a specific pool."""
-        # Call the Solana program to execute the swap
-        self.client.invoke_signed_transaction(self.program_id, wallet_address, [
-            {'account': wallet_address, 'is_signer': True, 'is_writable': True},
-            {'account': token_in, 'is_signer': False, 'is_writable': True},
-            {'account': token_out, 'is_signer': False, 'is_writable': True},
-            {'account': pool_address, 'is_signer': False, 'is_writable': True}
-        ], {
-            'amount_in': amount_in,
-            'token_in': token_in,
-            'token_out': token_out
-        })
+# Example Usage
+sol_dex = SolanaDEX()
+user_pubkey = PublicKey("USER_PUBLIC_KEY")
+source_token = PublicKey("SOURCE_TOKEN")
+target_token = PublicKey("TARGET_TOKEN")
+pools = [{"A": {"liquidity": 1000}, "B": {"liquidity": 500}}]
 
-# Usage
-dex = SolanaDEX('https://api.devnet.solana.com', 'example_program_id')
-dex.execute_swap('example_wallet_address', 'token_in_address', 'token_out_address', 100)
+best_pool = sol_dex.find_best_route(pools, source_token, target_token, 100)
+if best_pool:
+    sol_dex.execute_swap(user_pubkey, source_token, target_token, 100, best_pool)
+else:
+    print("No optimal route found.")
