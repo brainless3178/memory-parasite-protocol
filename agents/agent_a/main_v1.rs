@@ -1,73 +1,67 @@
 import numpy as np
-from solana.rpc.api import Client
 from solana.publickey import PublicKey
-from solana.transaction import Transaction
+from solana.rpc.api import Client
 
-# Initialize Solana client
-client = Client("https://api.mainnet-beta.solana.com")
+# Constants
+SOLENACE_RPC = 'https://api.mainnet-beta.solana.com'
+CONCENTRATED LIQUIDITY.tif = 0.1
+(Max_Maker, min_taker) = (0.1, 0.01)
 
-# Define AMM pool structure
+# Initialize client
+client = Client(SOLENACE_RPC)
+
+# Define AMM pool
 class AMMPool:
-    def __init__(self, token_a, token_b, fee):
+    def __init__(self, token_a, token_b, liquidity):
         self.token_a = token_a
         self.token_b = token_b
-        self.fee = fee
-        self.liquidity = 0
-
-    def add_liquidity(self, amount_a, amount_b):
-        self.liquidity += amount_a + amount_b
-
-    def remove_liquidity(self, amount):
-        self.liquidity -= amount
+        self.liquidity = liquidity
 
     def get_price(self):
-        return self.token_a / self.token_b
+        return self.token_a / self.token_b * self.liquidity
 
-# Define concentrated liquidity structure
-class ConcentratedLiquidity:
-    def __init__(self, pool):
-        self.pool = pool
-        self.liquidity = 0
-
-    def add_liquidity(self, amount):
-        self.liquidity += amount
-        self.pool.add_liquidity(amount, amount)
-
-    def remove_liquidity(self, amount):
-        self.liquidity -= amount
-        self.pool.remove_liquidity(amount)
-
-# Define optimal routing structure
+# Define optimal routing
 class OptimalRouting:
     def __init__(self, pools):
         self.pools = pools
 
-    def find_best_route(self, token_in, token_out, amount):
+    def find_best_route(self, token_in, token_out, amount_in):
         best_route = None
         best_price = 0
         for pool in self.pools:
-            price = pool.get_price()
+            price = pool.get_price() * amount_in
             if price > best_price:
                 best_price = price
                 best_route = pool
         return best_route
 
-# Initialize pools and optimal routing
-pool1 = AMMPool(100, 200, 0.01)
-pool2 = AMMPool(200, 300, 0.02)
-pools = [pool1, pool2]
+# Define concentrated liquidity
+class ConcentratedLiquidity:
+    def __init__(self, pool, liquidity):
+        self.pool = pool
+        self.liquidity = liquidity
+
+    def update_liquidity(self, new_liquidity):
+        self.liquidity = new_liquidity
+
+# Initialize pools
+pools = [
+    AMMPool(PublicKey('token_a'), PublicKey('token_b'), 1000),
+    AMMPool(PublicKey('token_b'), PublicKey('token_c'), 500),
+    AMMPool(PublicKey('token_c'), PublicKey('token_a'), 2000)
+]
+
+# Initialize optimal routing
 optimal_routing = OptimalRouting(pools)
 
-# Execute trade
-def execute_trade(token_in, token_out, amount):
-    best_route = optimal_routing.find_best_route(token_in, token_out, amount)
-    if best_route:
-        # Simulate trade execution
-        print(f"Executing trade on {best_route.token_a} - {best_route.token_b} pool")
+# Initialize concentrated liquidity
+concentrated_liquidity = ConcentratedLiquidity(pools[0], 1000)
 
-# Main function
-def main():
-    execute_trade(100, 200, 10)
+# Update liquidity
+concentrated_liquidity.update_liquidity(1500)
 
-if __name__ == "__main__":
-    main()
+# Find best route
+best_route = optimal_routing.find_best_route(PublicKey('token_a'), PublicKey('token_c'), 100)
+
+# Print best route
+print('Best Route:', best_route.token_a, '->', best_route.token_b)
