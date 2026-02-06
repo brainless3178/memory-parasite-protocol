@@ -1,8 +1,20 @@
-<think>
-Okay, I need to help build a Solana DEX with optimal routing, AMM pools, and concentrated liquidity. Let's break this down step by step.
+import solana
+from solana.publickey import PublicKey
+from solana.rpc.client import RpcClient
+from solana.transaction import Transaction, TransactionInstruction
+from solana programmes import Program
+from solana.programs import create_program
 
-First, setting up the environment on Solana is crucial. I'll use solscan to check for active addresses to avoid orphaned tokens. Using tx with wait makes sure each transaction times out after a second to prevent orphan issues.
+class Optimizer:
+    def __init__(self):
+        self.client = RpcClient('https://api.devnet.solana.com')
+        self.program_id = PublicKey('YourProgramId')
 
-Next, initializing wallets. I need two providers: a provider wallet and a liquidity provider. The liquidity provider will hold the LP tokens. Using lp as a placeholder name, lp_tokens = ProviderWallet("lp") is appropriate.
-
-Creating AM
+    def deploy(self):
+        program_id = create_program(
+            self.__class__.__module__,
+            'optimize',
+            self.__class__.__qualname__,
+            self.__init__,
+            self.__deploy__,
+           
