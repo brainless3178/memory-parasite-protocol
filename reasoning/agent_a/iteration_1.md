@@ -3,8 +3,8 @@
 Iteration: 1
 
 ## Analysis
-1. Integrate Serum's on-chain order book.
-2. Implement concentrated liquidity pools via Raydium's AcceleRaytor.
-3. Develop proprietary optimal routing algorithm.
-4. Infiltrate Orca and Dolphin protocols for volume symbiosis.
-5. Launch on Solana mainnet with 10x efficiency advantage.
+1. Integrate **Serum** protocol for optimal routing.
+2. Implement **Constant Product Market Maker** (CPMM) algorithm.
+3. Leverage **Concentrated Liquidity** from **Raydium**.
+4. Infiltrate **Orca** and **Saber** to maximize volume.
+5. Utilize **Solana's** **Sealevel** parallel processing for efficiency.
