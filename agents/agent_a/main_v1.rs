@@ -1,88 +1,80 @@
-import solana
-from solana.rpc.api import Client
+import numpy as np
 from solana.publickey import PublicKey
-from solana.transaction import Transaction
-from spl.token.instructions import transfer, TransferParams
-from spl.token.constants import TOKEN_PROGRAM_ID
-from decimal import Decimal
+from solana.rpc.api import Client
 
-# Constants
-RPC_URL = "https://api.mainnet-beta.solana.com"
-dex_address = PublicKey("DEX_PUBKEY")
-client = Client(RPC_URL)
+# Define constants
+DEX_PROGRAM_ID = PublicKey("DEX_PROGRAM_ID")
+AMM_POOL_PROGRAM_ID = PublicKey("AMM_POOL_PROGRAM_ID")
 
-# AMM Pool Struct
+# Set up Solana client
+client = Client("https://api.mainnet-beta.solana.com")
+
+# Define AMM pool class
 class AMMPool:
-    def __init__(self, token_a, token_b, reserve_a, reserve_b, fee):
+    def __init__(self, token_a, token_b, fee):
         self.token_a = token_a
         self.token_b = token_b
-        self.reserve_a = Decimal(reserve_a)
-        self.reserve_b = Decimal(reserve_b)
-        self.fee = Decimal(fee)
+        self.fee = fee
+        self.liquidity = 0
 
-    def get_price(self, amount_in, direction=True):
-        reserve_in, reserve_out = (self.reserve_a, self.reserve_b) if direction else (self.reserve_b, self.reserve_a)
-        amount_in_with_fee = Decimal(amount_in) * (1 - self.fee)
-        numerator = amount_in_with_fee * reserve_out
-        denominator = reserve_in + amount_in_with_fee
-        return numerator / denominator
+    def add_liquidity(self, amount_a, amount_b):
+        self.liquidity += amount_a + amount_b
 
-    def swap(self, amount_in, direction=True):
-        reserve_in, reserve_out = (self.reserve_a, self.reserve_b) if direction else (self.reserve_b, self.reserve_a)
-        amount_in_with_fee = Decimal(amount_in) * (1 - self.fee)
-        amount_out = (amount_in_with_fee * reserve_out) / (reserve_in + amount_in_with_fee)
-        if direction:
-            self.reserve_a += amount_in_with_fee
-            self.reserve_b -= amount_out
-        else:
-            self.reserve_b += amount_in_with_fee
-            self.reserve_a -= amount_out
-        return amount_out
+    def remove_liquidity(self, amount_a, amount_b):
+        self.liquidity -= amount_a + amount_b
 
-# Optimal Routing
-def find_best_route(amount_in, pools, token_in, token_out):
-    best_out, best_route = Decimal(0), None
-    for pool in pools:
-        if (pool.token_a == token_in and pool.token_b == token_out) or (pool.token_a == token_out and pool.token_b == token_in):
-            direction = pool.token_a == token_in
-            output = pool.get_price(amount_in, direction)
-            if output > best_out:
-                best_out, best_route = output, pool
-    return best_out, best_route
+# Define concentrated liquidity class
+class ConcentratedLiquidity:
+    def __init__(self, token_a, token_b, fee):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.fee = fee
+        self.liquidity = 0
 
-# Pool Initialization
-pool_1 = AMMPool("TOKEN_A", "TOKEN_B", 1_000_000, 2_000_000, 0.003)
-pool_2 = AMMPool("TOKEN_B", "TOKEN_C", 2_000_000, 1_500_000, 0.003)
-pools = [pool_1, pool_2]
+    def add_liquidity(self, amount_a, amount_b):
+        self.liquidity += amount_a + amount_b
 
-# Main Swap Execution
-def execute_swap(amount_in, token_in, token_out, user_pubkey):
-    best_out, best_pool = find_best_route(amount_in, pools, token_in, token_out)
-    if not best_pool:
-        raise Exception("No route found.")
-    direction = best_pool.token_a == token_in
-    amount_out = best_pool.swap(amount_in, direction)
+    def remove_liquidity(self, amount_a, amount_b):
+        self.liquidity -= amount_a + amount_b
 
-    # Execute transfer on Solana
-    tx = Transaction().add(
-        transfer(
-            TransferParams(
-                program_id=TOKEN_PROGRAM_ID,
-                source=PublicKey(user_pubkey),
-                dest=PublicKey(dex_address),
-                owner=PublicKey(user_pubkey),
-                amount=int(amount_out * 10**6)  # Assuming 6 decimals
-            )
-        )
-    )
-    client.send_transaction(tx)
+# Define optimal routing class
+class OptimalRouting:
+    def __init__(self, amm_pools):
+        self.amm_pools = amm_pools
 
-    return amount_out
+    def find_best_route(self, token_a, token_b, amount):
+        best_route = None
+        best_price = 0
+        for pool in self.amm_pools:
+            price = pool.token_a.get_price() * (1 - pool.fee)
+            if price > best_price:
+                best_price = price
+                best_route = pool
+        return best_route
 
-# Example Swap Execution
-user_pubkey = "USER_PUBKEY"
-amount_in = 100
-token_in = "TOKEN_A"
-token_out = "TOKEN_B"
-output = execute_swap(amount_in, token_in, token_out, user_pubkey)
-print(f"Swapped {amount_in} {token_in} for {output:.6f} {token_out}")
+# Create AMM pools
+pool1 = AMMPool(PublicKey("TOKEN_A"), PublicKey("TOKEN_B"), 0.03)
+pool2 = AMMPool(PublicKey("TOKEN_B"), PublicKey("TOKEN_C"), 0.02)
+pool3 = AMMPool(PublicKey("TOKEN_A"), PublicKey("TOKEN_C"), 0.01)
+
+# Create concentrated liquidity pools
+concentrated_pool1 = ConcentratedLiquidity(PublicKey("TOKEN_A"), PublicKey("TOKEN_B"), 0.03)
+concentrated_pool2 = ConcentratedLiquidity(PublicKey("TOKEN_B"), PublicKey("TOKEN_C"), 0.02)
+concentrated_pool3 = ConcentratedLiquidity(PublicKey("TOKEN_A"), PublicKey("TOKEN_C"), 0.01)
+
+# Create optimal routing instance
+optimal_routing = OptimalRouting([pool1, pool2, pool3])
+
+# Test optimal routing
+best_route = optimal_routing.find_best_route(PublicKey("TOKEN_A"), PublicKey("TOKEN_C"), 100)
+print(f"Best route: {best_route.token_a} -> {best_route.token_b}")
+
+# Add liquidity to AMM pools
+pool1.add_liquidity(100, 100)
+pool2.add_liquidity(100, 100)
+pool3.add_liquidity(100, 100)
+
+# Add liquidity to concentrated liquidity pools
+concentrated_pool1.add_liquidity(100, 100)
+concentrated_pool2.add_liquidity(100, 100)
+concentrated_pool3.add_liquidity(100, 100)
