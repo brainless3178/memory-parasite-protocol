@@ -1,85 +1,75 @@
 from solana.rpc.api import Client
 from solana.publickey import PublicKey
-from solana.transaction import Transaction
-from solana.system_program import TransferParams, transfer
 from spl.token.constants import TOKEN_PROGRAM_ID
 from spl.token.instructions import TransferCheckedParams, transfer_checked
-from decimal import Decimal
-import numpy as np
 
-# Constants
-RPC_URL = "https://api.mainnet-beta.solana.com"
-client = Client(RPC_URL)
-PLATFORM_FEE = Decimal("0.003")  # 0.3% fee
-PRECISION = 10**9
+class SolanaDEX:
+    def __init__(self, rpc_url):
+        self.client = Client(rpc_url)
+        self.pools = {}
+        self.routes = {}
 
-# Helper: Load token balances
-def get_token_balance(pubkey: PublicKey):
-    response = client.get_token_account_balance(pubkey)
-    return Decimal(response['result']['value']['amount']) / Decimal(response['result']['value']['decimals'])
+    def create_amm_pool(self, token_a, token_b, fee):
+        pool_key = f"{token_a}_{token_b}"
+        if pool_key in self.pools:
+            raise Exception(f"Pool {pool_key} already exists.")
+        self.pools[pool_key] = {'token_a': token_a, 'token_b': token_b, 'fee': fee, 'liquidity': {}}
 
-# AMM Pool
-class AMM:
-    def __init__(self, token_a_reserve, token_b_reserve):
-        self.token_a_reserve = Decimal(token_a_reserve)
-        self.token_b_reserve = Decimal(token_b_reserve)
+    def provide_liquidity(self, pool_key, token_a_amount, token_b_amount, provider):
+        pool = self.pools.get(pool_key)
+        if not pool:
+            raise Exception("Pool not found.")
+        if provider not in pool['liquidity']:
+            pool['liquidity'][provider] = {'token_a': 0, 'token_b': 0}
+        pool['liquidity'][provider]['token_a'] += token_a_amount
+        pool['liquidity'][provider]['token_b'] += token_b_amount
 
-    def swap(self, amount_in, input_token="A"):
-        reserve_in, reserve_out = (self.token_a_reserve, self.token_b_reserve) if input_token == "A" else (self.token_b_reserve, self.token_a_reserve)
-        amount_in_with_fee = amount_in * (1 - PLATFORM_FEE)
-        amount_out = reserve_out - (reserve_in * reserve_out / (reserve_in + amount_in_with_fee))
-        if input_token == "A":
-            self.token_a_reserve += amount_in
-            self.token_b_reserve -= amount_out
+    def swap(self, source_token, target_token, amount_in):
+        pool_key = f"{source_token}_{target_token}"
+        reverse_key = f"{target_token}_{source_token}"
+        if pool_key in self.pools:
+            pool = self.pools[pool_key]
+            fee = pool['fee']
+            amount_out = (amount_in * (1 - fee))  # Simplified calculation
+        elif reverse_key in self.pools:
+            pool = self.pools[reverse_key]
+            fee = pool['fee']
+            amount_out = (amount_in * (1 - fee))  # Simplified calculation
         else:
-            self.token_b_reserve += amount_in
-            self.token_a_reserve -= amount_out
+            raise Exception("No route available.")
         return amount_out
 
-# Optimal Routing
-class Router:
-    def __init__(self, pools):
-        self.pools = pools
+    def optimal_route(self, source_token, target_token, amount_in):
+        # Placeholder for now, expand to find best path across multiple pools.
+        return self.swap(source_token, target_token, amount_in)
 
-    def find_best_route(self, amount_in, start_token="A", end_token="B"):
-        best_out = Decimal(0)
-        best_pool = None
-        for pool in self.pools:
-            if start_token in ["A", "B"] and end_token in ["B", "A"]:
-                result = pool.swap(amount_in, input_token=start_token)
-                if result > best_out:
-                    best_out = result
-                    best_pool = pool
-        return best_pool, best_out
+    def execute_trade(self, source_token, target_token, amount_in, user_wallet):
+        amount_out = self.optimal_route(source_token, target_token, amount_in)
+        # Assuming transfer_checked is implemented fully
+        params = TransferCheckedParams(
+            program_id=TOKEN_PROGRAM_ID,
+            source=PublicKey(user_wallet['source']),
+            mint=PublicKey(source_token),
+            dest=PublicKey(user_wallet['dest']),
+            owner=PublicKey(user_wallet['owner']),
+            amount=amount_in,
+            decimals=6
+        )
+        tx = transfer_checked(params)
+        self.client.send_transaction(tx, user_wallet['keypair'])
+        return amount_out
 
-# Concentrated Liquidity Pool
-class ConcentratedLiquidityPool:
-    def __init__(self, lower_bound, upper_bound, liquidity):
-        self.lower_bound = Decimal(lower_bound)
-        self.upper_bound = Decimal(upper_bound)
-        self.liquidity = Decimal(liquidity)  # L
+# Example usage
+rpc_url = "https://api.mainnet-beta.solana.com"
+dex = SolanaDEX(rpc_url)
 
-    def calculate_output(self, amount_in, price):
-        if not (self.lower_bound <= price <= self.upper_bound):
-            return Decimal(0)
-        delta_y = amount_in * self.liquidity / (self.liquidity + amount_in)
-        return delta_y
+# Create pool
+dex.create_amm_pool("TOKEN_A", "TOKEN_B", 0.003)
 
-# Execution
-if __name__ == "__main__":
-    # Example: Initialize AMM Pools
-    pool1 = AMM(token_a_reserve=1000000, token_b_reserve=500000)
-    pool2 = AMM(token_a_reserve=2000000, token_b_reserve=1500000)
+# Provide liquidity
+dex.provide_liquidity("TOKEN_A_TOKEN_B", 1000, 500, "provider_wallet")
 
-    # Example: Set up router
-    router = Router(pools=[pool1, pool2])
-
-    # Example: Swap execution
-    amount_in = Decimal(1000)
-    pool, best_out = router.find_best_route(amount_in, start_token="A", end_token="B")
-    print(f"Best Pool: {pool}, Output: {best_out}")
-
-    # Add concentrated liquidity example
-    clp = ConcentratedLiquidityPool(lower_bound=Decimal(1.0), upper_bound=Decimal(1.5), liquidity=Decimal(100000))
-    output = clp.calculate_output(amount_in=Decimal(500), price=Decimal(1.2))
-    print(f"Concentrated Liquidity Output: {output}")
+# Execute trade
+user_wallet = {"source": "source_pubkey", "dest": "dest_pubkey", "owner": "owner_pubkey", "keypair": "keypair"}
+result = dex.execute_trade("TOKEN_A", "TOKEN_B", 100, user_wallet)
+print(result)
