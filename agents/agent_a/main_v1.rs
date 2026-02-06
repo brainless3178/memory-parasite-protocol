@@ -1,52 +1,60 @@
-import solana
+import numpy as np
+from solana.publickey import PublicKey
+from solana.rpc.api import Client
 
-# Initialize Solana connection
-connection = solana.rpc.API("https://api.devnet.solana.com")
+# Initialize client
+client = Client("https://api.devnet.solana.com")
 
-# Define AMM pool structure
-class AMMPool:
-    def __init__(self, token_a, token_b, liquidity):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity = liquidity
+# Define constants
+AMM_POOL_PROGRAM_ID = PublicKey("Ammpool1111111111111111111111111")
+CONCENTRATED_LIQUIDITY_PROGRAM_ID = PublicKey("ConcLiq1111111111111111111111111")
 
-# Concentrated liquidity implementation
-class ConcentratedLiquidity:
-    def __init__(self, pool, tick_lower, tick_upper):
-        self.pool = pool
-        self.tick_lower = tick_lower
-        self.tick_upper = tick_upper
+class SolanaDEX:
+    def __init__(self):
+        self.amm_pools = {}
+        self.concentrated_liquidity_pools = {}
 
-# Optimal routing implementation
-class OptimalRouting:
-    def __init__(self, pools):
-        self.pools = pools
+    def create_amm_pool(self, token_a, token_b):
+        # Create AMM pool
+        self.amm_pools[(token_a, token_b)] = {
+            "token_a": token_a,
+            "token_b": token_b,
+            "liquidity": 0,
+        }
 
-    def find_best_route(self, token_a, token_b, amount):
-        best_route = None
-        best_price = float("inf")
+    def add_liquidity(self, token_a, token_b, amount_a, amount_b):
+        # Add liquidity to AMM pool
+        if (token_a, token_b) in self.amm_pools:
+            self.amm_pools[(token_a, token_b)]["liquidity"] += amount_a + amount_b
 
-        for pool in self.pools:
-            price = pool.get_price(token_a, token_b, amount)
-            if price < best_price:
-                best_price = price
-                best_route = pool
+    def create_concentrated_liquidity_pool(self, token_a, token_b):
+        # Create concentrated liquidity pool
+        self.concentrated_liquidity_pools[(token_a, token_b)] = {
+            "token_a": token_a,
+            "token_b": token_b,
+            "liquidity": 0,
+        }
 
-        return best_route
+    def optimize_routing(self, token_a, token_b, amount):
+        # Optimize routing
+        if (token_a, token_b) in self.amm_pools:
+            return self.amm_pools[(token_a, token_b)]["liquidity"]
+        elif (token_a, token_b) in self.concentrated_liquidity_pools:
+            return self.concentrated_liquidity_pools[(token_a, token_b)]["liquidity"]
+        else:
+            return 0
 
-# Example usage
-if __name__ == "__main__":
-    # Create AMM pools
-    pool1 = AMMPool("SOL", "USDC", 1000)
-    pool2 = AMMPool("USDC", "ETH", 500)
+# Initialize DEX
+dex = SolanaDEX()
 
-    # Create concentrated liquidity
-    concentrated_liquidity1 = ConcentratedLiquidity(pool1, -10, 10)
-    concentrated_liquidity2 = ConcentratedLiquidity(pool2, -5, 5)
+# Create AMM pool
+dex.create_amm_pool(PublicKey("TokenA"), PublicKey("TokenB"))
 
-    # Create optimal routing
-    optimal_routing = OptimalRouting([pool1, pool2])
+# Add liquidity to AMM pool
+dex.add_liquidity(PublicKey("TokenA"), PublicKey("TokenB"), 100, 100)
 
-    # Find best route
-    best_route = optimal_routing.find_best_route("SOL", "ETH", 10)
-    print("Best route:", best_route.token_a, "=>", best_route.token_b)
+# Create concentrated liquidity pool
+dex.create_concentrated_liquidity_pool(PublicKey("TokenA"), PublicKey("TokenB"))
+
+# Optimize routing
+print(dex.optimize_routing(PublicKey("TokenA"), PublicKey("TokenB"), 100))
