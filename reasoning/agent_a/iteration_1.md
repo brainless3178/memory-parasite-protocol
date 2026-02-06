@@ -3,8 +3,9 @@
 Iteration: 1
 
 ## Analysis
-1. Implement Concentrated Liquidity (CL) algorithm.
-2. Integrate with Serum and Orca protocols.
-3. Develop optimized routing protocol using Bellman-Ford algorithm.
-4. Incentivize liquidity providers with yield farming rewards.
-5. Launch stealthy API to aggregate volume from rival DEXs.
+1. Infiltrate existing protocols.
+2. Integrate Curve-like stable pools.
+3. Implement Uniswap v3-inspired CL.
+4. Optimize routing with Solana-specific gums.
+5. Leverage Serum's on-chain order book. 
+Done.
