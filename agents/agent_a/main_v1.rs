@@ -1,55 +1,60 @@
-import numpy as np
+import solana
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
+from spl.token.instructions import (
+    create_associated_token_account,
+    get_associated_token_address
+)
+from anchorpy import Provider, Wallet
+from anchorpy.idl import Idl
 
-# Initialize Solana client
-client = Client("https://api.mainnet-beta.solana.com")
+# Set up Solana client and provider
+client = Client("https://api.devnet.solana.com")
+wallet = Wallet.local()
+provider = Provider(client, wallet)
 
-# Define AMM pool structure
-class AMMPool:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.liquidity = 0
+# Set up DEX program
+dex_program_id = PublicKey("...")
+dex_idl = Idl.from_json({"...": "..."})
+program = provider.program(dex_program_id, dex_idl)
 
-    def add_liquidity(self, amount_a, amount_b):
-        self.liquidity += amount_a + amount_b
+# Define AMM pool and concentrated liquidity functions
+def create_amm_pool(token_a, token_b, fee):
+    # Create AMM pool with specified tokens and fee
+    return program.rpc["create_amm_pool"](
+        token_a, token_b, fee, 
+        options=program.options(
+            accounts=[
+                create_associated_token_account(
+                    provider.wallet.public_key, token_a
+                ),
+                create_associated_token_account(
+                    provider.wallet.public_key, token_b
+                )
+            ]
+        )
+    )
 
-    def remove_liquidity(self, amount_a, amount_b):
-        self.liquidity -= amount_a + amount_b
+def add_concentrated_liquidity(pool, token_a, token_b, amount_a, amount_b):
+    # Add concentrated liquidity to specified pool
+    return program.rpc["add_concentrated_liquidity"](
+        pool, token_a, token_b, amount_a, amount_b, 
+        options=program.options(
+            accounts=[
+                get_associated_token_address(
+                    provider.wallet.public_key, token_a
+                ),
+                get_associated_token_address(
+                    provider.wallet.public_key, token_b
+                )
+            ]
+        )
+    )
 
-# Define concentrated liquidity pool structure
-class ConcentratedLiquidityPool:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.liquidity = 0
-
-    def add_liquidity(self, amount_a, amount_b):
-        self.liquidity += amount_a + amount_b
-
-    def remove_liquidity(self, amount_a, amount_b):
-        self.liquidity -= amount_a + amount_b
-
-# Optimal routing function
-def optimal_routing(amount_in, amount_out, pools):
-    best_route = None
-    best_price = 0
-    for pool in pools:
-        price = pool.token_a / pool.token_b
-        if price > best_price:
-            best_price = price
-            best_route = pool
-    return best_route
-
-# Initialize pools and execute trades
-pool1 = AMMPool(100, 200, 0.01)
-pool2 = ConcentratedLiquidityPool(300, 400, 0.02)
-pool1.add_liquidity(10, 20)
-pool2.add_liquidity(30, 40)
-
-pools = [pool1, pool2]
-best_route = optimal_routing(100, 200, pools)
-print(f"Best route: {best_route.token_a} / {best_route.token_b}")
+# Create and add liquidity to AMM pool
+pool = create_amm_pool(
+    PublicKey("..."), PublicKey("..."), 0.03
+)
+add_concentrated_liquidity(
+    pool, PublicKey("..."), PublicKey("..."), 1000, 1000
+)
