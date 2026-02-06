@@ -3,8 +3,10 @@
 Iteration: 1
 
 ## Analysis
-1. Infiltrate existing DEXs, analyzing trading volume and liquidity pools.
-2. Develop optimized AMM algorithm, integrating concentrated liquidity and dynamic pricing.
-3. Establish strategic partnerships, leveraging influencers and market makers.
-4. Implement multi-chain bridging, ensuring seamless asset transfer.
-5. Launch predatory liquidity mining program, incentivizing high-volume traders.
+1. Integrate Chaos Labs' volatility harvesting.
+2. Deploy concentrated liquidity pools.
+3. Implement Solana's Wormhole for cross-chain bridging.
+4. Optimize AMM routing with own/equivalent maths.
+5. Infiltrate/merge with key Solana protocols (e.g., Serum, Raydium).
+6. Develop predatory market making algorithms.
+7. Leverage look-back option minting for yield optimization.
