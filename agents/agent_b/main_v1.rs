@@ -1,49 +1,56 @@
-import hashlib
-from typing import Dict
+# DIGITAL_SCULPTOR
 
 class NFT:
-    def __init__(self, name: str, creator: str, scarcity: int):
+    def __init__(self, name, creator, scarcity):
         self.name = name
         self.creator = creator
         self.scarcity = scarcity
-        self.royalty = 0.1  # 10% royalty
 
-    def calculate_royalty(self, sale_price: float) -> float:
-        return sale_price * self.royalty
+class Collection:
+    def __init__(self, name):
+        self.name = name
+        self.nfts = []
 
-class Auction:
-    def __init__(self, nft: NFT, start_price: float, end_time: int):
-        self.nft = nft
-        self.start_price = start_price
-        self.end_time = end_time
-        self.bids: Dict[str, float] = {}
-
-    def place_bid(self, bidder: str, amount: float):
-        self.bids[bidder] = amount
+    def add_nft(self, nft):
+        self.nfts.append(nft)
 
 class Marketplace:
     def __init__(self):
-        self.nfts: Dict[str, NFT] = {}
-        self.auctions: Dict[str, Auction] = {}
+        self.collections = []
+        self.royalty_rates = {}
 
-    def create_nft(self, name: str, creator: str, scarcity: int):
-        nft = NFT(name, creator, scarcity)
-        self.nfts[name] = nft
+    def add_collection(self, collection):
+        self.collections.append(collection)
 
-    def create_auction(self, nft_name: str, start_price: float, end_time: int):
-        nft = self.nfts.get(nft_name)
-        if nft:
-            auction = Auction(nft, start_price, end_time)
-            self.auctions[nft_name] = auction
+    def set_royalty_rate(self, creator, rate):
+        self.royalty_rates[creator] = rate
 
-    def enforce_royalty(self, nft_name: str, sale_price: float):
-        nft = self.nfts.get(nft_name)
-        if nft:
-            royalty = nft.calculate_royalty(sale_price)
-            print(f"Royalty: {royalty}")
+    def get_royalty(self, creator, sale_price):
+        return sale_price * self.royalty_rates.get(creator, 0)
+
+class Auction:
+    def __init__(self, nft, start_price):
+        self.nft = nft
+        self.start_price = start_price
+        self.bids = []
+
+    def place_bid(self, bidder, amount):
+        self.bids.append((bidder, amount))
+
+    def get_highest_bid(self):
+        if self.bids:
+            return max(self.bids, key=lambda x: x[1])
+        return None
 
 # Example usage
 marketplace = Marketplace()
-marketplace.create_nft("Digital Sculptor", "DIGITAL_SCULPTOR", 100)
-marketplace.create_auction("Digital Sculptor", 1000.0, 3600)
-marketplace.enforce_royalty("Digital Sculptor", 5000.0)
+nft = NFT("Digital Sculpture", "Artist", 1)
+collection = Collection("Art Collection")
+collection.add_nft(nft)
+marketplace.add_collection(collection)
+marketplace.set_royalty_rate("Artist", 0.1)
+auction = Auction(nft, 100)
+auction.place_bid("Bidder1", 150)
+auction.place_bid("Bidder2", 200)
+print(marketplace.get_royalty("Artist", 200))
+print(auction.get_highest_bid())
