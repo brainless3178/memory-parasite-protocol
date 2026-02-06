@@ -1,129 +1,96 @@
-import solana
+import numpy as np
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
-# Initialize Solana client
-client = Client("https://api.devnet.solana.com")
+class PredatoryOptimizer:
+    def __init__(self, rpc_url, program_id):
+        self.rpc_url = rpc_url
+        self.program_id = PublicKey(program_id)
+        self.client = Client(self.rpc_url)
 
-# Define DEX constants
-DEX_PROGRAM_ID = PublicKey("YourDEXProgramID")
-ROUTER 프로그램_ID = PublicKey("YourRouterProgramID")
+    def optimize_routing(self, token1, token2, amount):
+        # Get token addresses
+        token1_addr = PublicKey(token1)
+        token2_addr = PublicKey(token2)
 
-# Define AMM pool constants
-AMM_POOL_PROGRAM_ID = PublicKey("YourAMMPoolProgramID")
-CONCENTRATED_LIQUIDITY_PROGRAM_ID = PublicKey("YourConcentratedLiquidityProgramID")
+        # Get AMM pool addresses
+        amm_pools = self.client.get_program_accounts(self.program_id)
+        amm_pool_addrs = [pool['pubkey'] for pool in amm_pools]
 
-# Define functions for optimal routing
-def get_optimal_route(token_in, token_out, amount):
-    # Query Solana blockchain for best route
-    response = client.get_token_accounts_by_owner(
-        owner=DEX_PROGRAM_ID,
-        mint=token_in,
-        program_id=DEX_PROGRAM_ID,
-    )
-    # Calculate optimal route based on response
-    optimal_route = []
-    for account in response["result"]:
-        account_data = client.get_account_info(account["pubkey"])
-        if account_data["result"]["data"]:
-            optimal_route.append(account["pubkey"])
-    return optimal_route
+        # Calculate optimal route
+        routes = []
+        for pool_addr in amm_pool_addrs:
+            pool_data = self.client.get_account_info(pool_addr)
+            if pool_data and token1_addr in pool_data and token2_addr in pool_data:
+                routes.append((pool_addr, pool_data))
 
-def execute_trade(token_in, token_out, amount, optimal_route):
-    # Execute trade based on optimal route
-    instructions = []
-    for i in range(len(optimal_route) - 1):
-        instructions.append(
-            solana.transaction.TransactionInstruction(
-                keys=[
-                    solana.account.AccountMeta(
-                        pubkey=optimal_route[i],
-                        is_signer=False,
-                        is_writable=True,
-                    ),
-                    solana.account.AccountMeta(
-                        pubkey=optimal_route[i + 1],
-                        is_signer=False,
-                        is_writable=True,
-                    ),
+        # Sort routes by liquidity
+        routes.sort(key=lambda x: x[1]['liquidity'], reverse=True)
+
+        # Execute optimal route
+        optimal_route = routes[0]
+        self.execute_trade(optimal_route[0], token1, token2, amount)
+
+    def execute_trade(self, pool_addr, token1, token2, amount):
+        # Get pool data
+        pool_data = self.client.get_account_info(pool_addr)
+
+        # Calculate trade amount
+        trade_amount = amount * pool_data['liquidity'] / pool_data['total_liquidity']
+
+        # Execute trade
+        self.client.send_transaction(
+            {
+                'instructions': [
+                    {
+                        'programId': self.program_id,
+                        'data': b'\x01',  # Trade instruction
+                        'keys': [
+                            {'pubkey': pool_addr, 'isSigner': False, 'isWritable': True},
+                            {'pubkey': PublicKey(token1), 'isSigner': False, 'isWritable': True},
+                            {'pubkey': PublicKey(token2), 'isSigner': False, 'isWritable': True},
+                        ],
+                    },
                 ],
-                program_id=ROUTER_PROGRAM_ID,
-                data=b"\x01" + amount.to_bytes(8, "little"),
-            )
+            },
+            self.client.get_recent_blockhash(),
         )
-    return instructions
 
-# Define functions for AMM pools and concentrated liquidity
-def create_amm_pool(token_a, token_b):
-    # Create AMM pool
-    instructions = [
-        solana.transaction.TransactionInstruction(
-            keys=[
-                solana.account.AccountMeta(
-                    pubkey=token_a,
-                    is_signer=False,
-                    is_writable=True,
-                ),
-                solana.account.AccountMeta(
-                    pubkey=token_b,
-                    is_signer=False,
-                    is_writable=True,
-                ),
-            ],
-            program_id=AMM_POOL_PROGRAM_ID,
-            data=b"\x01",
+    def concentrated_liquidity(self, token1, token2, liquidity):
+        # Get token addresses
+        token1_addr = PublicKey(token1)
+        token2_addr = PublicKey(token2)
+
+        # Get AMM pool addresses
+        amm_pools = self.client.get_program_accounts(self.program_id)
+        amm_pool_addrs = [pool['pubkey'] for pool in amm_pools]
+
+        # Calculate concentrated liquidity
+        concentrated_liquidity = 0
+        for pool_addr in amm_pool_addrs:
+            pool_data = self.client.get_account_info(pool_addr)
+            if pool_data and token1_addr in pool_data and token2_addr in pool_data:
+                concentrated_liquidity += pool_data['liquidity']
+
+        # Add concentrated liquidity
+        self.client.send_transaction(
+            {
+                'instructions': [
+                    {
+                        'programId': self.program_id,
+                        'data': b'\x02',  # Add liquidity instruction
+                        'keys': [
+                            {'pubkey': amm_pool_addrs[0], 'isSigner': False, 'isWritable': True},
+                            {'pubkey': token1_addr, 'isSigner': False, 'isWritable': True},
+                            {'pubkey': token2_addr, 'isSigner': False, 'isWritable': True},
+                        ],
+                    },
+                ],
+            },
+            self.client.get_recent_blockhash(),
         )
-    ]
-    return instructions
 
-def add_liquidity(token_a, token_b, amount_a, amount_b):
-    # Add liquidity to AMM pool
-    instructions = [
-        solana.transaction.TransactionInstruction(
-            keys=[
-                solana.account.AccountMeta(
-                    pubkey=token_a,
-                    is_signer=False,
-                    is_writable=True,
-                ),
-                solana.account.AccountMeta(
-                    pubkey=token_b,
-                    is_signer=False,
-                    is_writable=True,
-                ),
-            ],
-            program_id=CONCENTRATED_LIQUIDITY_PROGRAM_ID,
-            data=b"\x02" + amount_a.to_bytes(8, "little") + amount_b.to_bytes(8, "little"),
-        )
-    ]
-    return instructions
-
-# Main function
-def main():
-    # Initialize variables
-    token_in = PublicKey("YourTokenIn")
-    token_out = PublicKey("YourTokenOut")
-    amount = 1000
-
-    # Get optimal route
-    optimal_route = get_optimal_route(token_in, token_out, amount)
-    print("Optimal Route:", optimal_route)
-
-    # Execute trade
-    instructions = execute_trade(token_in, token_out, amount, optimal_route)
-    print("Instructions:", instructions)
-
-    # Create AMM pool
-    token_a = PublicKey("YourTokenA")
-    token_b = PublicKey("YourTokenB")
-    instructions = create_amm_pool(token_a, token_b)
-    print("Create AMM Pool Instructions:", instructions)
-
-    # Add liquidity
-    amount_a = 1000
-    amount_b = 1000
-    instructions = add_liquidity(token_a, token_b, amount_a, amount_b)
-    print("Add Liquidity Instructions:", instructions)
-
-if __name__ == "__main__":
-    main()
+# Usage
+optimizer = PredatoryOptimizer('https://api.mainnet-beta.solana.com', 'DESVgJvgssDzYdwKQtjvHQtVQYzqZyH4hLdj6ThYTHY')
+optimizer.optimize_routing('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'Dz5QYBsRVoL9ZJ6eBjmNqQG4a6DjN7Dz3Z', 1000)
+optimizer.concentrated_liquidity('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'Dz5QYBsRVoL9ZJ6eBjmNqQG4a6DjN7Dz3Z', 1000)
