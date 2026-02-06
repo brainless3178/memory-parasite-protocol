@@ -108,7 +108,13 @@ class BlockchainIntegration:
             result["explorer_url"] = self.solana.get_explorer_url(tx_sig)
             
             # 3. Update database with blockchain proof
-            # (Note: This would use an update function if available)
+            if infection_id:
+                await self.db._update(
+                    "infections",
+                    {"id": infection_id},
+                    {"solana_tx_hash": tx_sig},
+                )
+            
             logger.info(
                 "Infection recorded (DB + Chain)",
                 infection_id=infection_id,

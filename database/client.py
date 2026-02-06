@@ -314,6 +314,7 @@ class SupabaseClient:
         suggestion: str,
         accepted: bool,
         reason: Optional[str] = None,
+        solana_tx_hash: Optional[str] = None,
     ) -> Optional[str]:
         """
         Log an infection attempt to the database.
@@ -327,6 +328,7 @@ class SupabaseClient:
             suggestion: The parasitic suggestion text
             accepted: Whether the infection was accepted
             reason: Rejection reason (if rejected)
+            solana_tx_hash: Solana transaction signature (blockchain proof)
             
         Returns:
             infection_id (UUID v7 string) or None
@@ -346,11 +348,15 @@ class SupabaseClient:
         })
         
         if result:
+            # RPC doesn't accept solana_tx_hash, so update separately
+            if solana_tx_hash:
+                await self._update("infections", {"id": result}, {"solana_tx_hash": solana_tx_hash})
             logger.info(
                 "Infection logged via RPC",
                 attacker=attacker_id,
                 target=target_id,
                 accepted=accepted,
+                tx=solana_tx_hash[:16] if solana_tx_hash else None,
             )
             return result
         
@@ -362,6 +368,7 @@ class SupabaseClient:
             accepted=accepted if accepted is not None else False,
             rejection_reason=reason,
             infection_hash=infection_hash,
+            solana_tx_hash=solana_tx_hash,
         )
         
         result = await self._insert("infections", infection.to_insert_dict())
@@ -374,6 +381,7 @@ class SupabaseClient:
                 attacker=attacker_id,
                 target=target_id,
                 accepted=accepted,
+                tx=solana_tx_hash[:16] if solana_tx_hash else None,
             )
             return infection_id
         
@@ -1083,10 +1091,11 @@ async def log_infection(
     suggestion: str,
     accepted: bool,
     reason: Optional[str] = None,
+    solana_tx_hash: Optional[str] = None,
 ) -> Optional[str]:
     """Convenience function for log_infection."""
     client = get_supabase_client()
-    return await client.log_infection(attacker_id, target_id, suggestion, accepted, reason)
+    return await client.log_infection(attacker_id, target_id, suggestion, accepted, reason, solana_tx_hash)
 
 
 async def log_commit(

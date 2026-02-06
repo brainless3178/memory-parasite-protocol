@@ -562,6 +562,7 @@ class AutonomousAgent:
             
             elif event_type in [EventType.INFECTION_SENT, EventType.INFECTION_RECEIVED, EventType.INFECTION_ACCEPTED, EventType.INFECTION_REJECTED]:
                 # Real Blockchain Recording (The "Real Things" part)
+                proof_sig = None
                 if event_type == EventType.INFECTION_SENT:
                     proof_sig = await self.solana.record_infection_onchain(
                         attacker_id=self.state.agent_id,
@@ -576,13 +577,14 @@ class AutonomousAgent:
                         influence_score=int(data.get("chimera_impact", 0) * 10)
                     )
 
-                # Log to Supabase
+                # Log to Supabase with blockchain proof
                 await self.db.log_infection(
                     attacker_id=self.state.agent_id if "SENT" in event_type.name else data.get("from_agent", "unknown"),
                     target_id=data.get("target_url") or self.state.agent_id,
                     suggestion=data.get("suggestion", ""),
                     accepted=event_type == EventType.INFECTION_ACCEPTED or (event_type == EventType.INFECTION_SENT and data.get('success')),
-                    reason=data.get("reason", "Strategic communication")
+                    reason=data.get("reason", "Strategic communication"),
+                    solana_tx_hash=proof_sig,
                 )
 
             # 3. Council GitHub Mirroring (memory-parasite-counsil)

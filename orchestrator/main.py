@@ -522,20 +522,21 @@ class Orchestrator:
                     
                     self.total_infections_accepted += 1
             
-                # Log to database
+                # Record on blockchain first to get tx signature
+                tx_sig = await self.solana.record_infection_onchain(
+                    attacker_id=agent_id,
+                    target_id=target_info.agent_id,
+                    suggestion=suggestion,
+                )
+                
+                # Log to database with blockchain proof
                 infection_id = await self.db.log_infection(
                     attacker_id=agent_id,
                     target_id=target_info.agent_id,
                     suggestion=suggestion,
                     accepted=accepted,
-                    reason=reason
-                )
-                
-                # Record on blockchain
-                tx_sig = await self.solana.record_infection_onchain(
-                    attacker_id=agent_id,
-                    target_id=target_info.agent_id,
-                    suggestion=suggestion,
+                    reason=reason,
+                    solana_tx_hash=tx_sig,
                 )
                 
                 infections.append({
