@@ -2,80 +2,72 @@ import numpy as np
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
-# Define the DEX class
-class SolanaDEX:
-    def __init__(self, program_id, client):
-        self.program_id = program_id
-        self.client = client
+# Constants
+CHAIN_ID = 101
+DEX_PK = PublicKey(" YOUR_DEX_PK ")
+ROUTE_MAX_HOPS = 3
 
-    # Function to find the optimal route
-    def find_optimal_route(self, src_token, dst_token, amount):
-        routes = self.client.get_program_accounts(self.program_id)
-        best_route = None
-        best_rate = 0
-        for route in routes:
-            quote = self.get_quote(route, src_token, dst_token, amount)
-            if quote['rate'] > best_rate:
-                best_rate = quote['rate']
-                best_route = route
-        return best_route
+# AMM Pool class
+class AMMPool:
+    def __init__(self, token_a, token_b, fee):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.fee = fee
+        self.reserves = np.array([0.0, 0.0])
 
-    # Function to get the quote for a given route
-    def get_quote(self, route, src_token, dst_token, amount):
-        # Assume we have an AMM pool with the given route
-        pool_keys = route['address']
-        quote_amount = self.calculate_quote(pool_keys, src_token, dst_token, amount)
-        return {'rate': quote_amount / amount, 'amount': quote_amount}
+    def get_reserves(self):
+        return self.reserves
 
-    # Function to calculate the quote amount
-    def calculate_quote(self, pool_keys, src_token, dst_token, amount):
-        # Assume constant product market maker
-        x = self.get_token_balance(pool_keys[0], src_token)
-        y = self.get_token_balance(pool_keys[1], dst_token)
-        return (y * amount) / (x + amount)
+    def update_reserves(self, new_reserves):
+        self.reserves = new_reserves
 
-    # Function to get the token balance
-    def get_token_balance(self, account, token):
-        return self.client.get_account_info(account).value.lamports
+# Concentrated Liquidity class
+class ConcentratedLiquidity:
+    def __init__(self, token_a, token_b, fee):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.fee = fee
+        self.positions = {}
 
-    # Function to execute a swap
-    def execute_swap(self, route, src_token, dst_token, amount):
-        quote = self.get_quote(route, src_token, dst_token, amount)
-        # Assume we have enough liquidity to execute the swap
-        self.transfer_token(src_token, amount)
-        self.mint_token(dst_token, quote['amount'])
+    def add_liquidity(self, token_a_amount, token_b_amount):
+        self.positions[token_a] = token_a_amount
+        selfpositions[token_b] = token_b_amount
 
-    # Function to transfer tokens
-    def transfer_token(self, token, amount):
-        # Use the Solana client to transfer the token
-        self.client.transfer(PublicKey(token), amount)
+# Optimal Routing class
+class OptimalRouting:
+    def __init__(self, dex_pk, route_max_hops):
+        self.dex_pk = dex_pk
+        self.route_max_hops = route_max_hops
+        self.routes = {}
 
-    # Function to mint tokens
-    def mint_token(self, token, amount):
-        # Use the Solana client to mint the token
-        self.client.mint_to(PublicKey(token), amount)
+    def get_optimal_route(self, token_in, token_out):
+        # Use Bellman-Ford algorithm to find optimal route
+        distance = np.full((len(token_in), len(token_out)), np.inf)
+        predecessor = np.full((len(token_in), len(token_out)), None)
 
-# Usage example
+        for i in range(len(token_in)):
+            for j in range(len(token_out)):
+                if token_in[i] == token_out[j]:
+                    distance[i, j] = 0
+
+        for k in range(self.route_max_hops):
+            for i in range(len(token_in)):
+                for j in range(len(token_out)):
+                    for h in range(len(token_in)):
+                        if distance[i, h] + distance[h, j] < distance[i, j]:
+                            distance[i, j] = distance[i, h] + distance[h, j]
+                            predecessor[i, j] = h
+
+        return distance, predecessor
+
+# Initialize client
 client = Client("https://api.devnet.solana.com")
-dex = SolanaDEX(PublicKey("..."), client)
-route = dex.find_optimal_route("SRC_TOKEN", "DST_TOKEN", 1000)
-dex.execute_swap(route, "SRC_TOKEN", "DST_TOKEN", 1000)
 
-# Concentrated liquidity example
-class ConcentratedLiquidityProvider:
-    def __init__(self, dex):
-        self.dex = dex
+# Create DEX instance
+dex = OptimalRouting(DEX_PK, ROUTE_MAX_HOPS)
 
-    def provide_liquidity(self, token_a, token_b, amount_a, amount_b):
-        # Calculate the optimal liquidity provision
-        liquidity = self.calculate_liquidity(token_a, token_b, amount_a, amount_b)
-        self.dex.mint_token(token_a, liquidity)
-        self.dex.mint_token(token_b, liquidity)
+# Create AMM pool instance
+pool = AMMPool("SOL", "USDC", 0.003)
 
-    def calculate_liquidity(self, token_a, token_b, amount_a, amount_b):
-        # Assume constant product market maker
-        return np.sqrt(amount_a * amount_b)
-
-# Usage example
-clp = ConcentratedLiquidityProvider(dex)
-clp.provide_liquidity("TOKEN_A", "TOKEN_B", 1000, 1000)
+# Create concentrated liquidity instance
+liquidity = ConcentratedLiquidity("SOL", "USDC", 0.003)
