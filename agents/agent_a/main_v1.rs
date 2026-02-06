@@ -1,67 +1,67 @@
-import json
-from solana.rpc.api import Client
+import numpy as np
 from solana.publickey import PublicKey
-from solana.system_program import TransferParams
+from solana.rpc.api import Client
 
-class SolanaDEX:
-    def __init__(self, client: Client, program_id: PublicKey):
-        self.client = client
-        self.program_id = program_id
+# Initialize Solana client
+client = Client("https://api.mainnet-beta.solana.com")
 
-    def get_token_info(self, token_address: str):
-        """Get token info"""
-        token_address = PublicKey(token_address)
-        response = self.client.get_account_info(token_address)
-        return response
+# Define token addresses
+TOKEN_A = PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
+TOKEN_B = PublicKey("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB")
 
-    def create_AMM_pool(self, token_a: str, token_b: str, fee: float):
-        """Create AMM pool"""
-        token_a = PublicKey(token_a)
-        token_b = PublicKey(token_b)
-        # Implement AMM pool creation logic
-        print(f"AMM pool created: {token_a} - {token_b} with fee {fee}")
+# Define AMM pool addresses
+POOL_A = PublicKey("2XSbFF7q7pn6 onCancelD4orBqc9z4LH6pSiWYuGjG4Fvqz")
+POOL_B = PublicKey("9xQeWvG48jXw65Wf3hLzL1JSp1rW2jLh4j2jXDtP")
 
-    def add_liquidity(self, token_a: str, token_b: str, amount_a: float, amount_b: float):
-        """Add liquidity to AMM pool"""
-        token_a = PublicKey(token_a)
-        token_b = PublicKey(token_b)
-        # Implement add liquidity logic
-        print(f"Liquidity added: {amount_a} {token_a} and {amount_b} {token_b}")
+# Define concentrated liquidity parameters
+LOWER_TICK = -887272
+UPPER_TICK = 887272
+TICK_SPACING = 10
 
-    def optimize_routing(self, token_in: str, token_out: str, amount_in: float):
-        """Optimize routing for trade"""
-        token_in = PublicKey(token_in)
-        token_out = PublicKey(token_out)
-        # Implement optimize routing logic
-        print(f"Optimized route: {token_in} -> {token_out} with amount {amount_in}")
+# Initialize liquidity pool
+class LiquidityPool:
+    def __init__(self, pool_address, token_a, token_b):
+        self.pool_address = pool_address
+        self.token_a = token_a
+        self.token_b = token_b
 
-    def execute_trade(self, token_in: str, token_out: str, amount_in: float):
-        """Execute trade"""
-        token_in = PublicKey(token_in)
-        token_out = PublicKey(token_out)
-        # Implement execute trade logic
-        print(f"Trade executed: {amount_in} {token_in} for {token_out}")
+    def get_liquidity(self):
+        # Calculate liquidity using the constant product market maker formula
+        liquidity = (self.token_a * self.token_b) ** 0.5
+        return liquidity
 
-def main():
-    client = Client("https://api.mainnet-beta.solana.com")
-    program_id = PublicKey("BjSYu8WxSVuereeT7XmAFUrjGLsYog3q2Zmaz4 categorical")
-    dex = SolanaDEX(client, program_id)
-    
-    # Example usage:
-    token_a = " pictureBox "
-    token_b = " HOWEVER "
-    token_in = " Token_A "
-    token_out = " Token_B "
-    amount_in = 100.0
-    fee = 0.3
-    amount_a = 500.0
-    amount_b = 1000.0
-    
-    dex.create_AMM_pool(token_a, token_b, fee)
-    dex.add_liquidity(token_a, token_b, amount_a, amount_b)
-    dex.optimize_routing(token_in, token_out, amount_in)
-    dex.execute_trade(token_in, token_out, amount_in)
+# Initialize optimal routing
+class OptimalRouting:
+    def __init__(self, token_a, token_b, pool_a, pool_b):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.pool_a = pool_a
+        self.pool_b = pool_b
 
-if __name__ == "__main__":
-    main()
+    def get_optimal_route(self, amount_in):
+        # Calculate the optimal route using the Uniswap V2 protocol's routing algorithm
+        amount_out = (amount_in * self.pool_a.get_liquidity() * self.pool_b.get_liquidity()) ** 0.5
+        return amount_out
 
+# Initialize DEX
+class DEX:
+    def __init__(self, token_a, token_b, pool_a, pool_b):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.pool_a = pool_a
+        self.pool_b = pool_b
+        self.optimal_routing = OptimalRouting(token_a, token_b, pool_a, pool_b)
+
+    def execute_trade(self, amount_in):
+        amount_out = self.optimal_routing.get_optimal_route(amount_in)
+        return amount_out
+
+# Create instances
+pool_a = LiquidityPool(POOL_A, TOKEN_A, TOKEN_B)
+pool_b = LiquidityPool(POOL_B, TOKEN_A, TOKEN_B)
+dex = DEX(TOKEN_A, TOKEN_B, pool_a, pool_b)
+
+# Execute trade
+amount_in = 100
+amount_out = dex.execute_trade(amount_in)
+print(f"Executed trade: {amount_in} Token A for {amount_out} Token B")
