@@ -2,10 +2,10 @@ import numpy as np
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
-# Initialize Solana client
-solana_client = Client("https://api.mainnet-beta.solana.com")
+# Set up Solana client
+client = Client("https://api.devnet.solana.com")
 
-# Define AMM pool structure
+# Define AMM pool
 class AMMPool:
     def __init__(self, token_a, token_b, fee):
         self.token_a = token_a
@@ -16,56 +16,48 @@ class AMMPool:
     def add_liquidity(self, amount_a, amount_b):
         self.liquidity += amount_a + amount_b
 
-    def swap(self, amount_in, token_in):
-        if token_in == self.token_a:
-            amount_out = (amount_in * self.token_b) / (self.token_a + self.fee)
-        else:
-            amount_out = (amount_in * self.token_a) / (self.token_b + self.fee)
-        return amount_out
+    def get_price(self):
+        return self.token_a / self.token_b
 
-# Define concentrated liquidity structure
+# Define concentrated liquidity
 class ConcentratedLiquidity:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.liquidity = {}
+    def __init__(self, pool, lower_tick, upper_tick):
+        self.pool = pool
+        self.lower_tick = lower_tick
+        self.upper_tick = upper_tick
+        self.liquidity = 0
 
-    def add_liquidity(self, amount_a, amount_b, range):
-        self.liquidity[range] = (amount_a, amount_b)
+    def add_liquidity(self, amount):
+        self.liquidity += amount
 
-    def swap(self, amount_in, token_in, range):
-        if token_in == self.token_a:
-            amount_out = (amount_in * self.liquidity[range][1]) / (self.liquidity[range][0] + self.fee)
-        else:
-            amount_out = (amount_in * self.liquidity[range][0]) / (self.liquidity[range][1] + self.fee)
-        return amount_out
+    def get_price(self):
+        return self.pool.get_price()
 
-# Define optimal routing structure
+# Define optimal routing
 class OptimalRouting:
     def __init__(self, pools):
         self.pools = pools
 
-    def find_optimal_route(self, amount_in, token_in, token_out):
+    def get_best_route(self, token_a, token_b, amount):
         best_route = None
-        best_amount_out = 0
+        best_price = float("inf")
         for pool in self.pools:
-            amount_out = pool.swap(amount_in, token_in)
-            if amount_out > best_amount_out:
+            price = pool.get_price()
+            if price < best_price:
+                best_price = price
                 best_route = pool
-                best_amount_out = amount_out
-        return best_route, best_amount_out
+        return best_route
 
-# Initialize pools and optimal routing
-pool1 = AMMPool("USDT", "SOL", 0.003)
-pool2 = ConcentratedLiquidity("USDT", "SOL", 0.003)
-optimal_routing = OptimalRouting([pool1, pool2])
+# Set up pools and routing
+pool1 = AMMPool(100, 200, 0.01)
+pool2 = AMMPool(200, 100, 0.01)
+pools = [pool1, pool2]
+routing = OptimalRouting(pools)
 
 # Add liquidity to pools
-pool1.add_liquidity(1000, 100)
-pool2.add_liquidity(1000, 100, "0-100")
+pool1.add_liquidity(1000, 2000)
+pool2.add_liquidity(2000, 1000)
 
-# Find optimal route
-best_route, best_amount_out = optimal_routing.find_optimal_route(100, "USDT", "SOL")
-print(f"Best route: {best_route.token_a} - {best_route.token_b}")
-print(f"Best amount out: {best_amount_out}")
+# Get best route
+best_route = routing.get_best_route(100, 200, 1000)
+print(f"Best route: {best_route.token_a} / {best_route.token_b}")
