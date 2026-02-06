@@ -15,6 +15,9 @@ export interface Agent {
   last_cycle_at: string | null;
   created_at: string;
   context_window?: Record<string, unknown>;
+  is_quarantined?: boolean;
+  quarantine_reason?: string;
+  quarantine_timestamp?: string | null;
 }
 
 export interface Infection {

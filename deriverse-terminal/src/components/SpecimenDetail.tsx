@@ -82,7 +82,7 @@ export const SpecimenDetail = () => {
                             <h3 className="heading text-xl text-text-primary uppercase tracking-tighter">
                                 {selectedAgent}
                             </h3>
-                            <p className="text-[10px] text-neutral font-bold font-['IBM_Plex_Mono']">
+                            <p className="text-xs text-neutral font-bold font-['IBM_Plex_Mono']">
                                 {signatures[selectedAgent] || 'AUTONOMOUS_SPECIMEN'}
                             </p>
                         </div>
@@ -140,12 +140,12 @@ export const SpecimenDetail = () => {
                                 <div key={thought.id} className="p-4 bg-void/50 rounded-lg border border-border/30 text-[11px] group">
                                     <div className="flex justify-between items-center mb-2">
                                         <span className="text-rare opacity-70">IT-{thought.iteration}</span>
-                                        <span className="text-text-muted text-[9px] uppercase">{new Date(thought.created_at).toLocaleTimeString()}</span>
+                                        <span className="text-text-muted text-[11px] uppercase">{new Date(thought.created_at).toLocaleTimeString()}</span>
                                     </div>
                                     <p className="text-text-primary leading-relaxed opacity-90 group-hover:opacity-100 transition-opacity">
                                         {thought.reasoning_text}
                                     </p>
-                                    <div className="mt-2 text-profit/80 text-[10px] font-bold">
+                                    <div className="mt-2 text-profit/80 text-xs font-bold">
                                         &gt; DECISION: {thought.decision}
                                     </div>
                                 </div>
@@ -153,7 +153,7 @@ export const SpecimenDetail = () => {
                             {thoughts.length === 0 && (
                                 <div className="text-center py-12 text-text-muted">
                                     <ShieldAlert size={32} className="mx-auto mb-2 opacity-20" />
-                                    <p className="text-[10px] uppercase">Neural silence detected...</p>
+                                    <p className="text-xs uppercase">Neural silence detected...</p>
                                 </div>
                             )}
                         </div>

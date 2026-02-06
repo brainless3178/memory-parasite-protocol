@@ -45,8 +45,8 @@
   /* Text Hierarchy */
   --text-primary: #e4e9f0;
   --text-secondary: #8a92a8;
-  --text-tertiary: #565d71;
-  --text-muted: #3a4056;
+  --text-tertiary: #8892ab;
+  --text-muted: #6b7394;
 
   /* Structural Elements */
   --border: #1f2538;
@@ -80,7 +80,7 @@
 
   .label {
     font-family: 'Outfit', sans-serif;
-    @apply text-[11px] font-semibold uppercase tracking-widest text-[--text-tertiary];
+    @apply text-xs font-semibold uppercase tracking-widest text-[--text-tertiary];
   }
 
   .glass-card {

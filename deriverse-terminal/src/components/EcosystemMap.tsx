@@ -58,9 +58,9 @@ export const EcosystemMap = ({ agents, infections }: EcosystemMapProps) => {
             <div className="absolute top-4 left-4 z-20">
                 <div className="flex items-center gap-2 mb-1">
                     <div className="w-2 h-2 bg-neutral rounded-full animate-pulse" />
-                    <span className="label text-[10px] text-text-primary">Ecosystem Neural Mapping v1.0</span>
+                    <span className="label text-text-primary">Ecosystem Neural Mapping v1.0</span>
                 </div>
-                <p className="text-[9px] text-text-tertiary uppercase font-['IBM_Plex_Mono']">
+                <p className="text-[11px] text-text-tertiary uppercase font-['IBM_Plex_Mono']">
                     Tracking {agents.length} nodes & {graphData.links.length} influence vectors
                 </p>
             </div>
@@ -73,7 +73,7 @@ export const EcosystemMap = ({ agents, infections }: EcosystemMapProps) => {
                 nodeRelSize={6}
                 nodeLabel={(node) => {
                     const n = node as { id: string; name?: string };
-                    return `<div class="bg-elevated p-2 border border-border rounded text-[10px] text-neutral font-bold">${n.name} [${n.id}]</div>`;
+                    return `<div class="bg-elevated p-2 border border-border rounded text-xs text-neutral font-bold">${n.name} [${n.id}]</div>`;
                 }}
                 nodeCanvasObject={(node, ctx, globalScale) => {
                     const n = node as { id: string; group: number; x?: number; y?: number };

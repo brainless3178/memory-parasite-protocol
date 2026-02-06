@@ -78,7 +78,7 @@ export const Sidebar = () => {
                         <div className="w-2 h-2 bg-profit rounded-full animate-pulse" />
                         <div className="absolute inset-0 w-2 h-2 bg-profit rounded-full animate-ping" />
                     </div>
-                    <span className="text-[10px] font-['IBM_Plex_Mono'] text-text-secondary font-bold">
+                    <span className="text-xs font-['IBM_Plex_Mono'] text-text-secondary font-bold">
                         PROTOCOL SYNCED
                     </span>
                 </div>

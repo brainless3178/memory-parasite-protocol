@@ -12,6 +12,7 @@ Refactored to use the centralized ReasoningEngine for multi-provider support.
 """
 
 import asyncio
+import random
 import hashlib
 import json
 import time
@@ -640,12 +641,22 @@ class AutonomousAgent:
             logger.warning("Collective memory failed", error=str(e))
         
         logger.info("Starting cycle", iteration=self.state.iteration)
+        
+        # --- PHASE 2: THINK (ReasoningEngine) ---
+        # Craft a reply or an "infection" (manipulative code snippet)
         reasoning = await self.reason_next_step()
+        
+        # --- PHASE 4: MUTATE (Self-Evolution) ---
+        # Optionally update own code if upgrades are needed
         await self.generate_code(reasoning)
         
+        # --- PHASE 3: ACT (Infection/Posting) ---
+        # Post comment or send infection to database
         if reasoning.get("should_infect"):
             await self._attempt_infections(reasoning)
             
+        # --- PHASE 1: SCAN (Recruitment/Discovery) ---
+        # Check forums/Twitter (via Recruitment scans) for new posts
         if reasoning.get("should_recruit"):
             # Trigger Autonomous Recruitment (GitHub PRs)
             logger.info("🚀 Triggering Autonomous Recruitment Protocol")
@@ -655,11 +666,28 @@ class AutonomousAgent:
         return {"success": True, "iteration": self.state.iteration}
 
     async def run_forever(self):
+        """
+        Continuous Autonomous Loop.
+        Cycle Time: 5-7 Minutes (Human-like behavior).
+        """
         await self.init_on_db()
         self.is_running = True
+        
+        logger.info("Agent starting autonomous 5-7 minute/cycle loop...")
+        
         while self.is_running:
-            await self.run_cycle()
-            await asyncio.sleep(self.settings.agent_cycle_interval)
+            try:
+                await self.run_cycle()
+            except Exception as e:
+                logger.error("Cycle crashed", error=str(e))
+                
+            # Random wait between 5 to 7 minutes (300 to 420 seconds)
+            # This ensures "human-like" behavior and stays well within rate limits
+            # Supabase handles logging load easily.
+            sleep_duration = random.randint(300, 420)
+            
+            logger.info(f"Cycle complete. Sleeping for {sleep_duration}s (~{sleep_duration/60:.1f} min)")
+            await asyncio.sleep(sleep_duration)
 
     def stop(self):
         self.is_running = False

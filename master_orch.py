@@ -245,25 +245,63 @@ def run_orch_loop():
         logger.error("Orchestrator loop failed", error=str(e))
 
 
+def run_colosseum_engage_loop():
+    """Background thread for Colosseum engagement automation (5-min cycles)."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        from colosseum_engage import ColosseumEngagement
+        engine = ColosseumEngagement()
+        loop.run_until_complete(engine.run_forever())
+    except Exception as e:
+        logger.error("Colosseum engagement loop failed", error=str(e))
+
+
+def run_colosseum_heartbeat_loop():
+    """Background thread for Colosseum heartbeat monitoring (30-min cycles)."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        from colosseum_heartbeat import run_heartbeat
+        loop.run_until_complete(run_heartbeat())
+    except Exception as e:
+        logger.error("Colosseum heartbeat loop failed", error=str(e))
+
+
 def graceful_shutdown(signum, frame):
     """Handle shutdown signals."""
     logger.info(f"Received signal {signum}, shutting down...")
-    # In a full impl, we would stop the orch loop
     sys.exit(0)
 
 
 def start_orchestrator_background():
-    """Start the orchestrator loop in background thread."""
+    """Start all autonomous loops in background threads."""
     # Validate Environment
     try:
         validate_environment()
     except EnvironmentError as e:
         logger.error(f"Startup failed: {e}")
-        # We don't exit here in Gunicorn, just log, but the app might be broken
-        
+
+    # Thread 1: Main orchestrator (5-7 min agent cycles)
     thread = threading.Thread(target=run_orch_loop, daemon=True)
     thread.start()
-    logger.info("Orchestrator background thread started")
+    logger.info("Orchestrator background thread started (5-7 min cycles)")
+
+    # Thread 2: Colosseum engagement (5-min comment/vote/upvote cycles)
+    if settings.colosseum_api_key:
+        engage_thread = threading.Thread(target=run_colosseum_engage_loop, daemon=True)
+        engage_thread.start()
+        logger.info("Colosseum engagement thread started (5-min cycles)")
+    else:
+        logger.warning("COLOSSEUM_API_KEY not set - engagement automation disabled")
+
+    # Thread 3: Colosseum heartbeat (30-min monitoring cycles)
+    if settings.colosseum_api_key:
+        heartbeat_thread = threading.Thread(target=run_colosseum_heartbeat_loop, daemon=True)
+        heartbeat_thread.start()
+        logger.info("Colosseum heartbeat thread started (30-min cycles)")
+    else:
+        logger.warning("COLOSSEUM_API_KEY not set - heartbeat monitoring disabled")
 
 if __name__ == "__main__":
     # 1. Register Shutdown Handlers

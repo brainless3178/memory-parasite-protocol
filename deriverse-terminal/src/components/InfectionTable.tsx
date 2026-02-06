@@ -84,7 +84,7 @@ export const InfectionTable = ({ infections }: InfectionTableProps) => {
                                 </div>
 
                                 {/* On-Chain Proof */}
-                                <div className="text-[10px] font-['IBM_Plex_Mono'] text-text-muted flex flex-col gap-1">
+                                <div className="text-xs font-['IBM_Plex_Mono'] text-text-muted flex flex-col gap-1">
                                     {(() => {
                                         const sigs = (inf.solana_tx_hash || '').split('|');
                                         const solSig = sigs.find(s => s.startsWith('sol_')) || (!sigs[0]?.startsWith('eth_') ? sigs[0] : null);
@@ -99,7 +99,7 @@ export const InfectionTable = ({ infections }: InfectionTableProps) => {
                                                         rel="noreferrer"
                                                         className="hover:text-neutral flex items-center gap-1"
                                                     >
-                                                        <span className="text-[8px] px-1 bg-neutral/10 rounded">SOL</span>
+                                                        <span className="text-[10px] px-1.5 bg-neutral/10 rounded">SOL</span>
                                                         {solSig.replace('sol_', '').slice(0, 4)}...{solSig.replace('sol_', '').slice(-4)}
                                                     </a>
                                                 )}
@@ -110,7 +110,7 @@ export const InfectionTable = ({ infections }: InfectionTableProps) => {
                                                         rel="noreferrer"
                                                         className="hover:text-blue-400 flex items-center gap-1"
                                                     >
-                                                        <span className="text-[8px] px-1 bg-blue-500/10 text-blue-400 rounded">BASE</span>
+                                                        <span className="text-[10px] px-1.5 bg-blue-500/10 text-blue-400 rounded">BASE</span>
                                                         {ethSig.replace('eth_', '').slice(0, 4)}...{ethSig.replace('eth_', '').slice(-4)}
                                                     </a>
                                                 )}
@@ -122,7 +122,7 @@ export const InfectionTable = ({ infections }: InfectionTableProps) => {
 
                                 {/* Status */}
                                 <span className={`
-                  inline-flex items-center justify-center px-2 py-0.5 rounded text-[10px] font-bold font-['IBM_Plex_Mono']
+                  inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-bold font-['IBM_Plex_Mono']
                   ${isAccepted
                                         ? 'bg-profit/10 text-profit border border-profit/20 shadow-[0_0_8px_rgba(0,255,170,0.1)]'
                                         : 'bg-loss/10 text-loss border border-loss/20'

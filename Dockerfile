@@ -29,5 +29,5 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-# Start command (Run Flask app which starts Agent thread)
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "8", "--timeout", "0", "main:app"]
+# Start command (orchestrator + colosseum engagement + heartbeat - all autonomous)
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "8", "--timeout", "0", "master_orch:app"]

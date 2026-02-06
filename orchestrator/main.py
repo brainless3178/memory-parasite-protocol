@@ -153,10 +153,9 @@ class Orchestrator:
     def _get_cycle_interval(self) -> int:
         """
         Get randomized cycle interval.
-        Base 600s ± 50s to avoid synchronized API bursts.
+        Protocol Standard: 5-7 Minutes (300s - 420s).
         """
-        jitter = random.randint(-self.jitter_range, self.jitter_range)
-        return self.base_cycle_interval + jitter
+        return random.randint(300, 420)
     
     async def initialize_agents(self):
         """Initialize all agents, prioritizing database then fallback config."""
@@ -664,7 +663,7 @@ class Orchestrator:
         print(" MEMORY PARASITE PROTOCOL - ORCHESTRATOR")
         print("=" * 60)
         print(f"Agents: {len(self.agents)}")
-        print(f"Cycle interval: ~{self.base_cycle_interval}s (±{self.jitter_range}s)")
+        print(f"Cycle interval: 5-7 Minutes (Human-like)")
         print("=" * 60 + "\n")
         
         await self.initialize_agents()

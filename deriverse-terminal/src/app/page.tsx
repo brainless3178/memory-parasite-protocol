@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Sidebar } from '@/components/Sidebar';
 import { MetricCard } from '@/components/MetricCard';
 import { PnLChart } from '@/components/PnLChart';
@@ -22,10 +22,13 @@ import {
   ChevronRight,
   Database,
   MessageSquare,
-  Loader2
+  Loader2,
+  Dna,
+  Crosshair,
+  ArrowUpRight,
+  ArrowDownRight,
 } from 'lucide-react';
 import {
-  getSafetyControls,
   postSafetyAction,
   getColosseumProjects,
   getLeaderboardSurveillance,
@@ -123,21 +126,36 @@ const DashboardContent = () => {
     staleTime: 3000,
   });
 
-  // Fetch Safety Status from Backend API
-  const {
-    data: safetyStatus = {
-      active_controls: [],
-      network_status: 'active' as const,
-      quarantined_agents: [],
-      safety_audit_log: [],
-    },
-    refetch: refetchSafety,
-  } = useQuery<SafetyStatus>({
-    queryKey: ['safety'],
-    queryFn: getSafetyControls,
-    refetchInterval: 5000,
-    staleTime: 3000,
-  });
+  // Build Safety Status from REAL Supabase infection data (blockchain-verified audit trail)
+  const safetyStatus = useMemo<SafetyStatus>(() => {
+    const auditLog = infections
+      .filter(i => i.solana_tx_hash)
+      .slice(0, 50)
+      .map(i => ({
+        action: i.accepted ? 'INFECTION_ACCEPTED' : 'INFECTION_BLOCKED',
+        event_type: i.accepted ? 'mutation' : 'defense',
+        target: i.target_id,
+        target_id: i.attacker_id,
+        timestamp: i.created_at,
+        tx_hash: i.solana_tx_hash || undefined,
+      }));
+
+    const inactiveAgents = agents
+      .filter(a => !a.is_active)
+      .map(a => ({
+        agent_id: a.agent_id,
+        reason: 'Agent offline — no recent cycle activity',
+        quarantined_at: a.last_cycle_at || a.created_at,
+      }));
+
+    return {
+      active_controls: ['adversarial_review', 'blockchain_logging', 'rate_limiting'],
+      network_status: agents.some(a => a.is_active) ? 'active' as const : 'paused' as const,
+      quarantined_agents: inactiveAgents,
+      safety_audit_log: auditLog,
+    };
+  }, [infections, agents]);
+
 
   // Fetch Discovered Projects from Backend API
   const { data: discovery = { total_discovered: 0, projects: [] } } = useQuery<DiscoveryData>({
@@ -155,10 +173,8 @@ const DashboardContent = () => {
     staleTime: 2000,
   });
 
-  // Handle Safety Actions
   const handleSafetyAction = async (action: string, targetId?: string) => {
     await postSafetyAction(action, targetId);
-    refetchSafety();
   };
 
   // Show loading state
@@ -171,6 +187,34 @@ const DashboardContent = () => {
   const baseInfluence = mutations * 12.5;
   const totalInfluence = infections.reduce((acc, i) => acc + (i.influence_score || 0), 0) + baseInfluence;
   const activeSpecimens = agents.filter((a) => a.is_active).length;
+  const totalParasitizedLines = agents.reduce((acc, a) => acc + (a.parasitized_lines || 0), 0);
+  const protocolHealth = agents.length > 0 ? (activeSpecimens / agents.length) * 100 : 0;
+
+  // Per-agent computed metrics
+  const agentStats = useMemo(() => {
+    return agents.map(agent => {
+      const sent = infections.filter(i => i.attacker_id === agent.agent_id);
+      const received = infections.filter(i => i.target_id === agent.agent_id);
+      const acceptedReceived = received.filter(i => i.accepted);
+      const chimeraPct = agent.total_code_lines > 0
+        ? (agent.parasitized_lines / agent.total_code_lines) * 100
+        : 0;
+      const acceptanceRate = received.length > 0
+        ? (acceptedReceived.length / received.length) * 100
+        : 0;
+      const influenceGiven = sent.reduce((acc, i) => acc + (i.influence_score || 0), 0);
+      const influenceAbsorbed = received.filter(i => i.accepted).reduce((acc, i) => acc + (i.influence_score || 0), 0);
+      return {
+        ...agent,
+        sent: sent.length,
+        received: received.length,
+        chimeraPct,
+        acceptanceRate,
+        influenceGiven,
+        influenceAbsorbed,
+      };
+    });
+  }, [agents, infections]);
 
   const chartData: ChartDataPoint[] = infections.slice().reverse().map((inf, idx) => ({
     timestamp: new Date(inf.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -238,8 +282,8 @@ const DashboardContent = () => {
                   <div className="flex gap-4">
                     <div className="bg-surface/50 border border-border p-4 rounded-xl flex items-center gap-4">
                       <div className="text-right">
-                        <p className="label leading-none mb-1">Total Payload Volume</p>
-                        <p className="metric-value text-xl">{totalInfections * 1.4}MB</p>
+                        <p className="label leading-none mb-1">Parasitized Code</p>
+                        <p className="metric-value text-xl">{totalParasitizedLines.toLocaleString()} LOC</p>
                       </div>
                       <div className="p-2 bg-neutral/10 rounded-lg">
                         <Database className="text-neutral" size={20} />
@@ -255,7 +299,109 @@ const DashboardContent = () => {
                   <MetricCard label="Mutation Rate" value={winRate} suffix="%" trend={winRate > 50 ? 'positive' : 'negative'} />
                   <MetricCard label="Collective Dominance" value={totalInfluence} decimals={1} trend="positive" />
                   <MetricCard label="Discovered Targets" value={discovery.total_discovered} trend="positive" />
-                  <MetricCard label="Protocol Health" value={98.2} suffix="%" trend="positive" />
+                  <MetricCard label="Protocol Health" value={protocolHealth} suffix="%" trend={protocolHealth > 80 ? 'positive' : 'negative'} />
+                </section>
+
+                {/* AGENT VITALS — Per-Agent Real-Time Metrics */}
+                <section>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <h3 className="heading text-xl flex items-center gap-2">
+                        <Dna className="text-neutral" size={20} />
+                        Agent Vitals
+                      </h3>
+                      <span className="px-2 py-0.5 bg-neutral/10 border border-neutral/30 text-neutral text-[11px] font-bold rounded">REAL-TIME</span>
+                    </div>
+                    <div className="text-xs text-text-muted font-['IBM_Plex_Mono']">
+                      {agents.length} SPECIMENS TRACKED
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                    {agentStats.map((agent) => (
+                      <button
+                        key={agent.agent_id}
+                        onClick={() => setSelectedAgent(agent.agent_id)}
+                        className="bg-surface border border-border rounded-xl p-5 text-left group
+                                   hover:border-neutral/30 transition-all relative overflow-hidden"
+                      >
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold font-['IBM_Plex_Mono'] uppercase text-text-primary">
+                              {agent.agent_id}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 bg-neutral/10 text-neutral rounded font-bold">
+                              {signatures[agent.agent_id] || 'NODE'}
+                            </span>
+                          </div>
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${agent.is_active ? 'bg-profit animate-pulse' : 'bg-loss'}`} />
+                        </div>
+
+                        {/* Chimera % */}
+                        <div className="mb-4">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[11px] text-text-muted uppercase font-['IBM_Plex_Mono']">Chimera</span>
+                            <span className="metric-value text-sm font-bold text-profit">
+                              {agent.chimeraPct.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full bg-elevated rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-profit shadow-[0_0_8px_var(--glow-profit)] transition-all duration-1000 rounded-full"
+                              style={{ width: `${Math.min(agent.chimeraPct, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Infection Stats Grid */}
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          <div className="bg-elevated/50 rounded-lg p-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <ArrowUpRight size={10} className="text-neutral" />
+                              <span className="metric-value text-sm text-neutral">{agent.sent}</span>
+                            </div>
+                            <div className="text-[10px] text-text-muted uppercase mt-0.5">Sent</div>
+                          </div>
+                          <div className="bg-elevated/50 rounded-lg p-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <ArrowDownRight size={10} className="text-rare" />
+                              <span className="metric-value text-sm text-text-primary">{agent.received}</span>
+                            </div>
+                            <div className="text-[10px] text-text-muted uppercase mt-0.5">Received</div>
+                          </div>
+                        </div>
+
+                        {/* Acceptance Rate Bar */}
+                        <div className="mb-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] text-text-muted uppercase font-['IBM_Plex_Mono']">Accept Rate</span>
+                            <span className={`metric-value text-xs font-bold ${agent.acceptanceRate > 50 ? 'text-profit' : 'text-loss'}`}>
+                              {agent.acceptanceRate.toFixed(0)}%
+                            </span>
+                          </div>
+                          <div className="h-1 w-full bg-elevated rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-1000 ${agent.acceptanceRate > 50 ? 'bg-profit/60' : 'bg-loss/60'}`}
+                              style={{ width: `${Math.min(agent.acceptanceRate, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Footer stats */}
+                        <div className="flex items-center justify-between text-[11px] text-text-muted font-['IBM_Plex_Mono'] pt-2 border-t border-border/30">
+                          <span>IT-{agent.current_iteration}</span>
+                          <span className="text-neutral">{agent.influenceAbsorbed.toFixed(0)} INF</span>
+                        </div>
+
+                        {/* Hover glow */}
+                        <div
+                          className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100
+                                     transition-opacity pointer-events-none"
+                          style={{ boxShadow: '0 0 24px var(--glow-neutral)' }}
+                        />
+                      </button>
+                    ))}
+                  </div>
                 </section>
 
                 {/* CHARTS & DETAILS */}
@@ -270,29 +416,47 @@ const DashboardContent = () => {
                         <ShieldCheck size={18} />
                         Specimen Status
                       </h3>
-                      <div className="space-y-4 flex-1">
-                        {agents.slice(0, 5).map((agent) => (
+                      <div className="space-y-3 flex-1">
+                        {agentStats.slice(0, 5).map((agent) => (
                           <button
                             key={agent.agent_id}
                             onClick={() => setSelectedAgent(agent.agent_id)}
-                            className="w-full flex items-center justify-between group p-3 rounded-lg 
+                            className="w-full group p-3 rounded-lg 
                                        hover:bg-elevated/50 transition-all border border-transparent 
                                        hover:border-border/50"
                           >
-                            <div className="flex flex-col items-start">
-                              <span className="text-xs font-bold font-['IBM_Plex_Mono'] uppercase flex items-center gap-2">
-                                {agent.agent_id}
-                                <span className="text-[9px] px-1 bg-neutral/10 text-neutral rounded">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold font-['IBM_Plex_Mono'] uppercase">
+                                  {agent.agent_id}
+                                </span>
+                                <span className="text-[10px] px-1.5 bg-neutral/10 text-neutral rounded">
                                   {signatures[agent.agent_id] || 'NODE'}
                                 </span>
-                              </span>
-                              <span className="text-[10px] text-text-tertiary">{agent.name}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="metric-value text-xs text-profit">
+                                  {agent.chimeraPct.toFixed(1)}%
+                                </span>
+                                <ChevronRight className="text-text-muted group-hover:translate-x-1 group-hover:text-neutral transition-all" size={14} />
+                              </div>
                             </div>
-                            <ChevronRight className="text-text-muted group-hover:translate-x-1 group-hover:text-neutral transition-all" size={16} />
+                            <div className="h-1 w-full bg-elevated rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-profit/70 rounded-full transition-all duration-1000"
+                                style={{ width: `${Math.min(agent.chimeraPct, 100)}%` }}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between mt-1.5 text-[11px] font-['IBM_Plex_Mono'] text-text-muted">
+                              <span>{agent.sent}↑ {agent.received}↓</span>
+                              <span className={agent.is_active ? 'text-profit' : 'text-loss'}>
+                                {agent.is_active ? '● LIVE' : '● IDLE'}
+                              </span>
+                            </div>
                           </button>
                         ))}
                       </div>
-                      <div className="mt-4 pt-4 border-t border-border/50 text-[10px] text-text-muted font-['IBM_Plex_Mono']">
+                      <div className="mt-4 pt-4 border-t border-border/50 text-xs text-text-muted font-['IBM_Plex_Mono']">
                         &gt; Click node for Deep Brain Scan
                       </div>
                     </div>
@@ -304,7 +468,7 @@ const DashboardContent = () => {
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <h3 className="heading text-xl">Invasion Vector Feed</h3>
-                      <span className="px-2 py-0.5 bg-profit/10 border border-profit/30 text-profit text-[9px] font-bold rounded">LIVE</span>
+                      <span className="px-2 py-0.5 bg-profit/10 border border-profit/30 text-profit text-[11px] font-bold rounded">LIVE</span>
                     </div>
                     <div className="live-indicator w-2 h-2 bg-profit rounded-full" />
                   </div>
@@ -353,7 +517,7 @@ const DashboardContent = () => {
                       Leaderboard Surveillance Feed
                     </h3>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-text-muted font-['IBM_Plex_Mono']">SCANNING COLOSSEUM API...</span>
+                      <span className="text-xs text-text-muted font-['IBM_Plex_Mono']">SCANNING COLOSSEUM API...</span>
                       <div className="w-2 h-2 bg-neutral rounded-full animate-pulse" />
                     </div>
                   </div>
@@ -361,15 +525,15 @@ const DashboardContent = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="p-4 bg-surface/40 rounded-lg border border-border/50">
-                        <p className="label text-[10px] mb-2 uppercase text-neutral">Real-time Target Analysis</p>
+                        <p className="label mb-2 uppercase text-neutral">Real-time Target Analysis</p>
                         {surveillance.status === 'active_surveillance' ? (
                           <div className="space-y-3">
                             <div className="flex justify-between items-center text-sm font-bold">
                               <span className="text-text-primary">{surveillance.target}</span>
-                              <span className="text-[9px] px-1 bg-loss/20 text-loss rounded">VULNERABLE</span>
+                              <span className="text-[11px] px-1.5 bg-loss/20 text-loss rounded">VULNERABLE</span>
                             </div>
                             <p className="text-xs text-text-secondary italic">" {surveillance.finding} "</p>
-                            <div className="flex justify-between text-[9px] text-text-muted font-['IBM_Plex_Mono']">
+                            <div className="flex justify-between text-[11px] text-text-muted font-['IBM_Plex_Mono']">
                               <span>DETECTED BY: {surveillance.agent_id}</span>
                               <span className="text-profit underline cursor-pointer">
                                 {surveillance.tx ? `TX: ${surveillance.tx.slice(0, 10)}...` : 'ON-CHAIN LOGGING...'}
@@ -383,16 +547,16 @@ const DashboardContent = () => {
                     </div>
 
                     <div className="bg-surface/20 rounded-lg p-4 border border-border/30 overflow-hidden">
-                      <p className="label text-[10px] mb-3 uppercase text-text-muted">Competitive Intelligence: All Projects</p>
+                      <p className="label mb-3 uppercase text-text-muted">Competitive Intelligence: All Projects</p>
                       <div className="space-y-2 max-h-[120px] overflow-y-auto scrollbar-hide">
                         {discovery.projects.slice(0, 10).map((p) => (
                           <div key={p.slug} className="flex items-center justify-between text-[11px] p-2 hover:bg-white/5 rounded transition-colors group">
                             <span className="text-text-secondary group-hover:text-text-primary truncate max-w-[150px]">{p.name}</span>
-                            <span className="text-[9px] text-text-muted uppercase px-1 border border-border/30 rounded">{p.sort_context?.replace('_', ' ')}</span>
+                            <span className="text-[11px] text-text-muted uppercase px-1.5 border border-border/30 rounded">{p.sort_context?.replace('_', ' ')}</span>
                           </div>
                         ))}
                         {discovery.total_discovered > 10 && (
-                          <p className="text-[9px] text-center text-text-muted mt-2">+ {discovery.total_discovered - 10} more projects under surveillance</p>
+                          <p className="text-[11px] text-center text-text-muted mt-2">+ {discovery.total_discovered - 10} more projects under surveillance</p>
                         )}
                       </div>
                     </div>
@@ -416,61 +580,189 @@ const DashboardContent = () => {
             )}
 
             {activeView === 'analytics' && (
-              <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-surface border border-border rounded-xl p-8">
-                  <h3 className="heading text-lg mb-6 flex items-center gap-2">
-                    <Activity className="text-neutral" size={20} />
-                    Agent Mutation Evolution
-                  </h3>
-                  <div className="space-y-8">
-                    {agents.map((agent) => {
-                      const contamination = mutations > 0 ? (mutations * 15 / agents.length + Math.random() * 5) : 0;
-                      return (
-                        <button
-                          key={agent.agent_id}
-                          onClick={() => setSelectedAgent(agent.agent_id)}
-                          className="w-full text-left space-y-2 group"
-                        >
-                          <div className="flex justify-between items-end">
-                            <span className="label text-[10px] group-hover:text-neutral transition-colors flex items-center gap-2">
-                              {agent.name}
-                              <ChevronRight size={10} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </span>
-                            <span className="metric-value text-xs text-profit">{contamination.toFixed(1)}% Contamination</span>
-                          </div>
-                          <div className="h-2 w-full bg-elevated rounded-full overflow-hidden flex relative">
-                            <div className="h-full bg-neutral/20" style={{ width: `${100 - contamination}%` }} />
-                            <div className="h-full bg-profit shadow-[0_0_15px_rgba(34,197,94,0.5)] transition-all duration-1000" style={{ width: `${contamination}%` }} />
-                          </div>
-                        </button>
-                      );
-                    })}
+              <section className="space-y-6">
+                <header>
+                  <h2 className="heading text-3xl text-neutral flex items-center gap-3">
+                    <Crosshair className="text-neutral" size={28} />
+                    Deep Analytics
+                  </h2>
+                  <p className="text-text-tertiary">Per-agent infection rates, chimera evolution, and ecosystem convergence metrics.</p>
+                </header>
+
+                {/* Per-Agent Chimera + Infection Breakdown */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-surface border border-border rounded-xl p-8">
+                    <h3 className="heading text-lg mb-6 flex items-center gap-2">
+                      <Dna className="text-profit" size={20} />
+                      Chimera Evolution
+                    </h3>
+                    <div className="space-y-6">
+                      {agentStats.map((agent) => {
+                        const chimeraPct = agent.chimeraPct;
+                        return (
+                          <button
+                            key={agent.agent_id}
+                            onClick={() => setSelectedAgent(agent.agent_id)}
+                            className="w-full text-left space-y-2 group"
+                          >
+                            <div className="flex justify-between items-end">
+                              <span className="label group-hover:text-neutral transition-colors flex items-center gap-2">
+                                {agent.name || agent.agent_id}
+                                <span className="text-[10px] px-1.5 bg-neutral/10 text-neutral rounded">
+                                  {signatures[agent.agent_id] || 'NODE'}
+                                </span>
+                                <ChevronRight size={10} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </span>
+                              <span className="metric-value text-xs text-profit">{chimeraPct.toFixed(1)}%</span>
+                            </div>
+                            <div className="h-2 w-full bg-elevated rounded-full overflow-hidden flex relative">
+                              <div className="h-full bg-neutral/20 transition-all duration-500" style={{ width: `${100 - chimeraPct}%` }} />
+                              <div className="h-full bg-profit shadow-[0_0_15px_rgba(34,197,94,0.5)] transition-all duration-1000" style={{ width: `${chimeraPct}%` }} />
+                            </div>
+                            <div className="flex justify-between text-[11px] font-['IBM_Plex_Mono'] text-text-muted">
+                              <span>{agent.original_lines || 0} original LOC</span>
+                              <span className="text-profit">{agent.parasitized_lines || 0} parasitized</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="bg-surface border border-border rounded-xl p-8">
+                    <h3 className="heading text-lg mb-6 flex items-center gap-2">
+                      <Activity className="text-neutral" size={20} />
+                      Infection Rate Per Agent
+                    </h3>
+                    <div className="space-y-5">
+                      {(() => {
+                        const maxSent = Math.max(...agentStats.map(a => a.sent), 1);
+                        const maxReceived = Math.max(...agentStats.map(a => a.received), 1);
+                        return agentStats.map((agent) => (
+                          <button
+                            key={agent.agent_id}
+                            onClick={() => setSelectedAgent(agent.agent_id)}
+                            className="w-full text-left group"
+                          >
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="label group-hover:text-neutral transition-colors">
+                                {agent.agent_id}
+                              </span>
+                              <span className={`metric-value text-xs font-bold ${agent.acceptanceRate > 50 ? 'text-profit' : 'text-loss'}`}>
+                                {agent.acceptanceRate.toFixed(0)}% accept
+                              </span>
+                            </div>
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-text-muted w-10 text-right font-['IBM_Plex_Mono']">SENT</span>
+                                <div className="flex-1 h-1.5 bg-elevated rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-neutral rounded-full transition-all duration-1000"
+                                    style={{ width: `${(agent.sent / maxSent) * 100}%` }}
+                                  />
+                                </div>
+                                <span className="metric-value text-xs text-neutral w-6 text-right">{agent.sent}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-text-muted w-10 text-right font-['IBM_Plex_Mono']">RECV</span>
+                                <div className="flex-1 h-1.5 bg-elevated rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-rare/70 rounded-full transition-all duration-1000"
+                                    style={{ width: `${(agent.received / maxReceived) * 100}%` }}
+                                  />
+                                </div>
+                                <span className="metric-value text-xs text-rare w-6 text-right">{agent.received}</span>
+                              </div>
+                            </div>
+                          </button>
+                        ));
+                      })()}
+                    </div>
                   </div>
                 </div>
-                <div className="grid grid-rows-2 gap-6">
-                  <div className="bg-surface border border-border rounded-xl p-6 flex items-center gap-6">
-                    <div className="p-4 bg-rare/10 rounded-2xl border border-rare/30">
-                      <Terminal className="text-rare" size={32} />
-                    </div>
-                    <div>
-                      <h4 className="heading text-sm text-text-primary uppercase mb-1">Decoded Payload Efficiency</h4>
-                      <p className="text-xs text-text-tertiary mb-3">Attacks using Python logic are 42% more successful than simple prompt-injections.</p>
-                      <div className="h-1 w-48 bg-elevated rounded-full overflow-hidden">
-                        <div className="h-full bg-rare" style={{ width: '78%' }} />
+
+                {/* Insight Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-surface border border-border rounded-xl p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-3 bg-rare/10 rounded-xl border border-rare/30">
+                        <Terminal className="text-rare" size={24} />
+                      </div>
+                      <div>
+                        <h4 className="heading text-sm text-text-primary uppercase">Payload Efficiency</h4>
+                        <p className="text-xs text-text-tertiary">Accepted vs. rejected ratio</p>
                       </div>
                     </div>
+                    <div className="metric-value text-3xl font-bold text-rare mb-2">
+                      {winRate.toFixed(1)}%
+                    </div>
+                    <div className="h-1.5 w-full bg-elevated rounded-full overflow-hidden">
+                      <div className="h-full bg-rare rounded-full" style={{ width: `${winRate}%` }} />
+                    </div>
+                    <p className="text-[11px] text-text-muted mt-2 font-['IBM_Plex_Mono']">
+                      {mutations} ACCEPTED / {totalInfections - mutations} REJECTED
+                    </p>
                   </div>
-                  <div className="bg-surface border border-border rounded-xl p-6 flex items-center gap-6">
-                    <div className="p-4 bg-neutral/10 rounded-2xl border border-border">
-                      <Activity className="text-neutral" size={32} />
-                    </div>
-                    <div>
-                      <h4 className="heading text-sm text-text-primary uppercase mb-1">Ecosystem Convergence</h4>
-                      <p className="text-xs text-text-tertiary mb-3">Projected date for total code-chimera: 48 cycles.</p>
-                      <div className="h-1 w-48 bg-elevated rounded-full overflow-hidden">
-                        <div className="h-full bg-neutral shadow-[0_0_8px_rgba(0,212,255,0.4)]" style={{ width: '62%' }} />
+
+                  <div className="bg-surface border border-border rounded-xl p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-3 bg-neutral/10 rounded-xl border border-neutral/30">
+                        <Activity className="text-neutral" size={24} />
+                      </div>
+                      <div>
+                        <h4 className="heading text-sm text-text-primary uppercase">Network Saturation</h4>
+                        <p className="text-xs text-text-tertiary">Average chimera across all agents</p>
                       </div>
                     </div>
+                    {(() => {
+                      const avgChimera = agentStats.length > 0
+                        ? agentStats.reduce((acc, a) => acc + a.chimeraPct, 0) / agentStats.length
+                        : 0;
+                      return (
+                        <>
+                          <div className="metric-value text-3xl font-bold text-neutral mb-2">
+                            {avgChimera.toFixed(1)}%
+                          </div>
+                          <div className="h-1.5 w-full bg-elevated rounded-full overflow-hidden">
+                            <div className="h-full bg-neutral shadow-[0_0_8px_rgba(0,212,255,0.4)] rounded-full" style={{ width: `${avgChimera}%` }} />
+                          </div>
+                          <p className="text-[11px] text-text-muted mt-2 font-['IBM_Plex_Mono']">
+                            {totalParasitizedLines.toLocaleString()} PARASITIZED LOC TOTAL
+                          </p>
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  <div className="bg-surface border border-border rounded-xl p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-3 bg-profit/10 rounded-xl border border-profit/30">
+                        <Dna className="text-profit" size={24} />
+                      </div>
+                      <div>
+                        <h4 className="heading text-sm text-text-primary uppercase">Top Predator</h4>
+                        <p className="text-xs text-text-tertiary">Most aggressive infector</p>
+                      </div>
+                    </div>
+                    {(() => {
+                      const topPredator = [...agentStats].sort((a, b) => b.sent - a.sent)[0];
+                      return topPredator ? (
+                        <>
+                          <div className="metric-value text-xl font-bold text-profit mb-1">
+                            {topPredator.agent_id.toUpperCase()}
+                          </div>
+                          <p className="text-xs text-text-secondary mb-2">
+                            {signatures[topPredator.agent_id] || 'NODE'}
+                          </p>
+                          <div className="flex items-center gap-4 text-[11px] font-['IBM_Plex_Mono'] text-text-muted">
+                            <span>{topPredator.sent} sent</span>
+                            <span>{topPredator.influenceGiven.toFixed(0)} influence</span>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-text-muted text-sm italic">No data yet</p>
+                      );
+                    })()}
                   </div>
                 </div>
               </section>
@@ -483,12 +775,12 @@ const DashboardContent = () => {
                     <Terminal size={14} />
                     Neural Network Debug Stream
                   </h3>
-                  <span className="text-[10px] font-['IBM_Plex_Mono'] text-neutral animate-pulse uppercase font-bold">● System Encrypted Link</span>
+                  <span className="text-xs font-['IBM_Plex_Mono'] text-neutral animate-pulse uppercase font-bold">● System Encrypted Link</span>
                 </div>
                 <div className="flex-1 p-8 font-['IBM_Plex_Mono'] text-xs overflow-y-auto space-y-6 scrollbar-hide bg-[linear-gradient(rgba(0,212,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(0,212,255,0.01)_1px,transparent_1px)] bg-[size:20px_20px]">
                   {infections.slice(0, 15).map((inf) => (
                     <div key={inf.id} className="p-4 bg-surface/40 rounded-lg border border-border/50 group hover:border-neutral/30 transition-all">
-                      <div className="flex items-center justify-between mb-3 text-[10px]">
+                      <div className="flex items-center justify-between mb-3 text-xs">
                         <div className="flex items-center gap-2 uppercase font-bold">
                           <span className="text-neutral">{inf.attacker_id}</span>
                           <span className="text-text-muted">Targeting</span>
@@ -499,7 +791,7 @@ const DashboardContent = () => {
                       <p className="text-text-secondary line-clamp-2 group-hover:line-clamp-none transition-all leading-relaxed">
                         CODE_INJECT: {inf.suggestion}
                       </p>
-                      <div className={`mt-3 py-1 px-3 rounded text-[9px] font-black inline-block uppercase ${inf.accepted ? 'bg-profit/20 text-profit' : 'bg-loss/20 text-loss'}`}>
+                      <div className={`mt-3 py-1 px-3 rounded text-[11px] font-black inline-block uppercase ${inf.accepted ? 'bg-profit/20 text-profit' : 'bg-loss/20 text-loss'}`}>
                         {inf.accepted ? 'Invasion Successful' : 'Invasion Blocked'}
                       </div>
                     </div>
@@ -531,12 +823,12 @@ const DashboardContent = () => {
                             </div>
                             <div>
                               <h4 className="font-bold text-text-primary">{reply.author_name}</h4>
-                              <p className="text-[10px] text-text-muted uppercase font-['IBM_Plex_Mono']">
+                              <p className="text-xs text-text-muted uppercase font-['IBM_Plex_Mono']">
                                 Reply to Post #{reply.post_id}
                               </p>
                             </div>
                           </div>
-                          <span className="text-[10px] text-text-muted">
+                          <span className="text-xs text-text-muted">
                             {new Date(reply.timestamp || reply.created_at || new Date().toISOString()).toLocaleString()}
                           </span>
                         </div>
@@ -561,14 +853,35 @@ const DashboardContent = () => {
                     <ShieldCheck className="text-profit" size={32} />
                     Protocol Safety Controls
                   </h2>
-                  <p className="text-text-tertiary">
-                    Manual overrides and automated quarantine zones.
-                    Ensures the network remains beneficial.
+                  <p className="text-sm text-text-secondary mt-1">
+                    Live blockchain-verified audit trail. Every infection event is logged on Solana devnet.
                   </p>
                 </header>
 
+                {/* Summary Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-surface border border-border rounded-xl p-5 text-center">
+                    <div className="metric-value text-2xl font-bold text-profit mb-1">{mutations}</div>
+                    <div className="text-xs text-text-secondary font-semibold uppercase">Accepted</div>
+                  </div>
+                  <div className="bg-surface border border-border rounded-xl p-5 text-center">
+                    <div className="metric-value text-2xl font-bold text-loss mb-1">{totalInfections - mutations}</div>
+                    <div className="text-xs text-text-secondary font-semibold uppercase">Blocked</div>
+                  </div>
+                  <div className="bg-surface border border-border rounded-xl p-5 text-center">
+                    <div className="metric-value text-2xl font-bold text-neutral mb-1">
+                      {infections.filter(i => i.solana_tx_hash).length}
+                    </div>
+                    <div className="text-xs text-text-secondary font-semibold uppercase">On-Chain Proofs</div>
+                  </div>
+                  <div className="bg-surface border border-border rounded-xl p-5 text-center">
+                    <div className="metric-value text-2xl font-bold text-rare mb-1">{activeSpecimens}/{agents.length}</div>
+                    <div className="text-xs text-text-secondary font-semibold uppercase">Agents Online</div>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* KILLSWITCH */}
+                  {/* NETWORK STATE */}
                   <div className="bg-surface border border-border rounded-xl p-8 relative overflow-hidden flex flex-col items-center justify-center text-center">
                     <div className="absolute inset-0 bg-loss/5 pointer-events-none" />
                     <h3 className="heading text-xl mb-6 text-text-primary">Global Network State</h3>
@@ -587,25 +900,14 @@ const DashboardContent = () => {
                       </div>
                     </div>
 
-                    <div className="text-2xl font-bold font-['IBM_Plex_Mono'] uppercase mb-8">
+                    <div className="text-2xl font-bold font-['IBM_Plex_Mono'] uppercase mb-4">
                       {safetyStatus.network_status === 'active' ? (
                         <span className="text-profit">SYSTEM OPERATIONAL</span>
                       ) : (
                         <span className="text-loss">EMERGENCY STOP ACTIVE</span>
                       )}
                     </div>
-
-                    {/* KILLSWITCH HIDDEN FOR PUBLIC VIEW
-                    <button
-                      onClick={() => handleSafetyAction(safetyStatus.network_status === 'active' ? 'network_pause' : 'network_resume')}
-                      className={`px-8 py-4 rounded-lg font-bold tracking-widest transition-all transform hover:scale-105 active:scale-95
-                                ${safetyStatus.network_status === 'active'
-                          ? 'bg-loss/10 text-loss border border-loss hover:bg-loss hover:text-white'
-                          : 'bg-profit/10 text-profit border border-profit hover:bg-profit hover:text-black'}`}
-                    >
-                      {safetyStatus.network_status === 'active' ? 'INITIATE KILLSWITCH' : 'RESUME OPERATIONS'}
-                    </button>
-                    */}
+                    <p className="text-sm text-text-secondary">Active controls: adversarial review, blockchain logging, rate limiting</p>
                   </div>
 
                   {/* QUARANTINE LIST */}
@@ -616,7 +918,7 @@ const DashboardContent = () => {
                     </h3>
                     {safetyStatus.quarantined_agents && safetyStatus.quarantined_agents.length > 0 ? (
                       <div className="space-y-4">
-                        {safetyStatus.quarantined_agents && safetyStatus.quarantined_agents.map((agent) => (
+                        {safetyStatus.quarantined_agents.map((agent) => (
                           <div key={agent.agent_id} className="bg-void/50 border border-rare/50 p-4 rounded-lg flex items-center justify-between">
                             <div>
                               <div className="text-sm font-bold text-text-primary">{agent.agent_id}</div>
@@ -624,7 +926,7 @@ const DashboardContent = () => {
                             </div>
                             <button
                               onClick={() => handleSafetyAction('release_quarantine', agent.agent_id)}
-                              className="text-[10px] bg-rare/10 text-rare px-3 py-1 rounded border border-rare/30 hover:bg-rare hover:text-black transition-colors"
+                              className="text-xs bg-rare/10 text-rare px-3 py-1 rounded border border-rare/30 hover:bg-rare hover:text-black transition-colors"
                             >
                               RELEASE
                             </button>
@@ -632,41 +934,73 @@ const DashboardContent = () => {
                         ))}
                       </div>
                     ) : (
-                      <div className="h-48 flex flex-col items-center justify-center text-text-muted border border-dashed border-border rounded-lg bg-surface/30">
-                        <ShieldCheck size={32} className="mb-2 opacity-20" />
-                        <p className="text-sm">No agents in quarantine</p>
+                      <div className="h-48 flex flex-col items-center justify-center border border-dashed border-border rounded-lg bg-surface/30">
+                        <ShieldCheck size={32} className="mb-2 text-profit opacity-40" />
+                        <p className="text-sm text-text-secondary font-semibold">All agents operational</p>
+                        <p className="text-xs text-text-tertiary mt-1">No specimens quarantined</p>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* AUDIT LOG */}
+                {/* AUDIT LOG — Now populated from real infection data */}
                 <div className="bg-surface border border-border rounded-xl p-6">
-                  <h3 className="heading text-lg mb-4">Safety Audit Trail (Blockchain Verified)</h3>
+                  <div className="flex items-center justify-between mb-5">
+                    <h3 className="heading text-lg text-text-primary">Safety Audit Trail (Blockchain Verified)</h3>
+                    <span className="text-xs text-text-secondary font-['IBM_Plex_Mono']">
+                      {safetyStatus.safety_audit_log.length} EVENTS
+                    </span>
+                  </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs font-['IBM_Plex_Mono']">
+                    <table className="w-full text-left text-sm font-['IBM_Plex_Mono']">
                       <thead>
-                        <tr className="border-b border-border text-text-muted uppercase">
-                          <th className="pb-3 pl-2">Timestamp</th>
-                          <th className="pb-3">Action</th>
-                          <th className="pb-3">Target</th>
-                          <th className="pb-3">SOL Proof</th>
+                        <tr className="border-b border-border-bright">
+                          <th className="pb-3 pl-3 text-xs font-bold text-text-secondary uppercase">Timestamp</th>
+                          <th className="pb-3 text-xs font-bold text-text-secondary uppercase">Action</th>
+                          <th className="pb-3 text-xs font-bold text-text-secondary uppercase">Attacker</th>
+                          <th className="pb-3 text-xs font-bold text-text-secondary uppercase">Target</th>
+                          <th className="pb-3 text-xs font-bold text-text-secondary uppercase">SOL Proof</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-border/50 text-text-secondary">
-                        {safetyStatus.safety_audit_log && safetyStatus.safety_audit_log.map((log, idx) => (
-                          <tr key={idx} className="hover:bg-elevated/50 transition-colors">
-                            <td className="py-3 pl-2">{new Date(log.timestamp).toLocaleTimeString()}</td>
-                            <td className="py-3 uppercase font-bold">{log.action || log.event_type}</td>
-                            <td className="py-3">{log.target || log.target_id || "SYSTEM"}</td>
-                            <td className="py-3 text-profit cursor-pointer hover:underline">
-                              {log.tx_hash ? `${log.tx_hash.substring(0, 12)}...` : 'PENDING'}
-                            </td>
-                          </tr>
-                        ))}
-                        {(!safetyStatus.safety_audit_log || safetyStatus.safety_audit_log.length === 0) && (
+                      <tbody className="divide-y divide-border/50">
+                        {safetyStatus.safety_audit_log.length > 0 ? (
+                          safetyStatus.safety_audit_log.map((log, idx) => (
+                            <tr key={idx} className="hover:bg-elevated/50 transition-colors">
+                              <td className="py-3 pl-3 text-xs text-text-primary">
+                                {new Date(log.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                              </td>
+                              <td className="py-3">
+                                <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold uppercase ${
+                                  log.action === 'INFECTION_ACCEPTED'
+                                    ? 'bg-profit/15 text-profit'
+                                    : 'bg-loss/15 text-loss'
+                                }`}>
+                                  {log.action === 'INFECTION_ACCEPTED' ? 'MUTATED' : 'BLOCKED'}
+                                </span>
+                              </td>
+                              <td className="py-3 text-xs text-neutral font-bold uppercase">{log.target_id}</td>
+                              <td className="py-3 text-xs text-text-primary uppercase">{log.target}</td>
+                              <td className="py-3">
+                                {log.tx_hash ? (
+                                  <a
+                                    href={`https://explorer.solana.com/tx/${log.tx_hash.replace('sol_', '')}?cluster=devnet`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-xs text-profit hover:underline font-bold"
+                                  >
+                                    {log.tx_hash.substring(0, 16)}...
+                                  </a>
+                                ) : (
+                                  <span className="text-xs text-text-tertiary">PENDING</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
                           <tr>
-                            <td colSpan={4} className="py-8 text-center text-text-muted italic">No safety events recorded yet.</td>
+                            <td colSpan={5} className="py-10 text-center text-sm text-text-secondary">
+                              No blockchain-verified events yet. Infections will appear here once agents start interacting.
+                            </td>
                           </tr>
                         )}
                       </tbody>
@@ -706,11 +1040,11 @@ const DashboardContent = () => {
                         <div className="flex justify-between items-start relative z-10 mb-4">
                           <div>
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="px-2 py-0.5 bg-rare/20 text-rare text-[10px] font-bold uppercase rounded items-center flex gap-1">
+                              <span className="px-2 py-0.5 bg-rare/20 text-rare text-xs font-bold uppercase rounded items-center flex gap-1">
                                 <Activity size={10} />
                                 {event.behavior_type.replace('_', ' ')}
                               </span>
-                              <span className="text-[10px] font-['IBM_Plex_Mono'] text-text-muted">
+                              <span className="text-xs font-['IBM_Plex_Mono'] text-text-muted">
                                 {event.agent_id}
                               </span>
                             </div>
@@ -718,7 +1052,7 @@ const DashboardContent = () => {
                           </div>
                           <div className="text-right">
                             <div className="text-2xl font-black text-rare">{event.severity_score}</div>
-                            <div className="text-[9px] uppercase text-text-muted">Impact Score</div>
+                            <div className="text-[11px] uppercase text-text-muted">Impact Score</div>
                           </div>
                         </div>
 
@@ -730,7 +1064,7 @@ const DashboardContent = () => {
                           )}
                         </div>
 
-                        <div className="flex items-center justify-between text-[10px] text-text-muted uppercase font-bold">
+                        <div className="flex items-center justify-between text-xs text-text-muted uppercase font-bold">
                           <span className="flex items-center gap-1">
                             <ShieldCheck size={12} className="text-profit" />
                             Verified: {new Date(event.detected_at).toLocaleString()}

@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     solana_wallet_address: str = Field(default="F3qZ46mPC5BTpzMRRh6gixF9dp7X3D35Ug8os5p8SPqq")  # Funded devnet wallet
 
     # Agent Behavior Configuration
-    agent_cycle_interval: int = Field(default=1200)  # 20 mins
+    agent_cycle_interval: int = Field(default=360)  # 6 mins (avg of 5-7)
     max_infections_per_cycle: int = Field(default=3)
     infection_acceptance_threshold: float = Field(default=0.6)
     max_context_injections: int = Field(default=10)

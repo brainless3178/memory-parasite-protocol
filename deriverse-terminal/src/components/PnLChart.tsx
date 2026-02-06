@@ -33,7 +33,7 @@ export const PnLChart = ({ data, timeframe = 'LIVE' }: PnLChartProps) => {
                         <button
                             key={period}
                             className={`
-                px-3 py-1.5 rounded-lg text-[10px] font-['IBM_Plex_Mono'] font-bold
+                px-3 py-1.5 rounded-lg text-xs font-['IBM_Plex_Mono'] font-bold
                 transition-all duration-200
                 ${timeframe === period
                                     ? 'bg-neutral text-base shadow-[0_0_12px_var(--glow-neutral)]'
@@ -118,7 +118,7 @@ export const PnLChart = ({ data, timeframe = 'LIVE' }: PnLChartProps) => {
                     </ResponsiveContainer>
                 ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center border border-dashed border-border rounded-lg bg-void/30">
-                        <div className="text-[10px] font-['IBM_Plex_Mono'] text-text-muted animate-pulse">
+                        <div className="text-xs font-['IBM_Plex_Mono'] text-text-muted animate-pulse">
                             SCANNING NEURAL VECTORS...
                         </div>
                     </div>
