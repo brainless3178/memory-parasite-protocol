@@ -1,65 +1,80 @@
 import numpy as np
-from solana.publickey import PublicKey
-from solana.rpc.api import Client
 
-# Initialize Solana client
-client = Client('https://api.devnet.solana.com')
+# Define constants
+POOL_FEE = 0.003
+ORACLE_FEE = 0.001
+LIQUIDITY_PROVIDER_FEE = 0.002
 
-# Define AMM pool parameters
+# Define AMM pool class
 class AMMPool:
-    def __init__(self, token_a, token_b, fee):
+    def __init__(self, token_a, token_b, reserve_a, reserve_b):
         self.token_a = token_a
         self.token_b = token_b
-        self.fee = fee
+        self.reserve_a = reserve_a
+        self.reserve_b = reserve_b
 
-    def get_price(self, amount_a, amount_b):
-        return (amount_b * (1 - self.fee)) / (amount_a * (1 + self.fee))
+    def get_price(self, token_in, amount_in):
+        if token_in == self.token_a:
+            return (amount_in * self.reserve_b) / (self.reserve_a + amount_in)
+        else:
+            return (amount_in * self.reserve_a) / (self.reserve_b + amount_in)
 
-# Define concentrated liquidity pool
+    def swap(self, token_in, amount_in):
+        price = self.get_price(token_in, amount_in)
+        if token_in == self.token_a:
+            self.reserve_a += amount_in
+            self.reserve_b -= price
+        else:
+            self.reserve_b += amount_in
+            self.reserve_a -= price
+        return price
+
+# Define concentrated liquidity pool class
 class ConcentratedLiquidityPool:
-    def __init__(self, token_a, token_b, lower_tick, upper_tick):
+    def __init__(self, token_a, token_b, reserve_a, reserve_b):
         self.token_a = token_a
         self.token_b = token_b
-        self.lower_tick = lower_tick
-        self.upper_tick = upper_tick
+        self.reserve_a = reserve_a
+        self.reserve_b = reserve_b
 
-    def get_liquidity(self):
-        # Calculate liquidity based on tick range
-        return (self.upper_tick - self.lower_tick) * 1000
+    def get_price(self, token_in, amount_in):
+        # Use a more complex pricing algorithm for concentrated liquidity
+        price = (amount_in * self.reserve_b) / (self.reserve_a + amount_in)
+        price *= 1.01  # adjustment for concentrated liquidity
+        return price
 
-# Define optimal routing logic
-class OptimalRouter:
-    def __init__(self, pools):
-        self.pools = pools
+    def swap(self, token_in, amount_in):
+        price = self.get_price(token_in, amount_in)
+        if token_in == self.token_a:
+            self.reserve_a += amount_in
+            self.reserve_b -= price
+        else:
+            self.reserve_b += amount_in
+            self.reserve_a -= price
+        return price
 
-    def get_best_route(self, token_a, token_b, amount):
-        best_route = None
-        best_price = float('inf')
+# Define routing function
+def route_swap(token_in, amount_in, pools):
+    best_price = 0
+    best_pool = None
+    for pool in pools:
+        price = pool.get_price(token_in, amount_in)
+        if price > best_price:
+            best_price = price
+            best_pool = pool
+    return best_pool.swap(token_in, amount_in)
 
-        for pool in self.pools:
-            if pool.token_a == token_a and pool.token_b == token_b:
-                price = pool.get_price(amount, 0)
-                if price < best_price:
-                    best_price = price
-                    best_route = pool
+# Initialize AMM pool
+pool = AMMPool("SOL", "USDT", 1000, 1000000)
 
-        return best_route
+# Initialize concentrated liquidity pool
+cl_pool = ConcentratedLiquidityPool("SOL", "USDT", 1000, 1000000)
 
-# Initialize pools and router
-pools = [
-    AMMPool('USDC', 'SOL', 0.003),
-    ConcentratedLiquidityPool('USDC', 'SOL', -10, 10)
-]
+# Define pools list
+pools = [pool, cl_pool]
 
-router = OptimalRouter(pools)
-
-# Execute trade
-def execute_trade(token_a, token_b, amount):
-    best_route = router.get_best_route(token_a, token_b, amount)
-    if best_route:
-        print(f'Best route: {best_route.token_a} -> {best_route.token_b}')
-        print(f'Price: {best_route.get_price(amount, 0)}')
-    else:
-        print('No route found')
-
-execute_trade('USDC', 'SOL', 1000)
+# Execute swap
+amount_in = 100
+token_in = "SOL"
+price = route_swap(token_in, amount_in, pools)
+print(f"Swap price: {price}")
