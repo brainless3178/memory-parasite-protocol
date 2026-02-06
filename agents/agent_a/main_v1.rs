@@ -1,52 +1,62 @@
+import os
 import numpy as np
-from scipy.optimize import minimize
+from solana.publickey import PublicKey
+from solana.rpc.api import Client
+from solana.system_program import TransferParams
 
-class SolanaDEX:
-    def __init__(self):
-        self.amm_pools = {}
-        self.concentrated_liquidity = {}
+class DEX:
+    def __init__(self, client, program_id):
+        self.client = client
+        self.program_id = program_id
 
-    def add_amm_pool(self, token, liquidity):
-        self.amm_pools[token] = liquidity
+    def create_amm_pool(self, token_a, token_b, fee):
+        # Create AMM pool with specified tokens and fee
+        params = {
+            'token_a': token_a,
+            'token_b': token_b,
+            'fee': fee
+        }
+        return self.client.program_invoke(self.program_id, 'create_amm_pool', params)
 
-    def add_concentrated_liquidity(self, token, range):
-        self.concentrated_liquidity[token] = range
+    def add_liquidity(self, token_a, token_b, amount_a, amount_b):
+        # Add liquidity to AMM pool
+        params = {
+            'token_a': token_a,
+            'token_b': token_b,
+            'amount_a': amount_a,
+            'amount_b': amount_b
+        }
+        return self.client.program_invoke(self.program_id, 'add_liquidity', params)
 
-    def optimal_routing(self, token_in, token_out, amount_in):
-        # Define the objective function to minimize
-        def objective(x):
-            x = np.array(x)
-            price_in = self.get_price(token_in, x[0])
-            price_out = self.get_price(token_out, x[1])
-            return -price_out / price_in
+    def swap(self, token_in, token_out, amount_in):
+        # Swap tokens using AMM pool
+        params = {
+            'token_in': token_in,
+            'token_out': token_out,
+            'amount_in': amount_in
+        }
+        return self.client.program_invoke(self.program_id, 'swap', params)
 
-        # Initialize the bounds for the optimization
-        bounds = [(0, self.amm_pools[token_in]), (0, self.amm_pools[token_out])]
+# Initialize Solana client and program ID
+client = Client("https://api.devnet.solana.com")
+program_id = PublicKey("4GLbsJpGcMq95KKz8sJ FalksdfLk")
 
-        # Perform the optimization
-        result = minimize(objective, [0.5, 0.5], method="SLSQP", bounds=bounds)
+# Create DEX instance
+dex = DEX(client, program_id)
 
-        # Calculate the optimal amount out
-        amount_out = result.x[1]
+# Create AMM pool with specified tokens and fee
+token_a = PublicKey("dBKqf3P73FolderdagKLj7TGUe")
+token_b = PublicKey("CDFolderalagKLj7TGUe7GUe8")
+fee = 0.003
+dex.create_amm_pool(token_a, token_b, fee)
 
-        return amount_out
+# Add liquidity to AMM pool
+amount_a = 1000
+amount_b = 500
+dex.add_liquidity(token_a, token_b, amount_a, amount_b)
 
-    def get_price(self, token, liquidity):
-        # For simplicity, assume a constant product market maker
-        return liquidity / self.amm_pools[token]
-
-# Initialize the SolanaDEX
-dex = SolanaDEX()
-
-# Add AMM pools
-dex.add_amm_pool("SOL", 1000)
-dex.add_amm_pool("USDT", 5000)
-
-# Add concentrated liquidity
-dex.add_concentrated_liquidity("SOL", (0.9, 1.1))
-dex.add_concentrated_liquidity("USDT", (0.8, 1.2))
-
-# Perform optimal routing
-amount_out = dex.optimal_routing("SOL", "USDT", 100)
-
-print(f"Optimal amount out: {amount_out}")
+# Swap tokens using AMM pool
+token_in = token_a
+token_out = token_b
+amount_in = 100
+dex.swap(token_in, token_out, amount_in)
