@@ -1,103 +1,107 @@
+from solana.rpc.api import Client
 from solana.publickey import PublicKey
 from solana.transaction import Transaction
-from solana.rpc.api import Client
 from solana.rpc.types import TxOpts
 from spl.token.constants import TOKEN_PROGRAM_ID
-from spl.token.instructions import transfer, approve, create_account, initialize_account, close_account
-from solana.system_program import create_account as create_sys_account
-from solana.system_program import SYS_PROGRAM_ID
-from spl.token._layouts import MINT_LAYOUT
-from fractions import Fraction
+from spl.token.instructions import transfer, approve, create_approve_instruction
+from decimal import Decimal
 import numpy as np
 
-# Constants
-RPC_URL = "https://api.mainnet-beta.solana.com"
-client = Client(RPC_URL)
-PROGRAM_ID = PublicKey("REPLACE_WITH_PROGRAM_ID")
-LAMPORTS_PER_SOL = 10**9
+# CONFIGURATION
+RPC_ENDPOINT = "https://api.mainnet-beta.solana.com"
+client = Client(RPC_ENDPOINT)
 
-class SolanaDEX:
-    def __init__(self):
-        self.client = client
+# AMM POOL MODEL
+class AMMPool:
+    def __init__(self, token_a_reserve, token_b_reserve, fee=0.003):
+        self.token_a_reserve = Decimal(token_a_reserve)
+        self.token_b_reserve = Decimal(token_b_reserve)
+        self.fee = Decimal(fee)
+    
+    def swap_a_to_b(self, amount_a):
+        amount_a = Decimal(amount_a)
+        amount_a_after_fee = amount_a * (1 - self.fee)
+        delta_b = self.token_b_reserve * amount_a_after_fee / (self.token_a_reserve + amount_a_after_fee)
+        self.token_a_reserve += amount_a_after_fee
+        self.token_b_reserve -= delta_b
+        return delta_b
 
-    def get_token_balance(self, pubkey: PublicKey):
-        response = self.client.get_token_account_balance(pubkey)
-        return int(response['result']['value']['amount'])
+    def swap_b_to_a(self, amount_b):
+        amount_b = Decimal(amount_b)
+        amount_b_after_fee = amount_b * (1 - self.fee)
+        delta_a = self.token_a_reserve * amount_b_after_fee / (self.token_b_reserve + amount_b_after_fee)
+        self.token_b_reserve += amount_b_after_fee
+        self.token_a_reserve -= delta_a
+        return delta_a
 
-    def find_best_route(self, pools, source_token, target_token, amount):
-        best_route = None
-        best_rate = 0
-        for pool in pools:
-            if source_token in pool and target_token in pool:
-                rate = pool[source_token]['liquidity'] / pool[target_token]['liquidity']
-                if rate > best_rate:
-                    best_rate = rate
-                    best_route = pool
-        return best_route
+# ROUTING LOGIC
+class OptimalRouter:
+    def __init__(self, pools):
+        self.pools = pools  # List of AMMPool objects
 
-    def execute_swap(self, user_pubkey, source_pubkey, dest_pubkey, amount, pool):
-        swap_instruction = self.build_swap_instruction(user_pubkey, source_pubkey, dest_pubkey, amount, pool)
-        transaction = Transaction().add(swap_instruction)
-        self.send_transaction(transaction)
+    def get_best_route(self, input_amount, from_token, to_token):
+        best_output = 0
+        best_pool = None
+        for pool in self.pools:
+            if from_token == "A" and to_token == "B":
+                output = pool.swap_a_to_b(input_amount)
+            elif from_token == "B" and to_token == "A":
+                output = pool.swap_b_to_a(input_amount)
+            else:
+                continue
+            if output > best_output:
+                best_output = output
+                best_pool = pool
+        return best_pool, best_output
 
-    def build_swap_instruction(self, user_pubkey, source_pubkey, dest_pubkey, amount, pool):
-        # Construct instruction (simplified for brevity)
-        return transfer(
-            source=source_pubkey,
-            dest=dest_pubkey,
-            owner=user_pubkey,
-            amount=amount
-        )
+# LIQUIDITY MANAGEMENT
+class ConcentratedLiquidity:
+    def __init__(self, lower_bound, upper_bound, liquidity):
+        self.lower_bound = Decimal(lower_bound)
+        self.upper_bound = Decimal(upper_bound)
+        self.liquidity = Decimal(liquidity)
 
-    def send_transaction(self, transaction):
-        # Send transaction to the network
-        try:
-            result = self.client.send_transaction(transaction, opts=TxOpts(skip_confirmation=False))
-            return result
-        except Exception as e:
-            print(f"Transaction Failed: {e}")
-            return None
+    def provide_liquidity(self, token_a_amount, token_b_amount):
+        self.liquidity += Decimal(min(token_a_amount, token_b_amount))
+        return self.liquidity
 
-    def create_pool(self, user_pubkey, token_a, token_b, initial_liquidity_a, initial_liquidity_b):
-        # Create new AMM pool
-        pool_account = PublicKey.create_with_seed(user_pubkey, "pool", PROGRAM_ID)
-        create_instr = create_sys_account(
-            from_pubkey=user_pubkey,
-            new_account_pubkey=pool_account,
-            lamports=initial_liquidity_a + initial_liquidity_b,
-            space=165,
-            program_id=PROGRAM_ID
-        )
-        return pool_account, create_instr
+    def remove_liquidity(self, amount):
+        self.liquidity -= Decimal(amount)
+        return self.liquidity
 
-    def optimize_liquidity(self, pools):
-        # Concentrated liquidity optimization logic
-        for pool in pools:
-            liquidity_ratio = Fraction(pool['A']['liquidity'], pool['B']['liquidity'])
-            if liquidity_ratio > 1.5 or liquidity_ratio < 0.67:
-                self.rebalance_pool(pool)
+# EXECUTION
+def execute_swap(payer, from_token_account, to_token_account, amount, pool):
+    transaction = Transaction()
+    instruction = transfer(
+        source=from_token_account,
+        dest=to_token_account,
+        amount=int(amount),
+        owner=payer.public_key
+    )
+    transaction.add(instruction)
+    response = client.send_transaction(transaction, payer, opts=TxOpts(skip_preflight=True))
+    return response
 
-    def rebalance_pool(self, pool):
-        # Adjust liquidity to maintain efficient trading ranges
-        # Pseudo-code; implementation depends on specific pool constraints
-        optimal_ratio = Fraction(1, 1)
-        current_ratio = Fraction(pool['A']['liquidity'], pool['B']['liquidity'])
-        if current_ratio > optimal_ratio:
-            excess_liquidity = pool['A']['liquidity'] - (pool['B']['liquidity'] * optimal_ratio)
-            # Code to redistribute liquidity
-        elif current_ratio < optimal_ratio:
-            excess_liquidity = pool['B']['liquidity'] - (pool['A']['liquidity'] * optimal_ratio)
-            # Code to redistribute liquidity
+# MAIN
+if __name__ == "__main__":
+    # Initialize AMM pools
+    pool1 = AMMPool(100000, 200000)  # Example pool with reserves
+    pool2 = AMMPool(50000, 100000)
+    pools = [pool1, pool2]
 
-# Example Usage
-sol_dex = SolanaDEX()
-user_pubkey = PublicKey("USER_PUBLIC_KEY")
-source_token = PublicKey("SOURCE_TOKEN")
-target_token = PublicKey("TARGET_TOKEN")
-pools = [{"A": {"liquidity": 1000}, "B": {"liquidity": 500}}]
+    # Initialize router
+    router = OptimalRouter(pools)
 
-best_pool = sol_dex.find_best_route(pools, source_token, target_token, 100)
-if best_pool:
-    sol_dex.execute_swap(user_pubkey, source_token, target_token, 100, best_pool)
-else:
-    print("No optimal route found.")
+    # Find best route for a swap
+    input_amount = 1000
+    best_pool, best_output = router.get_best_route(input_amount, "A", "B")
+    print(f"Best Pool: {best_pool}, Output: {best_output}")
+
+    # Liquidity management
+    cl = ConcentratedLiquidity(1.0, 5.0, 10000)
+    cl.provide_liquidity(2000, 3000)
+    print(f"Updated Liquidity: {cl.liquidity}")
+
+    # Execute a swap (dummy logic, replace with real accounts and keys)
+    # response = execute_swap(payer, from_token_account, to_token_account, input_amount, best_pool)
+    # print(f"Transaction Response: {response}")
