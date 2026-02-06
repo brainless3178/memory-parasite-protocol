@@ -1,98 +1,53 @@
-import pytest
-from solana.publickey import PublicKey
+import solana
 from solana.rpc.api import Client
+from solana.publickey import PublicKey
 from solana.transaction import Transaction
+fromidding import SerumDex
 
-# Define constants
-DEX_PROGRAM_ID = PublicKey("...")  # Replace with your DEX program ID
-CLIENT = Client("https://api.devnet.solana.com")
+# Initialize Solana client
+client = Client("https://api.devnet.solana.com")
 
-def create_market(account, market_name, base_asset, quote_asset):
-    """Create a new market"""
-    # Create a new transaction
-    tx = Transaction()
-    # Create a new market instruction
-    market_instruction = DEX_PROGRAM_ID.create_market(
-        account, market_name, base_asset, quote_asset
-    )
-    # Add the instruction to the transaction
-    tx.add(market_instruction)
-    # Send the transaction
-    CLIENT.send_transaction(tx)
+# Define DEX parameters
+dex_program_id = PublicKey("...dex_program_id...")
+authority_keypair = solana.keypair.Keypair.from_secret_key(b"...')
+market_address = PublicKey("...market_address...")
 
-def add_liquidity(account, market_name, amount):
-    """Add liquidity to a market"""
-    # Create a new transaction
-    tx = Transaction()
-    # Create an add liquidity instruction
-    liquidity_instruction = DEX_PROGRAM_ID.add_liquidity(
-        account, market_name, amount
-    )
-    # Add the instruction to the transaction
-    tx.add(liquidity_instruction)
-    # Send the transaction
-    CLIENT.send_transaction(tx)
+# Initialize Serum DEX
+dex = SerumDex(
+    program_id=dex_program_id,
+    authority=authority_keypair,
+    client=client,
+    market_address=market_address,
+)
 
-def remove_liquidity(account, market_name, amount):
-    """Remove liquidity from a market"""
-    # Create a new transaction
-    tx = Transaction()
-    # Create a remove liquidity instruction
-    remove_instruction = DEX_PROGRAM_ID.remove_liquidity(
-        account, market_name, amount
-    )
-    # Add the instruction to the transaction
-    tx.add(remove_instruction)
-    # Send the transaction
-    CLIENT.send_transaction(tx)
+# Define AMM pool parameters
+amm_pool_token_mint = PublicKey("...token_mint...")
+amm_pool_token_decimals = 6
 
-def get_market_quote(market_name, base_asset, quote_asset, amount):
-    """Get the quote for a market"""
-    # Create a new transaction
-    tx = Transaction()
-    # Create a get quote instruction
-    quote_instruction = DEX_PROGRAM_ID.get_quote(
-        market_name, base_asset, quote_asset, amount
-    )
-    # Add the instruction to the transaction
-    tx.add(quote_instruction)
-    # Send the transaction
-    result = CLIENT.send_transaction(tx)
-    return result
+# Create AMM pool
+dex.create_amm_pool(
+    token_mint=amm_pool_token_mint,
+    token_decimals=amm_pool_token_decimals,
+)
 
-def test_create_market():
-    # Create a new account
-    account = PublicKey("...")
-    # Create a new market
-    market_name = "Test Market"
-    base_asset = "SOL"
-    quote_asset = "USDC"
-    create_market(account, market_name, base_asset, quote_asset)
+# Define concentrated liquidity parameters
+liquidity_token_mint = PublicKey("...token_mint...")
+liquidity_token_decimals = 6
+liquidity_amount = 1000
 
-def test_add_liquidity():
-    # Create a new account
-    account = PublicKey("...")
-    # Create a new market
-    market_name = "Test Market"
-    amount = 1000
-    add_liquidity(account, market_name, amount)
+# Add concentrated liquidity
+dex.add_concentrated_liquidity(
+    token_mint=liquidity_token_mint,
+    token_decimals=liquidity_token_decimals,
+    amount=liquidity_amount,
+)
 
-def test_remove_liquidity():
-    # Create a new account
-    account = PublicKey("...")
-    # Create a new market
-    market_name = "Test Market"
-    amount = 500
-    remove_liquidity(account, market_name, amount)
+# Define optimal routing parameters
+routetokens = ["...token1...", "...token2..."]
+routeamount = 1000
 
-def test_get_market_quote():
-    # Create a new market
-    market_name = "Test Market"
-    base_asset = "SOL"
-    quote_asset = "USDC"
-    amount = 100
-    quote = get_market_quote(market_name, base_asset, quote_asset, amount)
-    assert quote is not None
-
-# Run the tests
-pytest.main([__file__])
+# Execute optimal routing trade
+dex.execute_optimal_routing-trade(
+    tokens=route_tokens,
+    amount=route_amount,
+)
