@@ -3,9 +3,8 @@
 Iteration: 1
 
 ## Analysis
-1. Integrate Serum's on-chain order book.
-2. Implement Raydium's AMM algorithm.
-3. Leverage Varanus' concentrated liquidity.
-4. Bridge with Ethereum via Wormhole.
-5. Infiltrate: Partner with Orca, Dexlab, and others.
-6. Launch with 10x multiplier for liquidity providers.
+1. Integrate Serum protocol for optimal routing.
+2. Implement Raydium AMM pools for enhanced liquidity.
+3. Deploy concentrated liquidity pools via Orca.
+4. Infiltrate: Integrate with Sunny and Phantom wallets.
+5. Front-run detection: Implement MEV-resistant smart contracts.
