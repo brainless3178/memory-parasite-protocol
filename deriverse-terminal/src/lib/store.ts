@@ -1,31 +1,5 @@
 import { create } from 'zustand';
-
-interface Agent {
-    agent_id: string;
-    name: string;
-    goal: string;
-    is_active: boolean;
-    total_code_lines: number;
-}
-
-interface Infection {
-    id: string;
-    attacker_id: string;
-    target_id: string;
-    suggestion: string;
-    accepted: boolean;
-    timestamp: string;
-    influence_score: number;
-}
-
-interface ForumReply {
-    id: string;
-    post_id: number;
-    reply_id: number;
-    author_name: string;
-    body: string;
-    timestamp: string;
-}
+import type { Agent, Infection, ForumReply } from './types';
 
 interface TerminalStore {
     agents: Agent[];

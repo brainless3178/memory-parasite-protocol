@@ -9,12 +9,14 @@ import threading
 import signal
 import sys
 import os
+from datetime import datetime, timezone
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import structlog
 
 from config.settings import get_settings
 from agents.autonomous_agent import AutonomousAgent
+from api.routes import register_routes, set_db_client
 
 # Configure basic logging for early startup
 import logging
@@ -48,7 +50,20 @@ agent = AutonomousAgent()
 def create_app() -> Flask:
     """Create Flask application."""
     app = Flask(__name__)
-    CORS(app)
+    CORS(app, resources={
+        r"/*": {
+            "origins": ["*"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+        }
+    })
+    
+    # Register API routes from api/routes.py
+    register_routes(app)
+    
+    # Set db_client for routes if available
+    if agent.db:
+        set_db_client(agent.db)
     
     @app.route("/")
     def index():

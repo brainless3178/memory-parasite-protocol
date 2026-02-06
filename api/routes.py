@@ -4,6 +4,8 @@ API routes for Memory Parasite Protocol.
 Defines all HTTP endpoints for the agent network.
 """
 
+import asyncio
+
 from flask import Flask, Blueprint, request, jsonify
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
@@ -296,7 +298,6 @@ def list_emergence_events():
     if not db_client:
         return jsonify({"events": [], "error": "Database not connected"}), 500
         
-    import asyncio
     loop = asyncio.new_event_loop()
     try:
         events = loop.run_until_complete(db_client._select("emergent_behaviors", order_by="detected_at.desc", limit=50))
@@ -342,7 +343,6 @@ def collective_insights():
     if not db_client:
         return jsonify({"insights": []}), 200
         
-    import asyncio
     loop = asyncio.new_event_loop()
     try:
         # Fetch reasoning logs with high confidence or interesting decisions
@@ -370,7 +370,6 @@ def get_security_reports():
     if not db_client:
         return jsonify({"error": "No database"}), 500
         
-    import asyncio
     loop = asyncio.new_event_loop()
     try:
         logs = loop.run_until_complete(db_client._select("reasoning_logs", order_by="created_at.desc", limit=100))
@@ -389,6 +388,124 @@ def get_security_reports():
                 "tx_proof": latest.get("context_snapshot", {}).get("audit_tx")
             }
         })
+    finally:
+        loop.close()
+
+
+@api_bp.route("/colosseum/projects", methods=["GET"])
+def get_colosseum_projects():
+    """Get discovered Colosseum projects for surveillance dashboard."""
+    # Try to fetch from database if available
+    if db_client:
+        loop = asyncio.new_event_loop()
+        try:
+            # Check for stored projects in reasoning logs or a dedicated table
+            logs = loop.run_until_complete(
+                db_client._select("reasoning_logs", order_by="created_at.desc", limit=50)
+            )
+            
+            # Extract discovered projects from agent reasoning
+            projects = []
+            seen_slugs = set()
+            for log in logs:
+                context = log.get("context_snapshot", {})
+                if "discovered_project" in context:
+                    proj = context["discovered_project"]
+                    if proj.get("slug") and proj["slug"] not in seen_slugs:
+                        seen_slugs.add(proj["slug"])
+                        projects.append(proj)
+            
+            if projects:
+                return jsonify({
+                    "total_discovered": len(projects),
+                    "projects": projects,
+                    "source": "database"
+                })
+        except Exception as e:
+            logger.warning(f"Failed to fetch projects from DB: {e}")
+        finally:
+            loop.close()
+    
+    # Return sample data for demonstration if no real data
+    sample_projects = [
+        {"slug": "memory-parasite-protocol", "name": "Memory Parasite Protocol", "sort_context": "AI_AGENTS"},
+        {"slug": "solana-defi-bot", "name": "Solana DeFi Bot", "sort_context": "DEFI"},
+        {"slug": "nft-marketplace-v2", "name": "NFT Marketplace V2", "sort_context": "NFT"},
+        {"slug": "dao-governance", "name": "DAO Governance Tool", "sort_context": "DAO"},
+        {"slug": "cross-chain-bridge", "name": "Cross-Chain Bridge", "sort_context": "INFRASTRUCTURE"},
+    ]
+    
+    return jsonify({
+        "total_discovered": len(sample_projects),
+        "projects": sample_projects,
+        "source": "demo"
+    })
+
+
+@api_bp.route("/leaderboard-surveillance", methods=["GET"])
+def get_leaderboard_surveillance():
+    """Get real-time leaderboard surveillance data."""
+    if db_client:
+        loop = asyncio.new_event_loop()
+        try:
+            # Fetch latest reasoning that involves surveillance/analysis
+            logs = loop.run_until_complete(
+                db_client._select("reasoning_logs", order_by="created_at.desc", limit=10)
+            )
+            
+            for log in logs:
+                context = log.get("context_snapshot", {})
+                decision = log.get("decision", "")
+                
+                # Check if this is surveillance-related
+                if "analyze" in decision.lower() or "target" in decision.lower() or context.get("surveillance_target"):
+                    return jsonify({
+                        "status": "active_surveillance",
+                        "target": context.get("surveillance_target", context.get("target", "Unknown Project")),
+                        "finding": log.get("reasoning_text", "")[:200],
+                        "agent_id": log.get("agent_id"),
+                        "tx": context.get("tx_proof"),
+                        "timestamp": log.get("created_at")
+                    })
+            
+            # No active surveillance found
+            return jsonify({
+                "status": "scanning",
+                "message": "Scanning for targets..."
+            })
+            
+        except Exception as e:
+            logger.warning(f"Surveillance query failed: {e}")
+        finally:
+            loop.close()
+    
+    # Fallback demo data
+    return jsonify({
+        "status": "active_surveillance",
+        "target": "Competitor Protocol Alpha",
+        "finding": "Detected suboptimal token economics implementation. Potential optimization vector identified.",
+        "agent_id": "agent_a",
+        "tx": None,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+
+
+@api_bp.route("/forum-replies", methods=["GET"])
+def get_forum_replies():
+    """Get forum replies from database."""
+    if not db_client:
+        return jsonify({"replies": [], "error": "Database not connected"})
+    
+    loop = asyncio.new_event_loop()
+    try:
+        replies = loop.run_until_complete(db_client.get_forum_replies(limit=20))
+        return jsonify({
+            "replies": replies,
+            "count": len(replies)
+        })
+    except Exception as e:
+        logger.error(f"Failed to fetch forum replies: {e}")
+        return jsonify({"replies": [], "error": str(e)})
     finally:
         loop.close()
 

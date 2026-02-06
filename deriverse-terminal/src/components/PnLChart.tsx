@@ -2,8 +2,14 @@
 
 import React from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import type { ChartDataPoint } from '@/lib/types';
 
-export const PnLChart = ({ data, timeframe = 'LIVE' }: { data: any[], timeframe?: string }) => {
+interface PnLChartProps {
+  data: ChartDataPoint[];
+  timeframe?: string;
+}
+
+export const PnLChart = ({ data, timeframe = 'LIVE' }: PnLChartProps) => {
     // Determine trend
     const isPositive = data.length > 1 ? data[data.length - 1]?.value > data[0]?.value : true;
     const accentColor = isPositive ? 'var(--profit)' : 'var(--loss)';

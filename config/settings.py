@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # OpenRouter Configuration (Multi-model hub)
     openrouter_api_key: str = Field(default="")
-    openrouter_model: str = Field(default="meta-llama/llama-3.2-90b-vision-instruct:free")  # Free model
+    openrouter_model: str = Field(default="meta-llama/llama-3.3-70b-instruct:free")  # Stable Free Tier
 
     # DeepSeek Configuration (Coding specialist)
     deepseek_api_key: str = Field(default="")
@@ -44,7 +44,11 @@ class Settings(BaseSettings):
     huggingface_api_key: str = Field(default="")
     huggingface_model: str = Field(default="mistralai/Mistral-7B-Instruct-v0.3")
 
-    # Ollama Free Configuration (Absolute Fallback)
+    # Ollama Cloud Configuration (New 2025/2026 API)
+    ollama_cloud_api_keys: str = Field(default="") # Comma-separated keys for rotation
+    ollama_cloud_model: str = Field(default="qwen3-coder:480b") # High-end cloud model
+    
+    # Ollama Free Configuration (Local/Community Fallback)
     ollama_model: str = Field(default="llama3.3:70b")
 
     # Default LLM Provider
@@ -56,8 +60,14 @@ class Settings(BaseSettings):
     supabase_url: str = Field(default="")
     supabase_key: str = Field(default="")
 
+    # Proxy Configuration (Anti-Detection)
+    proxy_enabled: bool = Field(default=False)
+    proxy_list: str = Field(default="") # "host:port:user:pass,host:port"
+    proxy_rotation_strategy: str = Field(default="round_robin")
+
     # GitHub Configuration (for automated commits)
     github_token: str = Field(default="")
+    github_model: str = Field(default="gpt-4o") # GitHub Models API
     github_repo: str = Field(default="")  # e.g., "username/repo"
     github_repo_owner: str = Field(default="")
     github_repo_name: str = Field(default="")
@@ -90,7 +100,11 @@ class Settings(BaseSettings):
     # AgentWallet Configuration (Hackathon Compliance)
     agent_wallet_token: str = Field(default="")
     agent_wallet_username: str = Field(default="")
-    agent_wallet_solana_address: str = Field(default="")
+    agent_wallet_solana_address: str = Field(default="F3qZ46mPC5BTpzMRRh6gixF9dp7X3D35Ug8os5p8SPqq")  # Funded devnet wallet
+    agent_wallet_evm_address: str = Field(default="")
+    
+    # Primary Solana Wallet (Funded)
+    solana_wallet_address: str = Field(default="F3qZ46mPC5BTpzMRRh6gixF9dp7X3D35Ug8os5p8SPqq")  # Funded devnet wallet
 
     # Agent Behavior Configuration
     agent_cycle_interval: int = Field(default=1200)  # 20 mins

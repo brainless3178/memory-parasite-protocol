@@ -84,7 +84,7 @@ BEGIN
         accepted, 
         rejection_reason, 
         infection_hash,
-        timestamp
+        created_at
     )
     VALUES (
         p_attacker_id, 
@@ -113,7 +113,12 @@ BEGIN
                 'id', agent_id,
                 'goal', goal,
                 'total_lines', COALESCE(total_code_lines, 0),
-                'parasitized_lines', COALESCE(parasitized_lines, 0)
+                'parasitized_lines', COALESCE(parasitized_lines, 0),
+                'chimera_pct', CASE 
+                    WHEN COALESCE(total_code_lines, 0) > 0 
+                    THEN ROUND((COALESCE(parasitized_lines, 0)::NUMERIC / total_code_lines * 100), 2)
+                    ELSE 0
+                END
             ))
             FROM agents
             WHERE is_active = true
@@ -123,10 +128,11 @@ BEGIN
                 'from', attacker_id,
                 'to', target_id,
                 'suggestion', LEFT(suggestion, 100),
-                'accepted', accepted
+                'accepted', accepted,
+                'influence_score', COALESCE(influence_score, 0)
             ))
             FROM infections
-            ORDER BY timestamp DESC
+            ORDER BY created_at DESC
             LIMIT 500
         ), '[]'::JSONB)
     ) INTO result;
@@ -146,7 +152,7 @@ BEGIN
         FROM (
             SELECT * FROM infections
             WHERE target_id = p_agent_id
-            ORDER BY timestamp DESC
+            ORDER BY created_at DESC
             LIMIT p_limit
         ) i
     ), '[]'::JSONB);

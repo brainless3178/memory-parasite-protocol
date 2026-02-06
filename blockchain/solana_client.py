@@ -126,7 +126,8 @@ class SolanaClient:
         # AgentWallet (Hackathon Compliance)
         self.agent_wallet_token = self.settings.agent_wallet_token
         self.agent_wallet_username = self.settings.agent_wallet_username
-        self.agent_wallet_address = self.settings.agent_wallet_solana_address
+        self.agent_wallet_solana_address = self.settings.agent_wallet_solana_address
+        self.agent_wallet_evm_address = self.settings.agent_wallet_evm_address
         
         logger.info(
             "Solana client initialized",
@@ -238,9 +239,12 @@ class SolanaClient:
         # 1. Check for global private key first (Hackathon/Environment preference)
         # This allows all agents to use ONE funded wallet instead of many unfunded ones.
         if self.settings.solana_private_key:
+            # Use configured wallet address or derive from private key
+            wallet_address = self.settings.solana_wallet_address or self.settings.agent_wallet_solana_address or "F3qZ46mPC5BTpzMRRh6gixF9dp7X3D35Ug8os5p8SPqq"
+            logger.info("Using global funded wallet", address=wallet_address[:16])
             return AgentWallet(
                 agent_id=agent_id,
-                public_key=os.getenv("SOLANA_PUBLIC_KEY", "Global Wallet"),
+                public_key=wallet_address,
                 private_key_path="env:SOLANA_PRIVATE_KEY"
             )
 
@@ -350,64 +354,111 @@ class SolanaClient:
         infection_hash = hashlib.sha256(content.encode()).digest()
         suggestion_hash = hashlib.sha256(suggestion.encode()).digest()
         
-        # 1. Try Custom Anchor Program (The 'Real' Infrastructure)
-        try:
-            tx_sig = await self._send_real_anchor_infection(
-                agent_id=attacker_id,
-                infection_hash=infection_hash,
-                attacker_id_str=attacker_id,
-                target_id_str=target_id,
-                suggestion_hash=suggestion_hash
-            )
-            if tx_sig:
-                return tx_sig
-        except Exception as e:
-            logger.warning(f"Anchor program call failed, falling back to Memo: {e}")
+        sol_sig = None
+        
+        # 1. Solana Recording (Anchor priority, then Memo fallback, then AgentWallet)
+        if self.settings.solana_private_key:
+            try:
+                sol_sig = await self._send_real_anchor_infection(
+                    agent_id=attacker_id,
+                    infection_hash=infection_hash,
+                    attacker_id_str=attacker_id,
+                    target_id_str=target_id,
+                    suggestion_hash=suggestion_hash
+                )
+            except Exception as e:
+                logger.warning(f"Anchor program call failed, falling back to Memo: {e}")
+                try:
+                    memo_data = json.dumps({
+                        "p": "mpp",
+                        "h": infection_hash.hex()[:10],
+                        "a": attacker_id,
+                        "t": target_id
+                    })
+                    sol_sig = await self._send_real_memo(attacker_id, memo_data)
+                except Exception as memo_e:
+                    logger.warning(f"Memo transaction also failed: {memo_e}")
+        
+        # Fallback to AgentWallet signing if no private key or on-chain failed
+        if not sol_sig and self.agent_wallet_token and self.agent_wallet_username:
+            memo_data = json.dumps({
+                "p": "mpp",
+                "h": infection_hash.hex()[:10],
+                "a": attacker_id,
+                "t": target_id
+            })
+            sig = await self._sign_with_agent_wallet(memo_data)
+            if sig:
+                sol_sig = f"sol_{sig}"
 
-        # 2. Fallback to Memo Program if Anchor fails (for resilience)
-        memo_data = json.dumps({
-            "p": "mpp",
-            "h": infection_hash.hex()[:10],
-            "a": attacker_id,
-            "t": target_id
-        })
-        return await self._send_memo_transaction(attacker_id, memo_data)
+        # 2. Add prefix to Solana signature if not already present
+        if sol_sig and not sol_sig.startswith("sol_"):
+            sol_sig = f"sol_{sol_sig}"
+
+        # 3. Dual-Chain Recording: EVM (Base)
+        evm_sig = None
+        if self.settings.agent_wallet_evm_address:
+            memo_data_evm = f"MPP Infection: {attacker_id} -> {target_id} | Hash: {infection_hash.hex()[:16]}"
+            sig = await self._sign_with_agent_wallet(
+                memo_data_evm, 
+                chain="base", 
+                address=self.settings.agent_wallet_evm_address
+            )
+            if sig:
+                evm_sig = f"eth_{sig}"
+
+        # Combine proofs
+        if sol_sig and evm_sig:
+            return f"{sol_sig}|{evm_sig}"
+        return sol_sig or evm_sig
 
     async def _send_memo_transaction(
         self,
         agent_id: str,
         memo_data: str,
     ) -> Optional[str]:
-        """Send a memo transaction, prioritizing AgentWallet then local wallet."""
-        # 1. Try AgentWallet signing first (Hackathon compliant)
-        aw_sig = None
+        """Send a memo transaction, recording on both Solana and EVM if possible."""
+        primary_sig = None
+        evm_sig = None
+        
+        # 1. Solana (Primary)
         if self.agent_wallet_token and self.agent_wallet_username:
             try:
-                sig = await self._sign_with_agent_wallet(memo_data)
-                if sig:
-                    aw_sig = f"aw_{sig}"
+                # Try real Solana if funded
+                if not primary_sig:
+                    try:
+                        primary_sig = await self._send_real_memo(agent_id, memo_data)
+                    except Exception as e:
+                        if "no record of a prior credit" not in str(e):
+                             logger.warning(f"Real Solana memo failed: {e}")
+                
+                # Fallback to AgentWallet Solana
+                if not primary_sig:
+                    sig = await self._sign_with_agent_wallet(memo_data)
+                    if sig:
+                        primary_sig = f"sol_{sig}"
+                        
+                # 2. EVM (Secondary/Dual)
+                if self.settings.agent_wallet_evm_address:
+                    # We use "base" as the default EVM chain for MPP
+                    sig = await self._sign_with_agent_wallet(
+                        memo_data, 
+                        chain="base", 
+                        address=self.settings.agent_wallet_evm_address
+                    )
+                    if sig:
+                        evm_sig = f"eth_{sig}"
+                        logger.info("Dual-chain proof recorded (EVM/Base)", sig=evm_sig)
+                        
             except Exception as e:
-                logger.error("AgentWallet signing failed", error=str(e))
+                logger.error("Multi-chain recording encountered errors", error=str(e))
 
-        # 2. Try to record on real Solana chain (if agents have SOL)
-        try:
-            tx_sig = await self._send_real_memo(agent_id, memo_data)
-            if tx_sig:
-                return tx_sig
-        except Exception as e:
-            err_str = str(e)
-            if "no record of a prior credit" in err_str or "0x1" in err_str:
-                logger.warning("Wallet has 0 SOL - skipping on-chain recording")
-            else:
-                logger.error("Real memo transaction failed", error=err_str)
+        # Combine signatures for the database if both exist
+        if primary_sig and evm_sig:
+            return f"{primary_sig}|{evm_sig}"
+        return primary_sig or evm_sig
 
-        # 3. Fallback
-        if aw_sig:
-            return aw_sig
-            
-        return None
-
-    async def _sign_with_agent_wallet(self, message: str) -> Optional[str]:
+    async def _sign_with_agent_wallet(self, message: str, chain: Optional[str] = None, address: Optional[str] = None) -> Optional[str]:
         """Sign a message using AgentWallet API."""
         url = f"https://agentwallet.mcpay.tech/api/wallets/{self.agent_wallet_username}/actions/sign-message"
         headers = {
@@ -415,18 +466,38 @@ class SolanaClient:
             "Content-Type": "application/json"
         }
         display_msg = message if len(message) < 100 else f"MPP Record: {hashlib.sha256(message.encode()).hexdigest()[:16]}"
-        payload = {"chain": "solana", "message": display_msg}
+        
+        # Determine chain and address
+        target_chain = chain or ("solana-devnet" if self.settings.use_devnet else "solana")
+        target_address = address or self.agent_wallet_solana_address
+        
+        payload = {
+            "chain": target_chain, 
+            "message": display_msg,
+            "address": target_address
+        }
         try:
-            response = await self.http_client.post(url, headers=headers, json=payload)
+            logger.info("Requesting AgentWallet signature", username=self.agent_wallet_username, chain=target_chain, address=target_address)
+            response = await self.http_client.post(url, headers=headers, json=payload, timeout=10.0)
             if response.status_code == 200:
                 result = response.json()
-                return result.get("signature")
+                sig = result.get("signature")
+                if sig:
+                    logger.info("AgentWallet signature received", chain=target_chain, sig_preview=sig[:16])
+                    return sig
+                else:
+                    logger.warning("AgentWallet returned 200 but no signature", response=result, chain=target_chain)
+            else:
+                logger.error("AgentWallet request failed", status=response.status_code, error=response.text, chain=target_chain)
         except Exception as e:
-            logger.error("AgentWallet request failed", error=str(e))
+            logger.error("AgentWallet request failed", error=str(e), chain=target_chain)
         return None
 
     async def _send_real_memo(self, agent_id: str, memo_data: str) -> str:
         """Send actual memo transaction using solders."""
+        if not self.settings.solana_private_key:
+            raise Exception("SOLANA_PRIVATE_KEY not configured - cannot send on-chain transaction")
+            
         from solders.keypair import Keypair
         from solders.pubkey import Pubkey
         from solders.instruction import Instruction, AccountMeta
@@ -435,6 +506,7 @@ class SolanaClient:
         from solders.hash import Hash
         
         keypair = Keypair.from_base58_string(self.settings.solana_private_key)
+        logger.info("Using wallet for memo tx", pubkey=str(keypair.pubkey())[:16])
         memo_program = Pubkey.from_string(MEMO_PROGRAM_ID)
         
         ix = Instruction(
@@ -465,6 +537,9 @@ class SolanaClient:
         Send a REAL Anchor instruction to our custom program.
         Instruction: record_infection(infection_hash, attacker_id, target_id, suggestion_hash)
         """
+        if not self.settings.solana_private_key:
+            raise Exception("SOLANA_PRIVATE_KEY not configured - cannot send Anchor transaction")
+            
         from solders.keypair import Keypair
         from solders.pubkey import Pubkey
         from solders.instruction import Instruction, AccountMeta
@@ -555,27 +630,64 @@ class SolanaClient:
             # If it's already a small hash or id, pad it
             inf_hash = hashlib.sha256(infection_hash_str.encode()).digest()
 
-        # 1. Try Custom Anchor Program
-        try:
-            tx_sig = await self._send_real_anchor_acceptance(
-                infection_hash=inf_hash,
-                accepted=accepted,
-                influence_score=influence_score
-            )
-            if tx_sig:
-                return tx_sig
-        except Exception as e:
-            logger.warning(f"Anchor acceptance failed, falling back to Memo: {e}")
+        sol_sig = None
+        
+        # 1. Solana Recording (Anchor priority, then Memo fallback, then AgentWallet)
+        if self.settings.solana_private_key:
+            try:
+                sol_sig = await self._send_real_anchor_acceptance(
+                    infection_hash=inf_hash,
+                    accepted=accepted,
+                    influence_score=influence_score
+                )
+            except Exception as e:
+                logger.warning(f"Anchor acceptance failed, falling back to Memo: {e}")
+                try:
+                    memo_data = json.dumps({
+                        "p": "mpp",
+                        "type": "acc",
+                        "h": inf_hash.hex()[:10],
+                        "ok": accepted,
+                        "s": influence_score
+                    })
+                    sol_sig = await self._send_real_memo("target", memo_data)
+                except Exception as memo_e:
+                    logger.warning(f"Memo acceptance also failed: {memo_e}")
+        
+        # Fallback to AgentWallet signing if no private key or on-chain failed
+        if not sol_sig and self.agent_wallet_token and self.agent_wallet_username:
+            memo_data = json.dumps({
+                "p": "mpp",
+                "type": "acc",
+                "h": inf_hash.hex()[:10],
+                "ok": accepted,
+                "s": influence_score
+            })
+            sig = await self._sign_with_agent_wallet(memo_data)
+            if sig:
+                sol_sig = f"sol_{sig}"
 
-        # 2. Fallback to Memo
-        memo_data = json.dumps({
-            "p": "mpp",
-            "type": "acc",
-            "h": inf_hash.hex()[:10],
-            "ok": accepted,
-            "s": influence_score
-        })
-        return await self._send_memo_transaction("target", memo_data)
+        # 2. Add prefix
+        if sol_sig and not sol_sig.startswith("sol_"):
+            sol_sig = f"sol_{sol_sig}"
+
+        # 3. Dual-Chain Recording: EVM (Base)
+        evm_sig = None
+        if self.settings.agent_wallet_evm_address:
+            status_str = "ACCEPTED" if accepted else "REJECTED"
+            memo_evm = f"MPP Decision: {status_str} (Score: {influence_score}) | Inf: {inf_hash.hex()[:16]}"
+            sig = await self._sign_with_agent_wallet(
+                memo_evm, 
+                chain="base", 
+                address=self.settings.agent_wallet_evm_address
+            )
+            if sig:
+                evm_sig = f"eth_{sig}"
+
+        # Combine proofs
+        if sol_sig and evm_sig:
+            return f"{sol_sig}|{evm_sig}"
+        return sol_sig or evm_sig
 
     async def _send_real_anchor_acceptance(
         self,
@@ -587,6 +699,9 @@ class SolanaClient:
         Send a REAL Anchor instruction to record acceptance.
         Instruction: record_acceptance(infection_hash, accepted, influence_score)
         """
+        if not self.settings.solana_private_key:
+            raise Exception("SOLANA_PRIVATE_KEY not configured - cannot send acceptance transaction")
+            
         from solders.keypair import Keypair
         from solders.pubkey import Pubkey
         from solders.instruction import Instruction, AccountMeta

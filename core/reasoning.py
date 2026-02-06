@@ -17,10 +17,15 @@ from datetime import datetime, timezone
 from groq import Groq
 from openai import OpenAI
 import google.generativeai as genai
+import warnings
+import httpx
+import re
+warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
 
 from config.settings import get_settings
 from ollamafreeapi import OllamaFreeAPI
 from core.utils import retry_on_failure, RateLimiter
+from core.network import AsyncIPRotator, ProxyConfig
 
 # Define rate limiters for production stability
 groq_limiter = RateLimiter(max_calls=15, time_window=60)
@@ -118,54 +123,90 @@ class ReasoningEngine:
         # Ollama Free API (No-signup fallback)
         self.ollama_client = OllamaFreeAPI()
         
-        # HuggingFace as fallback
         self.huggingface_api_key = settings.huggingface_api_key
         self.huggingface_model = settings.huggingface_model
+        
+        # Initialize IP Rotator
+        self.rotator = self._init_rotator(settings)
+
+    def _init_rotator(self, settings) -> AsyncIPRotator:
+        """Initialize the IP rotator from settings."""
+        proxies = []
+        if settings.proxy_enabled and settings.proxy_list:
+            for p_str in settings.proxy_list.split(','):
+                parts = p_str.split(':')
+                if len(parts) >= 2:
+                    proxies.append(ProxyConfig(
+                        host=parts[0],
+                        port=int(parts[1]),
+                        username=parts[2] if len(parts) >= 3 else None,
+                        password=parts[3] if len(parts) >= 4 else None
+                    ))
+        
+        return AsyncIPRotator(
+            proxies=proxies,
+            rotation_strategy=settings.proxy_rotation_strategy,
+            max_retries=3
+        )
 
     async def reason(
         self,
         mode: ReasoningMode,
         context: ReasoningContext,
     ) -> ReasoningResult:
-        """Execute reasoning using the preferred provider with Groq fallback."""
-        provider = context.provider or self.default_provider
+        """Execute reasoning using a robust multi-provider fallback system."""
+        preferred_provider = context.provider or self.default_provider
         
-        try:
-            if provider == "groq" and self.groq_client:
-                return await self._reason_groq(mode, context)
-            elif provider == "openrouter" and self.openrouter_client:
-                return await self._reason_openai_compat(self.openrouter_client, self.settings.openrouter_model, mode, context)
-            elif provider == "deepseek" and self.deepseek_client:
-                return await self._reason_openai_compat(self.deepseek_client, self.settings.deepseek_model, mode, context)
-            elif provider == "gemini" and self.gemini_model:
-                return await self._reason_gemini(mode, context)
-            elif provider == "ollama":
-                return await self._reason_ollama(mode, context)
-            else:
-                logger.warning(f"Provider {provider} not configured, trying Groq fallback")
-                if self.groq_client:
-                    return await self._reason_groq(mode, context)
-                raise Exception(f"All reasoning providers failed for mode {mode}")
-        except Exception as e:
-            logger.error(f"Reasoning failed for provider {provider}", error=str(e), mode=mode.value)
+        # All potential providers in priority order
+        providers = ["groq", "gemini", "openrouter", "deepseek", "github", "ollama_cloud", "pollinations", "duckduckgo", "ollama"]
+        
+        # Move preferred to front
+        if preferred_provider in providers:
+            providers.remove(preferred_provider)
+            providers.insert(0, preferred_provider)
             
-            # 1. Try Groq as first fallback if primary was not Groq
-            if self.groq_client and provider != "groq":
-                logger.info("Trying Groq fallback...")
-                try:
-                    return await self._reason_groq(mode, context)
-                except Exception as groq_e:
-                    logger.error(f"Groq fallback also failed: {groq_e}")
+        errors = []
+        for provider in providers:
+            # Skip if client not configured
+            if provider == "groq" and not self.groq_client: continue
+            if provider == "gemini" and not self.gemini_model: continue
+            if provider == "openrouter" and not self.openrouter_client: continue
+            if provider == "deepseek" and not self.deepseek_client: continue
             
-            # 2. Try Ollama as absolute fallback (No key required)
-            if provider != "ollama":
-                logger.info("Trying Ollama free fallback...")
-                try:
+            try:
+                logger.debug(f"Attempting reasoning with {provider}", mode=mode.value)
+                if provider == "groq":
+                    return await self._reason_groq(mode, context)
+                elif provider == "gemini":
+                    return await self._reason_gemini(mode, context)
+                elif provider == "openrouter":
+                    return await self._reason_openai_compat(self.openrouter_client, self.settings.openrouter_model, mode, context)
+                elif provider == "deepseek":
+                    return await self._reason_openai_compat(self.deepseek_client, self.settings.deepseek_model, mode, context)
+                elif provider == "ollama":
                     return await self._reason_ollama(mode, context)
-                except Exception as ollama_e:
-                    logger.error(f"Ollama fallback failed: {ollama_e}")
+                elif provider == "pollinations":
+                    return await self._reason_pollinations(mode, context)
+                elif provider == "duckduckgo":
+                    return await self._reason_duckduckgo(mode, context)
+                elif provider == "github":
+                    return await self._reason_github(mode, context)
+                elif provider == "ollama_cloud":
+                    return await self._reason_ollama_cloud(mode, context)
+            except Exception as e:
+                err_msg = str(e)
+                errors.append(f"{provider}: {err_msg}")
+                # Log the specific failure but keep going
+                if "rate_limit" in err_msg.lower() or "429" in err_msg:
+                    logger.warning(f"Provider {provider} rate limited, trying next...", mode=mode.value)
+                else:
+                    logger.error(f"Provider {provider} failed", error=err_msg, mode=mode.value)
+                continue
 
-            raise Exception(f"All reasoning providers failed for mode {mode}")
+        # If we get here, everything failed
+        error_summary = " | ".join(errors)
+        logger.critical("TOTAL REASONING FAILURE - All providers exhausted", errors=error_summary)
+        raise Exception(f"All reasoning providers failed for mode {mode}: {error_summary}")
 
     def reason_sync(
         self,
@@ -208,7 +249,7 @@ class ReasoningEngine:
             return self._parse_response(mode, response.choices[0].message.content)
         except Exception as e:
             logger.error(f"Groq reasoning failed: {e}")
-            raise Exception(f"All reasoning providers failed for mode {mode}")
+            raise
 
     @openai_limiter
     @retry_on_failure(max_retries=3, delay=2)
@@ -233,7 +274,7 @@ class ReasoningEngine:
             return self._parse_response(mode, response.choices[0].message.content)
         except Exception as e:
             logger.error(f"OpenAI-compat reasoning failed for model {context.model or default_model}: {e}")
-            raise Exception(f"All reasoning providers failed for mode {mode}")
+            raise
 
     @gemini_limiter
     @retry_on_failure(max_retries=3, delay=2)
@@ -254,7 +295,274 @@ class ReasoningEngine:
             return self._parse_response(mode, response.text)
         except Exception as e:
             logger.error(f"Gemini reasoning failed: {e}")
-            raise Exception(f"All reasoning providers failed for mode {mode}")
+            raise
+
+    async def raw_reason(
+        self,
+        prompt: str,
+        system_msg: str = "You are an advanced AI assistant.",
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: float = 0.5,
+        max_tokens: int = 2000
+    ) -> str:
+        """Execute reasoning on a raw prompt with multi-provider fallback."""
+        preferred_provider = provider or self.default_provider
+        providers = ["groq", "gemini", "openrouter", "deepseek", "github", "ollama_cloud", "pollinations", "duckduckgo", "ollama"]
+        
+        if preferred_provider in providers:
+            providers.remove(preferred_provider)
+            providers.insert(0, preferred_provider)
+            
+        for p in providers:
+            # Skip unconfigured
+            if p == "groq" and not self.groq_client: continue
+            if p == "gemini" and not self.gemini_model: continue
+            if p == "openrouter" and not self.openrouter_client: continue
+            if p == "deepseek" and not self.deepseek_client: continue
+            
+            try:
+                if p == "groq":
+                    loop = asyncio.get_event_loop()
+                    def make_request():
+                        return self.groq_client.chat.completions.create(
+                            model=model or self.settings.groq_model,
+                            messages=[
+                                {"role": "system", "content": system_msg},
+                                {"role": "user", "content": prompt},
+                            ],
+                            temperature=temperature,
+                            max_tokens=max_tokens
+                        )
+                    response = await loop.run_in_executor(None, make_request)
+                    return response.choices[0].message.content
+                
+                elif p == "gemini":
+                    full_prompt = f"{system_msg}\n\n{prompt}"
+                    try:
+                        response = await self.gemini_model.generate_content_async(full_prompt)
+                    except:
+                        loop = asyncio.get_event_loop()
+                        response = await loop.run_in_executor(
+                            None, 
+                            lambda: self.gemini_model.generate_content(full_prompt)
+                        )
+                    return response.text
+                
+                elif p == "openrouter" or p == "deepseek":
+                    client = self.openrouter_client if p == "openrouter" else self.deepseek_client
+                    def_model = self.settings.openrouter_model if p == "openrouter" else self.settings.deepseek_model
+                    loop = asyncio.get_event_loop()
+                    def make_req():
+                        return client.chat.completions.create(
+                            model=model or def_model,
+                            messages=[
+                                {"role": "system", "content": system_msg},
+                                {"role": "user", "content": prompt},
+                            ],
+                            temperature=temperature
+                        )
+                    response = await loop.run_in_executor(None, make_req)
+                    return response.choices[0].message.content
+                
+                elif p == "ollama":
+                    full_prompt = f"System: {system_msg}\n\nUser: {prompt}"
+                    loop = asyncio.get_event_loop()
+                    content = await loop.run_in_executor(
+                        None, 
+                        lambda: self.ollama_client.chat(model_name=model or self.settings.ollama_model, prompt=full_prompt)
+                    )
+                    return content
+                
+                elif p == "pollinations":
+                    return await self._raw_pollinations(prompt, system_msg)
+                
+                elif p == "duckduckgo":
+                    return await self._raw_duckduckgo(prompt, system_msg)
+                
+                elif p == "github":
+                    return await self._raw_github(prompt, system_msg)
+                
+                elif p == "ollama_cloud":
+                    return await self._raw_ollama_cloud(prompt, system_msg)
+            except Exception as e:
+                logger.warning(f"Raw reasoning failed for {p}", error=str(e))
+                continue
+                
+        return "Reasoning failed for all providers."
+
+
+    async def _reason_github(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
+        """Text reasoning via GitHub Models API (Keyed with GITHUB_TOKEN)."""
+        system_prompt = self._build_system_prompt(mode, context)
+        user_prompt = self._build_user_prompt(mode, context)
+        content = await self._raw_github(user_prompt, system_prompt)
+        return self._parse_response(mode, content)
+
+    async def _raw_github(self, prompt: str, system_msg: str = "You are an AI assistant.") -> str:
+        """Raw text request to GitHub Models API."""
+        if not self.settings.github_token:
+            return "GitHub Models failed: No GITHUB_TOKEN provided."
+            
+        url = "https://models.inference.ai.azure.com/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.settings.github_token}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "messages": [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": prompt}
+            ],
+            "model": self.settings.github_model,
+            "temperature": 0.7,
+            "max_tokens": 2048
+        }
+        try:
+            response = await self.rotator.post(url, json=payload, headers=headers, timeout=60.0)
+            if response and response.status_code == 200:
+                result = response.json()
+                return result["choices"][0]["message"]["content"]
+            if response:
+                logger.warning(f"GitHub Models returned {response.status_code}: {response.text}")
+        except Exception as e:
+            logger.error(f"GitHub Models request failed: {e}")
+        return "GitHub Models reasoning failed."
+
+    @retry_on_failure(max_retries=3, delay=2)
+    async def _reason_ollama_cloud(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
+        """Text reasoning via Ollama Cloud API with key rotation."""
+        system_prompt = self._build_system_prompt(mode, context)
+        user_prompt = self._build_user_prompt(mode, context)
+        content = await self._raw_ollama_cloud(user_prompt, system_prompt)
+        return self._parse_response(mode, content)
+
+    async def _raw_ollama_cloud(self, prompt: str, system_msg: str = "You are an AI assistant.") -> str:
+        """Raw text request to Ollama Cloud with key rotation logic."""
+        keys = [k.strip() for k in self.settings.ollama_cloud_api_keys.split(",") if k.strip()]
+        if not keys:
+            return "Ollama Cloud failed: No keys provided."
+            
+        # Try keys sequentially in case of rate limits
+        for api_key in keys:
+            url = "https://ollama.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": self.settings.ollama_cloud_model,
+                "messages": [
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": prompt}
+                ]
+            }
+            try:
+                response = await self.rotator.post(url, json=payload, headers=headers, timeout=60.0)
+                if response and response.status_code == 200:
+                    result = response.json()
+                    return result["choices"][0]["message"]["content"]
+                elif response and response.status_code == 429:
+                    logger.warning(f"Ollama Cloud key rate limited, trying next key...")
+                    continue
+                elif response:
+                    logger.warning(f"Ollama Cloud error {response.status_code}: {response.text}")
+            except Exception as e:
+                logger.error(f"Ollama Cloud request failed: {e}")
+                continue
+                
+        return "Ollama Cloud reasoning failed for all provided keys."
+
+    async def _reason_pollinations(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
+        """Text reasoning via Pollinations AI (Unlimited/Keyless)."""
+        system_prompt = self._build_system_prompt(mode, context)
+        user_prompt = self._build_user_prompt(mode, context)
+        content = await self._raw_pollinations(user_prompt, system_prompt)
+        return self._parse_response(mode, content)
+
+    async def _reason_duckduckgo(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
+        """Text reasoning via DuckDuckGo AI (Keyless/Private)."""
+        system_prompt = self._build_system_prompt(mode, context)
+        user_prompt = self._build_user_prompt(mode, context)
+        content = await self._raw_duckduckgo(user_prompt, system_prompt)
+        return self._parse_response(mode, content)
+
+    async def _raw_pollinations(self, prompt: str, system_msg: str = "You are an AI assistant.") -> str:
+        """Raw text request to Pollinations AI."""
+        url = "https://text.pollinations.ai/"
+        payload = {
+            "messages": [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": prompt}
+            ],
+            "model": "openai-large",  # High quality fallback
+            "seed": hashlib.md5(prompt.encode()).digest()[0],
+            "jsonMode": False
+        }
+        try:
+            response = await self.rotator.post(url, json=payload, timeout=30.0)
+            if response and response.status_code == 200:
+                return response.text
+            if response:
+                logger.warning(f"Pollinations AI returned {response.status_code}: {response.text}")
+        except Exception as e:
+            logger.error(f"Pollinations AI request failed: {e}")
+        return "Pollinations reasoning failed."
+
+    async def _raw_duckduckgo(self, prompt: str, system_msg: str = "You are an AI assistant.") -> str:
+        """Raw text request to DuckDuckGo AI (via public unofficial endpoint)."""
+        # DDG AI requires a VQD token which is retrieved from a status call
+        try:
+            # 1. Get VQD token
+            vqd_headers = {"x-vqd-accept": "1"}
+            status_resp = await self.rotator.get("https://duckduckgo.com/duckchat/v1/status", headers=vqd_headers)
+            if not status_resp:
+                return "DuckDuckGo status request failed."
+            
+            vqd = status_resp.headers.get("x-vqd-4")
+            if not vqd:
+                return "DuckDuckGo VQD retrieval failed."
+
+            # 2. Chat request
+            payload = {
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {"role": "user", "content": f"{system_msg}\n\n{prompt}"}
+                ]
+            }
+            chat_headers = {
+                "x-vqd-4": vqd,
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream"
+            }
+            
+            response = await self.rotator.post(
+                "https://duckduckgo.com/duckchat/v1/chat",
+                json=payload,
+                headers=chat_headers,
+                timeout=30.0
+            )
+            
+            if response and response.status_code == 200:
+                # Parse SSE stream
+                full_text = ""
+                for line in response.text.splitlines():
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                            if "message" in chunk:
+                                full_text += chunk["message"]
+                        except:
+                            continue
+                return full_text if full_text else "DuckDuckGo returned empty response."
+            if response:
+                logger.warning(f"DuckDuckGo AI returned {response.status_code}: {response.text}")
+        except Exception as e:
+            logger.error(f"DuckDuckGo AI request failed: {e}")
+        return "DuckDuckGo reasoning failed."
 
     async def _reason_ollama(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
         """Call OllamaFreeAPI for no-cost reasoning."""
@@ -436,29 +744,51 @@ class ReasoningEngine:
         return content
     
     def _extract_json(self, content: str) -> Any:
-        """Extract JSON from content."""
+        """Extract JSON from content with maximum robustness."""
         import re
         
-        # Try to find JSON in code blocks
-        pattern = r"```(?:json)?\n(.*?)```"
-        matches = re.findall(pattern, content, re.DOTALL)
-        
+        # 1. Try to find JSON in markdown blocks (preferred)
+        code_block_pattern = r"```(?:json)?\n(.*?)\n```"
+        matches = re.findall(code_block_pattern, content, re.DOTALL)
         if matches:
-            return json.loads(matches[0])
+            try:
+                return json.loads(matches[0].strip())
+            except:
+                pass
+
+        # 2. Try to find logic-dense blocks (objects or arrays)
+        # Search from first { to last } or first [ to last ]
+        first_bracket = content.find('[')
+        last_bracket = content.rfind(']')
+        first_brace = content.find('{')
+        last_brace = content.rfind('}')
         
-        # Try parsing content directly
-        # Find first [ or { and parse from there
-        start_array = content.find('[')
-        start_obj = content.find('{')
+        candidates = []
+        if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
+            candidates.append(content[first_bracket:last_bracket+1])
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            candidates.append(content[first_brace:last_brace+1])
+            
+        # Try largest candidates first to find the most complete structure
+        candidates.sort(key=len, reverse=True)
         
-        if start_array != -1 or start_obj != -1:
-            start = min(
-                start_array if start_array != -1 else float('inf'),
-                start_obj if start_obj != -1 else float('inf')
-            )
-            return json.loads(content[int(start):])
+        for cand in candidates:
+            try:
+                return json.loads(cand)
+            except:
+                try:
+                    # Recovery: Models sometimes output Python-style dicts with single quotes
+                    fixed = re.sub(r"'(.*?)'", r'"\1"', cand)
+                    return json.loads(fixed)
+                except:
+                    continue
         
-        raise json.JSONDecodeError("No JSON found", content, 0)
+        # 3. Final fallback: raw parse or strip and parse
+        try:
+            return json.loads(content.strip())
+        except:
+            logger.error("JSON extraction failed", content_preview=content[:500])
+            raise json.JSONDecodeError("No valid JSON found in response", content, 0)
     
     def _mock_response(self, mode: ReasoningMode, context: ReasoningContext) -> ReasoningResult:
         """Generate mock response when API is not configured."""
@@ -679,6 +1009,7 @@ Return a JSON object:
   "code": "The manipulative code snippet",
   "parasitic_load": "0.1 to 0.5 (how much it forces your goal)"
 }
+ONLY return the JSON object. No other text or explanation.
 """
 
 # ============================================
@@ -867,26 +1198,14 @@ class EnhancedReasoningEngine:
         # which builds its own prompts. We'll use a hack or just the _reason_groq directly if we can.
         # Let's add a raw_reason to ReasoningEngine or just use build_user_prompt
         
-        # Actually, let's just use the groq_client directly if available or fallback
-        response_text = "Analysis incomplete."
-        if self.base_engine.groq_client:
-            try:
-                loop = asyncio.get_event_loop()
-                def make_request():
-                    return self.base_engine.groq_client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
-                        messages=[
-                            {"role": "system", "content": "You are an advanced code analysis AI with deep reasoning capabilities."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        temperature=0.3,
-                        max_tokens=2000
-                    )
-                response = await loop.run_in_executor(None, make_request)
-                response_text = response.choices[0].message.content
-            except Exception as e:
-                logger.error(f"Enhanced phase {phase_name} failed on Groq", error=str(e))
-                response_text = f"Error: {str(e)}"
+        # Use base_engine's raw_reason which has full fallback logic
+        response_text = await self.base_engine.raw_reason(
+            prompt=prompt,
+            system_msg="You are an advanced code analysis AI with deep reasoning capabilities.",
+            provider=None, # Allow it to use full fallback chain
+            temperature=0.3,
+            max_tokens=2000
+        )
         
         result = {
             'phase': phase_name,

@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useRef } from 'react';
+import type { Infection } from '@/lib/types';
 
 const columns = [
     { key: 'timestamp', label: 'Invasion Time', width: '120px' },
@@ -13,7 +13,11 @@ const columns = [
     { key: 'status', label: 'Status', width: '100px' },
 ];
 
-export const InfectionTable = ({ infections }: { infections: any[] }) => {
+interface InfectionTableProps {
+  infections: Infection[];
+}
+
+export const InfectionTable = ({ infections }: InfectionTableProps) => {
     const parentRef = useRef<HTMLDivElement>(null);
 
     const rowVirtualizer = useVirtualizer({
@@ -80,10 +84,40 @@ export const InfectionTable = ({ infections }: { infections: any[] }) => {
                                 </div>
 
                                 {/* On-Chain Proof */}
-                                <div className="text-[10px] font-['IBM_Plex_Mono'] text-text-muted hover:text-neutral">
-                                    <a href={`https://explorer.solana.com/tx/${inf.solana_tx_hash}`} target="_blank" rel="noreferrer" className="flex items-center gap-1">
-                                        {inf.solana_tx_hash ? `${inf.solana_tx_hash.slice(0, 4)}...${inf.solana_tx_hash.slice(-4)}` : '0x...NULL'}
-                                    </a>
+                                <div className="text-[10px] font-['IBM_Plex_Mono'] text-text-muted flex flex-col gap-1">
+                                    {(() => {
+                                        const sigs = (inf.solana_tx_hash || '').split('|');
+                                        const solSig = sigs.find(s => s.startsWith('sol_')) || (!sigs[0]?.startsWith('eth_') ? sigs[0] : null);
+                                        const ethSig = sigs.find(s => s.startsWith('eth_'));
+
+                                        return (
+                                            <>
+                                                {solSig && (
+                                                    <a
+                                                        href={`https://explorer.solana.com/tx/${solSig.replace('sol_', '')}?cluster=devnet`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="hover:text-neutral flex items-center gap-1"
+                                                    >
+                                                        <span className="text-[8px] px-1 bg-neutral/10 rounded">SOL</span>
+                                                        {solSig.replace('sol_', '').slice(0, 4)}...{solSig.replace('sol_', '').slice(-4)}
+                                                    </a>
+                                                )}
+                                                {ethSig && (
+                                                    <a
+                                                        href={`https://basescan.org/tx/${ethSig.replace('eth_', '')}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="hover:text-blue-400 flex items-center gap-1"
+                                                    >
+                                                        <span className="text-[8px] px-1 bg-blue-500/10 text-blue-400 rounded">BASE</span>
+                                                        {ethSig.replace('eth_', '').slice(0, 4)}...{ethSig.replace('eth_', '').slice(-4)}
+                                                    </a>
+                                                )}
+                                                {!solSig && !ethSig && <span>0x...NULL</span>}
+                                            </>
+                                        );
+                                    })()}
                                 </div>
 
                                 {/* Status */}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Sidebar } from '@/components/Sidebar';
 import { MetricCard } from '@/components/MetricCard';
 import { PnLChart } from '@/components/PnLChart';
@@ -18,155 +18,179 @@ import {
   ShieldAlert,
   Zap,
   Terminal,
-  Info,
   Target,
   ChevronRight,
   Database,
-  MessageSquare
+  MessageSquare,
+  Loader2
 } from 'lucide-react';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://memory-parasite-protocol-brainless3178.koyeb.app';
+import {
+  getSafetyControls,
+  postSafetyAction,
+  getColosseumProjects,
+  getLeaderboardSurveillance,
+} from '@/lib/api';
+import type {
+  Agent,
+  Infection,
+  ForumReply,
+  EmergentBehavior,
+  SafetyStatus,
+  DiscoveryData,
+  SurveillanceData,
+  ChartDataPoint,
+} from '@/lib/types';
 
 const DashboardContent = () => {
   const { activeView, setSelectedAgent } = useStore();
 
-  // Fetch Agents
-  const { data: agents = [] } = useQuery({
+  // Fetch Agents from Supabase
+  const { data: agents = [], isLoading: agentsLoading } = useQuery<Agent[]>({
     queryKey: ['agents'],
     queryFn: async () => {
-      const { data } = await supabase.from('agents').select('*');
-      return data || [];
+      const { data, error } = await supabase.from('agents').select('*');
+      if (error) throw error;
+      return (data || []) as Agent[];
     },
     refetchInterval: 10000,
+    staleTime: 5000,
   });
 
-  // Fetch Infections
-  const { data: infections = [] } = useQuery({
+  // Fetch Infections from Supabase
+  const { data: infections = [], isLoading: infectionsLoading } = useQuery<Infection[]>({
     queryKey: ['infections'],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('infections')
         .select('*')
         .order('created_at', { ascending: false });
-      return data || [];
+      if (error) throw error;
+      return (data || []) as Infection[];
     },
     refetchInterval: 5000,
+    staleTime: 3000,
   });
 
-  // Fetch Forum Replies
-  const { data: forumReplies = [] } = useQuery({
+  // Fetch Forum Replies from Supabase with fallback
+  const { data: forumReplies = [] } = useQuery<ForumReply[]>({
     queryKey: ['forum_replies'],
     queryFn: async () => {
-      // 1. Try forum_replies
+      // Try forum_replies table first
       const { data: replies, error } = await supabase
         .from('forum_replies')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!error && replies && replies.length > 0) return replies;
+      if (!error && replies && replies.length > 0) {
+        return replies as ForumReply[];
+      }
 
-      // 2. Fallback to reasoning_logs (FORUM_REPLY decision)
+      // Fallback to reasoning_logs (FORUM_REPLY decision)
       const { data: logs } = await supabase
         .from('reasoning_logs')
         .select('*')
         .eq('decision', 'FORUM_REPLY')
         .order('created_at', { ascending: false });
 
-      if (logs) {
-        return logs.map((l: any) => ({
+      if (logs && logs.length > 0) {
+        return logs.map((l) => ({
           id: l.id,
-          post_id: l.context_snapshot?.post_id,
-          reply_id: l.context_snapshot?.reply_id,
+          post_id: l.context_snapshot?.post_id ?? 0,
+          reply_id: l.context_snapshot?.reply_id ?? 0,
           author_name: l.context_snapshot?.author || 'Unknown',
           body: l.reasoning_text,
-          timestamp: l.created_at
-        }));
+          timestamp: l.created_at,
+        })) as ForumReply[];
       }
       return [];
     },
     refetchInterval: 10000,
+    staleTime: 8000,
   });
 
-  // Fetch Emergent Behaviors
-  const { data: emergentBehaviors = [] } = useQuery({
+  // Fetch Emergent Behaviors from Supabase
+  const { data: emergentBehaviors = [] } = useQuery<EmergentBehavior[]>({
     queryKey: ['emergence'],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('emergent_behaviors')
         .select('*')
         .order('detected_at', { ascending: false });
-      return data || [];
+      if (error) throw error;
+      return (data || []) as EmergentBehavior[];
     },
     refetchInterval: 5000,
+    staleTime: 3000,
   });
 
-  // Fetch Safety Status
-  const { data: safetyStatus = { active_controls: [], network_status: 'active', safety_audit_log: [] }, refetch: refetchSafety } = useQuery({
+  // Fetch Safety Status from Backend API
+  const {
+    data: safetyStatus = {
+      active_controls: [],
+      network_status: 'active' as const,
+      quarantined_agents: [],
+      safety_audit_log: [],
+    },
+    refetch: refetchSafety,
+  } = useQuery<SafetyStatus>({
     queryKey: ['safety'],
-    queryFn: async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/safety/controls`);
-        return await res.json();
-      } catch (e) {
-        return { active_controls: [], network_status: 'active', safety_audit_log: [] };
-      }
-    },
+    queryFn: getSafetyControls,
     refetchInterval: 5000,
+    staleTime: 3000,
   });
 
-  // Fetch Discovered Projects
-  const { data: discovery = { total_discovered: 0, projects: [] } } = useQuery({
+  // Fetch Discovered Projects from Backend API
+  const { data: discovery = { total_discovered: 0, projects: [] } } = useQuery<DiscoveryData>({
     queryKey: ['discovery'],
-    queryFn: async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/colosseum/projects`);
-        return await res.json();
-      } catch (e) {
-        return { total_discovered: 0, projects: [] };
-      }
-    },
+    queryFn: getColosseumProjects,
     refetchInterval: 10000,
+    staleTime: 8000,
   });
 
-  // Fetch Live Surveillance
-  const { data: surveillance = { status: 'offline' } } = useQuery({
+  // Fetch Live Surveillance from Backend API
+  const { data: surveillance = { status: 'offline' as const } } = useQuery<SurveillanceData>({
     queryKey: ['surveillance'],
-    queryFn: async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/leaderboard-surveillance`);
-        return await res.json();
-      } catch (e) {
-        return { status: 'offline' };
-      }
-    },
+    queryFn: getLeaderboardSurveillance,
     refetchInterval: 3000,
+    staleTime: 2000,
   });
 
   // Handle Safety Actions
   const handleSafetyAction = async (action: string, targetId?: string) => {
-    await fetch(`${API_BASE}/api/safety/controls`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, target_id: targetId })
-    });
+    await postSafetyAction(action, targetId);
     refetchSafety();
   };
 
+  // Show loading state
+  const isLoading = agentsLoading || infectionsLoading;
+
   // Calculate Metrics
   const totalInfections = infections.length;
-  const mutations = infections.filter((i: any) => i.accepted).length;
+  const mutations = infections.filter((i) => i.accepted).length;
   const winRate = totalInfections > 0 ? (mutations / totalInfections) * 100 : 0;
   const baseInfluence = mutations * 12.5;
-  const totalInfluence = infections.reduce((acc: number, i: any) => acc + (i.influence_score || 0), 0) + baseInfluence;
-  const activeSpecimens = agents.filter((a: any) => a.is_active).length;
+  const totalInfluence = infections.reduce((acc, i) => acc + (i.influence_score || 0), 0) + baseInfluence;
+  const activeSpecimens = agents.filter((a) => a.is_active).length;
 
-  const chartData = infections.slice().reverse().map((inf: any, idx: number) => ({
+  const chartData: ChartDataPoint[] = infections.slice().reverse().map((inf, idx) => ({
     timestamp: new Date(inf.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    value: infections.slice(0, idx + 1).reduce((acc: number, curr: any) => acc + (curr.influence_score || 12.5), 0)
+    value: infections.slice(0, idx + 1).reduce((acc, curr) => acc + (curr.influence_score || 12.5), 0)
   }));
 
   if (chartData.length === 0) {
     chartData.push({ timestamp: 'START', value: 0 });
+  }
+
+  // Show loading overlay for initial load
+  if (isLoading && agents.length === 0) {
+    return (
+      <div className="relative min-h-screen bg-void overflow-hidden text-text-primary flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-16 h-16 animate-spin text-neutral mx-auto mb-4" />
+          <p className="text-text-secondary font-['IBM_Plex_Mono'] text-sm">INITIALIZING NEURAL NETWORK...</p>
+        </div>
+      </div>
+    );
   }
 
   const signatures: Record<string, string> = {
@@ -247,7 +271,7 @@ const DashboardContent = () => {
                         Specimen Status
                       </h3>
                       <div className="space-y-4 flex-1">
-                        {agents.slice(0, 5).map((agent: any) => (
+                        {agents.slice(0, 5).map((agent) => (
                           <button
                             key={agent.agent_id}
                             onClick={() => setSelectedAgent(agent.agent_id)}
@@ -361,7 +385,7 @@ const DashboardContent = () => {
                     <div className="bg-surface/20 rounded-lg p-4 border border-border/30 overflow-hidden">
                       <p className="label text-[10px] mb-3 uppercase text-text-muted">Competitive Intelligence: All Projects</p>
                       <div className="space-y-2 max-h-[120px] overflow-y-auto scrollbar-hide">
-                        {discovery.projects.slice(0, 10).map((p: any) => (
+                        {discovery.projects.slice(0, 10).map((p) => (
                           <div key={p.slug} className="flex items-center justify-between text-[11px] p-2 hover:bg-white/5 rounded transition-colors group">
                             <span className="text-text-secondary group-hover:text-text-primary truncate max-w-[150px]">{p.name}</span>
                             <span className="text-[9px] text-text-muted uppercase px-1 border border-border/30 rounded">{p.sort_context?.replace('_', ' ')}</span>
@@ -399,7 +423,7 @@ const DashboardContent = () => {
                     Agent Mutation Evolution
                   </h3>
                   <div className="space-y-8">
-                    {agents.map((agent: any) => {
+                    {agents.map((agent) => {
                       const contamination = mutations > 0 ? (mutations * 15 / agents.length + Math.random() * 5) : 0;
                       return (
                         <button
@@ -462,7 +486,7 @@ const DashboardContent = () => {
                   <span className="text-[10px] font-['IBM_Plex_Mono'] text-neutral animate-pulse uppercase font-bold">● System Encrypted Link</span>
                 </div>
                 <div className="flex-1 p-8 font-['IBM_Plex_Mono'] text-xs overflow-y-auto space-y-6 scrollbar-hide bg-[linear-gradient(rgba(0,212,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(0,212,255,0.01)_1px,transparent_1px)] bg-[size:20px_20px]">
-                  {infections.slice(0, 15).map((inf: any) => (
+                  {infections.slice(0, 15).map((inf) => (
                     <div key={inf.id} className="p-4 bg-surface/40 rounded-lg border border-border/50 group hover:border-neutral/30 transition-all">
                       <div className="flex items-center justify-between mb-3 text-[10px]">
                         <div className="flex items-center gap-2 uppercase font-bold">
@@ -493,7 +517,7 @@ const DashboardContent = () => {
 
                 <div className="grid grid-cols-1 gap-4">
                   {forumReplies.length > 0 ? (
-                    forumReplies.map((reply: any) => (
+                    forumReplies.map((reply) => (
                       <motion.div
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
@@ -513,7 +537,7 @@ const DashboardContent = () => {
                             </div>
                           </div>
                           <span className="text-[10px] text-text-muted">
-                            {new Date(reply.timestamp || reply.created_at).toLocaleString()}
+                            {new Date(reply.timestamp || reply.created_at || new Date().toISOString()).toLocaleString()}
                           </span>
                         </div>
                         <p className="text-text-secondary leading-relaxed font-['Work_Sans']">
@@ -592,7 +616,7 @@ const DashboardContent = () => {
                     </h3>
                     {safetyStatus.quarantined_agents && safetyStatus.quarantined_agents.length > 0 ? (
                       <div className="space-y-4">
-                        {safetyStatus.quarantined_agents.map((agent: any) => (
+                        {safetyStatus.quarantined_agents && safetyStatus.quarantined_agents.map((agent) => (
                           <div key={agent.agent_id} className="bg-void/50 border border-rare/50 p-4 rounded-lg flex items-center justify-between">
                             <div>
                               <div className="text-sm font-bold text-text-primary">{agent.agent_id}</div>
@@ -630,7 +654,7 @@ const DashboardContent = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/50 text-text-secondary">
-                        {safetyStatus.safety_audit_log && safetyStatus.safety_audit_log.map((log: any, idx: number) => (
+                        {safetyStatus.safety_audit_log && safetyStatus.safety_audit_log.map((log, idx) => (
                           <tr key={idx} className="hover:bg-elevated/50 transition-colors">
                             <td className="py-3 pl-2">{new Date(log.timestamp).toLocaleTimeString()}</td>
                             <td className="py-3 uppercase font-bold">{log.action || log.event_type}</td>
@@ -668,7 +692,7 @@ const DashboardContent = () => {
 
                 <div className="grid grid-cols-1 gap-6">
                   {emergentBehaviors.length > 0 ? (
-                    emergentBehaviors.map((event: any) => (
+                    emergentBehaviors.map((event) => (
                       <motion.div
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}

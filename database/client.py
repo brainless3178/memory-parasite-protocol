@@ -620,34 +620,6 @@ class SupabaseClient:
             })
         return transformed
 
-    async def get_forum_replies(self, limit: int = 20) -> List[Dict[str, Any]]:
-        """Get recent forum replies from either forum_replies or reasoning_logs fallbacks."""
-        # Try dedicated table first
-        results = await self._select("forum_replies", order_by="created_at.desc", limit=limit)
-        if results:
-            return results
-            
-        # Fallback to reasoning_logs filtering
-        logs = await self._select(
-            "reasoning_logs", 
-            filters={"decision": "FORUM_REPLY"},
-            order_by="created_at.desc",
-            limit=limit
-        )
-        
-        # Transform back to reply format for frontend compatibility
-        transformed = []
-        for l in logs:
-            transformed.append({
-                "id": l.get("id"),
-                "post_id": l.get("context_snapshot", {}).get("post_id"),
-                "reply_id": l.get("context_snapshot", {}).get("reply_id"),
-                "author_name": l.get("context_snapshot", {}).get("author", "Unknown"),
-                "body": l.get("reasoning_text"),
-                "timestamp": l.get("created_at")
-            })
-        return transformed
-
     # =========================================================================
     # NEW CODE SPEAKS LOUDER METHODS
     # =========================================================================
@@ -696,7 +668,7 @@ class SupabaseClient:
         return await self._select(
             "infections",
             {"target_id": agent_id},
-            order_by="timestamp.desc",
+            order_by="created_at.desc",
             limit=limit,
         )
     
@@ -1072,6 +1044,22 @@ class SupabaseClient:
         # Fallback: build manually
         return []
 
+    async def get_recent_logs(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        Get recent reasoning logs from the database.
+        
+        Args:
+            limit: Maximum number of logs to return
+            
+        Returns:
+            List of reasoning log records with agent_id, decision, etc.
+        """
+        return await self._select(
+            "reasoning_logs",
+            order_by="created_at.desc",
+            limit=limit,
+        )
+
 
 @lru_cache()
 def get_supabase_client() -> SupabaseClient:
@@ -1146,3 +1134,9 @@ async def get_chimera_metrics(agent_id: str) -> Dict[str, Any]:
     """Convenience function for get_chimera_metrics."""
     client = get_supabase_client()
     return await client.get_chimera_metrics(agent_id)
+
+
+async def get_recent_logs(limit: int = 20) -> List[Dict[str, Any]]:
+    """Convenience function for get_recent_logs."""
+    client = get_supabase_client()
+    return await client.get_recent_logs(limit)

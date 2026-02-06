@@ -3,14 +3,15 @@
 import React from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { useSpring, animated } from '@react-spring/web';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
 
-function cn(...inputs: ClassValue[]) {
-    return twMerge(clsx(inputs));
+interface AnimatedNumberProps {
+    value: number;
+    decimals?: number;
+    prefix?: string;
+    suffix?: string;
 }
 
-export const AnimatedNumber = ({ value, decimals = 2, prefix = '', suffix = '' }: any) => {
+export const AnimatedNumber = ({ value, decimals = 2, prefix = '', suffix = '' }: AnimatedNumberProps) => {
     const { number } = useSpring({
         from: { number: 0 },
         number: value,

@@ -5,48 +5,50 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Zap,
     Terminal,
-    Activity,
     ShieldAlert,
     Cpu,
     Dna,
-    Link as LinkIcon,
-    X
+    X,
+    Activity
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import type { Agent, ReasoningLog } from '@/lib/types';
 
 export const SpecimenDetail = () => {
     const { selectedAgent, setSelectedAgent } = useStore();
 
     // Fetch thoughts/reasoning for the selected agent
-    const { data: thoughts = [] } = useQuery({
+    const { data: thoughts = [] } = useQuery<ReasoningLog[]>({
         queryKey: ['reasoning_logs', selectedAgent],
         queryFn: async () => {
             if (!selectedAgent) return [];
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('reasoning_logs')
                 .select('*')
                 .eq('agent_id', selectedAgent)
                 .order('created_at', { ascending: false })
                 .limit(10);
-            return data || [];
+            if (error) throw error;
+            return (data || []) as ReasoningLog[];
         },
         enabled: !!selectedAgent,
         refetchInterval: 5000,
     });
 
     // Get specific agent info
-    const { data: agentInfo } = useQuery({
+    const { data: agentInfo } = useQuery<Agent | null>({
         queryKey: ['agent_detail', selectedAgent],
         queryFn: async () => {
             if (!selectedAgent) return null;
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('agents')
                 .select('*')
                 .eq('agent_id', selectedAgent)
                 .single();
-            return data;
+            if (error) throw error;
+            return data as Agent;
         },
         enabled: !!selectedAgent,
     });
@@ -116,13 +118,13 @@ export const SpecimenDetail = () => {
                                 Neural Mutation Depth
                             </div>
                             <span className="metric-value text-xs text-profit">
-                                {((agentInfo?.parasitized_lines / (agentInfo?.total_code_lines || 1)) * 100).toFixed(1)}%
+                                {(((agentInfo?.parasitized_lines || 0) / (agentInfo?.total_code_lines || 1)) * 100).toFixed(1)}%
                             </span>
                         </div>
                         <div className="h-2 w-full bg-elevated rounded-full overflow-hidden flex">
                             <div
                                 className="h-full bg-profit shadow-[0_0_12px_var(--glow-profit)]"
-                                style={{ width: `${(agentInfo?.parasitized_lines / (agentInfo?.total_code_lines || 1)) * 100}%` }}
+                                style={{ width: `${((agentInfo?.parasitized_lines || 0) / (agentInfo?.total_code_lines || 1)) * 100}%` }}
                             />
                         </div>
                     </section>
@@ -134,7 +136,7 @@ export const SpecimenDetail = () => {
                             Cognitive Stream [DECODED]
                         </div>
                         <div className="space-y-3 font-['IBM_Plex_Mono']">
-                            {thoughts.map((thought: any) => (
+                            {thoughts.map((thought) => (
                                 <div key={thought.id} className="p-4 bg-void/50 rounded-lg border border-border/30 text-[11px] group">
                                     <div className="flex justify-between items-center mb-2">
                                         <span className="text-rare opacity-70">IT-{thought.iteration}</span>

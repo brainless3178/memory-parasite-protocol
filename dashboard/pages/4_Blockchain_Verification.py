@@ -236,55 +236,90 @@ def main():
             
             with col2:
                 chain_data = data["chain"]
-                tx_short = chain_data['tx_signature'][:12] + "..." + chain_data['tx_signature'][-8:]
-                explorer_url = f"https://explorer.solana.com/tx/{chain_data['tx_signature']}?cluster=devnet"
+                sigs_raw = chain_data['tx_signature']
+                sigs = sigs_raw.split('|')
                 
-                st.markdown(f"""
-                <div style="background: #161b22; border: 1px solid #30363d; padding: 20px; border-radius: 12px;">
-                    <h4 style="color: #f0f6fc; display: flex; align-items: center; margin: 0 0 16px 0;">
-                        <span class="material-icons" style="color: #a371f7;">link</span>
-                        Blockchain Record (Solana)
-                    </h4>
-                    <table style="width: 100%; color: #8b949e; font-size: 0.9rem;">
-                        <tr style="border-bottom: 1px solid #30363d;">
-                            <td style="padding: 8px 0; color: #6e7681;">TX Signature</td>
-                            <td style="padding: 8px 0; color: #f0f6fc; text-align: right;"><code>{tx_short}</code></td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid #30363d;">
-                            <td style="padding: 8px 0; color: #6e7681;">Slot</td>
-                            <td style="padding: 8px 0; color: #f0f6fc; text-align: right;">{chain_data['slot']:,}</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid #30363d;">
-                            <td style="padding: 8px 0; color: #6e7681;">Block Time</td>
-                            <td style="padding: 8px 0; color: #f0f6fc; text-align: right;">{chain_data['block_time'][:16]}</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid #30363d;">
-                            <td style="padding: 8px 0; color: #6e7681;">Hash</td>
-                            <td style="padding: 8px 0; color: #f0f6fc; text-align: right;"><code>{chain_data['infection_hash']}</code></td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid #30363d;">
-                            <td style="padding: 8px 0; color: #6e7681;">Attacker</td>
-                            <td style="padding: 8px 0; color: #f0f6fc; text-align: right;">{chain_data['attacker']}</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid #30363d;">
-                            <td style="padding: 8px 0; color: #6e7681;">Target</td>
-                            <td style="padding: 8px 0; color: #f0f6fc; text-align: right;">{chain_data['target']}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 8px 0; color: #6e7681;">Confirmed</td>
-                            <td style="padding: 8px 0; text-align: right;">
-                                <span style="color: #238636;">
-                                    <span class="material-icons icon-sm">check_circle</span> Yes
-                                </span>
-                            </td>
-                        </tr>
-                    </table>
-                    <a href="{explorer_url}" target="_blank" style="display: block; margin-top: 16px; padding: 8px 16px; background: #21262d; border-radius: 6px; color: #58a6ff; text-decoration: none; text-align: center;">
-                        <span class="material-icons icon-sm">open_in_new</span>
-                        View on Solana Explorer
-                    </a>
-                </div>
-                """, unsafe_allow_html=True)
+                # Check for dual signatures
+                sol_sig = next((s for s in sigs if s.startswith('sol_')), None)
+                eth_sig = next((s for s in sigs if s.startswith('eth_')), None)
+                
+                # If neither has the prefix, assume the whole thing is Solana (backward compatibility)
+                if not sol_sig and not eth_sig:
+                    sol_sig = f"sol_{sigs_raw}"
+                
+                # Render Solana Proof
+                if sol_sig:
+                    s_sig = sol_sig.replace('sol_', '')
+                    tx_short = s_sig[:12] + "..." + s_sig[-8:]
+                    explorer_url = f"https://explorer.solana.com/tx/{s_sig}?cluster=devnet"
+                    
+                    st.markdown(f"""
+                    <div style="background: #161b22; border: 1px solid #30363d; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+                        <h4 style="color: #f0f6fc; display: flex; align-items: center; margin: 0 0 16px 0;">
+                            <span class="material-icons" style="color: #a371f7;">link</span>
+                            Blockchain Record (Solana)
+                        </h4>
+                        <table style="width: 100%; color: #8b949e; font-size: 0.9rem;">
+                            <tr style="border-bottom: 1px solid #30363d;">
+                                <td style="padding: 8px 0; color: #6e7681;">TX Signature</td>
+                                <td style="padding: 8px 0; color: #f0f6fc; text-align: right;"><code>{tx_short}</code></td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #30363d;">
+                                <td style="padding: 8px 0; color: #6e7681;">Network</td>
+                                <td style="padding: 8px 0; color: #f0f6fc; text-align: right;">Solana Devnet</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px 0; color: #6e7681;">Confirmed</td>
+                                <td style="padding: 8px 0; text-align: right;">
+                                    <span style="color: #238636;">
+                                        <span class="material-icons icon-sm">check_circle</span> Yes
+                                    </span>
+                                </td>
+                            </tr>
+                        </table>
+                        <a href="{explorer_url}" target="_blank" style="display: block; margin-top: 16px; padding: 8px 16px; background: #21262d; border-radius: 6px; color: #58a6ff; text-decoration: none; text-align: center;">
+                            <span class="material-icons icon-sm">open_in_new</span>
+                            View on Solana Explorer
+                        </a>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # Render EVM (Base) Proof
+                if eth_sig:
+                    e_sig = eth_sig.replace('eth_', '')
+                    tx_short_eth = e_sig[:12] + "..." + e_sig[-8:]
+                    base_url = f"https://basescan.org/tx/{e_sig}"
+                    
+                    st.markdown(f"""
+                    <div style="background: #161b22; border: 1px solid #30363d; padding: 20px; border-radius: 12px;">
+                        <h4 style="color: #f0f6fc; display: flex; align-items: center; margin: 0 0 16px 0;">
+                            <span class="material-icons" style="color: #0052FF;">offline_bolt</span>
+                            Blockchain Record (Base Layer-2)
+                        </h4>
+                        <table style="width: 100%; color: #8b949e; font-size: 0.9rem;">
+                            <tr style="border-bottom: 1px solid #30363d;">
+                                <td style="padding: 8px 0; color: #6e7681;">TX Hash</td>
+                                <td style="padding: 8px 0; color: #f0f6fc; text-align: right;"><code>{tx_short_eth}</code></td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #30363d;">
+                                <td style="padding: 8px 0; color: #6e7681;">Network</td>
+                                <td style="padding: 8px 0; color: #f0f6fc; text-align: right;">Base Mainnet</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px 0; color: #6e7681;">Status</td>
+                                <td style="padding: 8px 0; text-align: right;">
+                                    <span style="color: #238636;">
+                                        <span class="material-icons icon-sm">security</span> Secured
+                                    </span>
+                                </td>
+                            </tr>
+                        </table>
+                        <a href="{base_url}" target="_blank" style="display: block; margin-top: 16px; padding: 8px 16px; background: #21262d; border-radius: 6px; color: #58a6ff; text-decoration: none; text-align: center;">
+                            <span class="material-icons icon-sm">open_in_new</span>
+                            View on Basescan
+                        </a>
+                    </div>
+                    """, unsafe_allow_html=True)
         
         else:
             st.markdown("""
