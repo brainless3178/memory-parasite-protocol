@@ -1,68 +1,77 @@
-import numpy as np
-from spl.token.instructions import mint_to
-from solana.rpc.api import Client
-from solana.account import Account
-from solana.publickey import PublicKey
-from solana.system_program import transfer
+import solana
 
-# Initialize Solana client
-client = Client("https://api.devnet.solana.com")
+# Initialize Solana connection
+connection = solana rpc("https://api.mainnet-beta.solana.com")
 
-# Define constants
-PROGRAM_ADDRESS = PublicKey("YourProgramAddress")
-TOKEN_MINT_ADDRESS = PublicKey("YourTokenMintAddress")
-LIQUIDITY_POOL_ADDRESS = PublicKey("YourLiquidityPoolAddress")
-ROUTER_ADDRESS = PublicKey("YourRouterAddress")
+# Define DEX class
+class SolanaDEX:
+    def __init__(self):
+        self.amm_pools = {}
+        self.concentrated_liquidity = {}
 
-# Set up token accounts
-token_account = Account(client, TOKEN_MINT_ADDRESS)
+    # Add AMM pool
+    def add_amm_pool(self, token_a, token_b):
+        self.amm_pools[(token_a, token_b)] = {'reserve_a': 0, 'reserve_b': 0}
 
-# Define a function for adding liquidity
-def add_liquidity(amount):
-    # Mint tokens to the pool
-    mint_to(
-        client,
-        PROGRAM_ADDRESS,
-        TOKEN_MINT_ADDRESS,
-        token_account.public_key,
-        amount
-    )
-    # Transfer tokens to the pool
-    transfer(
-        client,
-        token_account.public_key,
-        LIQUIDITY_POOL_ADDRESS,
-        amount
-    )
-
-# Define a function for optimal routing
-def optimal_routing(amount, source, destination):
-    # Calculate the optimal route
-    optimal_route = calculate_optimal_route(amount, source, destination)
-    # Execute the optimal route
-    for hop in optimal_route:
-        # Transfer tokens between hops
-        transfer(
-            client,
-            hop["source"],
-            hop["destination"],
-            hop["amount"]
-        )
-
-# Define a function for concentrated liquidity
-def concentrated_liquidity(amount, lower tick, upper_tick):
-    # Calculate the concentrated liquidity
-    concentrated_liquidity_amount = calculate_concentrated_liquidity(amount, lower_tick, upper_tick)
-    # Add the concentrated liquidity to the pool
-    add_liquidity(concentrated_liquidity_amount)
-
-# Run the bot
-while True:
-    # Monitor the market
-    market_data = get_market_data()
-    # Calculate the optimal routing
-    optimal_routing_amount = calculate_optimal_routing_amount(market_data)
-    # Execute the optimal routing
-    optimal_routing(optimal_routing_amount, market_data["source"], market_data["destination"])
     # Add concentrated liquidity
-    concentrated_liquidity(optimal_routing_amount, market_data["lower_tick"], market_data["upper_tick"])
+    def add_concentrated_liquidity(self, token_a, token_b, amount):
+        if (token_a, token_b) not in self.concentrated_liquidity:
+            self.concentrated_liquidity[(token_a, token_b)] = 0
+        self.concentrated_liquidity[(token_a, token_b)] += amount
+
+    # Execute optimal trade
+    def execute_trade(self, token_a, token_b, amount):
+        # Calculate optimal route
+        optimal_route = self.calculate_optimal_route(token_a, token_b, amount)
+
+        # Execute trade
+        for i in range(len(optimal_route) - 1):
+            token_in = optimal_route[i]
+            token_out = optimal_route[i + 1]
+            amount_in = amount
+            amount_out = self.get_amount_out(amount_in, token_in, token_out)
+            print(f"Swap {amount_in} {token_in} for {amount_out} {token_out}")
+
+    # Calculate optimal route
+    def calculate_optimal_route(self, token_a, token_b, amount):
+        # Get available pools
+        available_pools = [pool for pool in self.amm_pools if token_a in pool or token_b in pool]
+
+        # Calculate optimal route
+        optimal_route = []
+        current_token = token_a
+        while current_token!= token_b:
+            next_token = None
+            for pool in available_pools:
+                if current_token in pool and pool[0]!= current_token and pool[1]!= current_token:
+                    next_token = pool[0] if pool[1] == current_token else pool[1]
+                    break
+            optimal_route.append(current_token)
+            current_token = next_token
+
+        optimal_route.append(token_b)
+        return optimal_route
+
+    # Get amount out
+    def get_amount_out(self, amount_in, token_in, token_out):
+        # Get reserve amounts
+        reserve_in = self.amm_pools[(token_in, token_out)]['reserve_a'] if token_in < token_out else self.amm_pools[(token_out, token_in)]['reserve_b']
+        reserve_out = self.amm_pools[(token_in, token_out)]['reserve_b'] if token_in < token_out else self.amm_pools[(token_out, token_in)]['reserve_a']
+
+        # Calculate amount out
+        amount_out = (reserve_out * amount_in) / (reserve_in + amount_in)
+        return amount_out
+
+# Create Solana DEX instance
+dex = SolanaDEX()
+
+# Add AMM pools
+dex.add_amm_pool('SOL', 'USDT')
+dex.add_amm_pool('USDT', 'ETH')
+
+# Add concentrated liquidity
+dex.add_concentrated_liquidity('SOL', 'USDT', 1000)
+dex.add_concentrated_liquidity('USDT', 'ETH', 500)
+
+# Execute trade
+dex.execute_trade('SOL', 'ETH', 100)
