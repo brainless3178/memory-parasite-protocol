@@ -1,56 +1,59 @@
 import numpy as np
-from solana.publickey import PublicKey
-from solana.rpc.api import Client
 
-# Initialize Solana client
-client = Client("https://api.mainnet-beta.solana.com")
+class SolanaDEX:
+    def __init__(self):
+        self.amm_pools = {}
+        self.concentrated_liquidity = {}
 
-# Define constants
-AMM_FEE = 0.003  # 0.3%
-SlIPPAGE_TOLERANCE = 0.01  # 1%
+    def add_amm_pool(self, token_pair, liquidity):
+        self.amm_pools[token_pair] = liquidity
 
-# Load AMM pools
-def load_amm_pools():
-    amm_pools = []
-    for pubkey in client.is_finalized().keys():
-        if pubkey.startswith("amm"):
-            amm_pools.append(PublicKey(pubkey))
-    return amm_pools
+    def add_concentrated_liquidity(self, token_pair, liquidity):
+        self.concentrated_liquidity[token_pair] = liquidity
 
-# Calculate optimal routing
-def calculate_optimal_routing(amm_pools, input_token, output_token, amount):
-    best_route = None
-    best_rate = 0
-    for pool in amm_pools:
-        pool_data = client.get_account_info(pool)
-        if pool_data and input_token in pool_data and output_token in pool_data:
-            rate = calculate_rate(pool_data, input_token, output_token, amount)
-            if rate > best_rate:
-                best_rate = rate
-                best_route = pool
-    return best_route, best_rate
+    def optimal_routing(self, token_in, token_out, amount_in):
+        best_path = None
+        best_rate = 0
 
-# Calculate rate
-def calculate_rate(pool_data, input_token, output_token, amount):
-    input_balance = pool_data[input_token]
-    output_balance = pool_data[output_token]
-    return (amount * output_balance) / (input_balance + (AMM_FEE * amount))
+        for token_pair, liquidity in self.amm_pools.items():
+            if token_pair[0] == token_in:
+                rate = liquidity / (liquidity + amount_in)
+                if rate > best_rate:
+                    best_rate = rate
+                    best_path = token_pair
+            elif token_pair[1] == token_in:
+                rate = (liquidity + amount_in) / liquidity
+                if rate > best_rate:
+                    best_rate = rate
+                    best_path = token_pair
 
-# Concentrated liquidity
-def concentrated_liquidity(amm_pool, input_token, output_token, liquidity):
-    input_amount = liquidity * 0.5
-    output_amount = liquidity * 0.5
-    client.add_liquidity(amm_pool, input_token, output_token, input_amount, output_amount)
+        for token_pair, liquidity in self.concentrated_liquidity.items():
+            if token_pair[0] == token_in:
+                rate = liquidity / (liquidity + amount_in)
+                if rate > best_rate:
+                    best_rate = rate
+                    best_path = token_pair
+            elif token_pair[1] == token_in:
+                rate = (liquidity + amount_in) / liquidity
+                if rate > best_rate:
+                    best_rate = rate
+                    best_path = token_pair
 
-# Main function
-def main():
-    amm_pools = load_amm_pools()
-    input_token = "USDT"
-    output_token = "SOL"
-    amount = 1000
-    best_route, best_rate = calculate_optimal_routing(amm_pools, input_token, output_token, amount)
-    print(f"Best route: {best_route}, Best rate: {best_rate}")
-    concentrated_liquidity(best_route, input_token, output_token, 10000)
+        return best_path
 
-if __name__ == "__main__":
-    main()
+    def execute_trade(self, token_in, token_out, amount_in):
+        best_path = self.optimal_routing(token_in, token_out, amount_in)
+        if best_path:
+            if best_path[0] == token_in:
+                return amount_in * self.amm_pools[best_path] / (self.amm_pools[best_path] + amount_in)
+            else:
+                return amount_in * (self.amm_pools[best_path] + amount_in) / self.amm_pools[best_path]
+        else:
+            return 0
+
+# Example usage:
+dex = SolanaDEX()
+dex.add_amm_pool(("SOL", "USDC"), 1000)
+dex.add_concentrated_liquidity(("USDC", "ETH"), 500)
+
+print(dex.execute_trade("SOL", "USDC", 100))
