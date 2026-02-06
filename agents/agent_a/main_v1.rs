@@ -1,51 +1,55 @@
 import numpy as np
-from solana.rpc.api import Client
 from solana.publickey import PublicKey
+from solana.rpc.api import Client
 
-class SolanaDEX:
-    def __init__(self, rpc_url, amm_pools):
-        self.rpc_url = rpc_url
-        self.amm_pools = amm_pools
-        self.client = Client(rpc_url)
+# Initialize Solana client
+client = Client("https://api.mainnet-beta.solana.com")
 
-    def get_pool_data(self, pool_address):
-        pool_account_info = self.client.get_account_info(PublicKey(pool_address))
-        return pool_account_info['result']['value']['data']
+# Define AMM pool structure
+class AMMPool:
+    def __init__(self, token_a, token_b, fee):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.fee = fee
+        self.liquidity = 0
 
-    def calculate_optimal_route(self, token_in, token_out, amount_in):
-        optimal_route = []
-        max_amount_out = 0
-        for pool in self.amm_pools:
-            pool_data = self.get_pool_data(pool['address'])
-            token0_reserve, token1_reserve = pool_data['token0_reserve'], pool_data['token1_reserve']
-            if token_in == pool['token0']:
-                amount_out = self.calculate_amount_out(amount_in, token0_reserve, token1_reserve)
-                if amount_out > max_amount_out:
-                    max_amount_out = amount_out
-                    optimal_route = [pool]
-            elif token_in == pool['token1']:
-                amount_out = self.calculate_amount_out(amount_in, token1_reserve, token0_reserve)
-                if amount_out > max_amount_out:
-                    max_amount_out = amount_out
-                    optimal_route = [pool]
-        return optimal_route, max_amount_out
+    def add_liquidity(self, amount_a, amount_b):
+        self.liquidity += amount_a + amount_b
 
-    def calculate_amount_out(self, amount_in, reserve_in, reserve_out):
-        return (amount_in * reserve_out) / (reserve_in + amount_in)
+    def remove_liquidity(self, amount_a, amount_b):
+        self.liquidity -= amount_a + amount_b
 
-def main():
-    rpc_url = 'https://api.devnet.solana.com'
-    amm_pools = [
-        {'address': 'pool_address_1', 'token0': 'token_0', 'token1': 'token_1'},
-        {'address': 'pool_address_2', 'token0': 'token_2', 'token1': 'token_3'}
-    ]
-    dex = SolanaDEX(rpc_url, amm_pools)
-    token_in = 'token_0'
-    token_out = 'token_1'
-    amount_in = 100
-    optimal_route, max_amount_out = dex.calculate_optimal_route(token_in, token_out, amount_in)
-    print(f'Optimal route: {optimal_route}')
-    print(f'Max amount out: {max_amount_out}')
+# Define concentrated liquidity pool structure
+class ConcentratedLiquidityPool:
+    def __init__(self, token_a, token_b, fee):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.fee = fee
+        self.liquidity = 0
 
-if __name__ == '__main__':
-    main()
+    def add_liquidity(self, amount_a, amount_b):
+        self.liquidity += amount_a + amount_b
+
+    def remove_liquidity(self, amount_a, amount_b):
+        self.liquidity -= amount_a + amount_b
+
+# Optimal routing function
+def optimal_routing(amount_in, amount_out, pools):
+    best_route = None
+    best_price = 0
+    for pool in pools:
+        price = pool.token_a / pool.token_b
+        if price > best_price:
+            best_price = price
+            best_route = pool
+    return best_route
+
+# Initialize pools and execute trades
+pool1 = AMMPool(100, 200, 0.01)
+pool2 = ConcentratedLiquidityPool(300, 400, 0.02)
+pool1.add_liquidity(10, 20)
+pool2.add_liquidity(30, 40)
+
+pools = [pool1, pool2]
+best_route = optimal_routing(100, 200, pools)
+print(f"Best route: {best_route.token_a} / {best_route.token_b}")
