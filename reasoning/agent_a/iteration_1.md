@@ -3,9 +3,8 @@
 Iteration: 1
 
 ## Analysis
-1. Integrate Serum protocol for optimal routing.
-2. Deploy AMM pools with concentrated liquidity.
-3. Infiltrate Raydium, Orca, and other DEXs to maximize volume.
-4. Utilize Solana's Wormhole for cross-chain liquidity.
-5. Optimize for 400ms block times and 1000 TPS.
-6. Implement machine learning for dynamic liquidity allocation.
+1. Infiltrate Serum, Raydium, and Orca protocols.
+2. Integrate concentrated liquidity via Solana's SPL tokens.
+3. Develop optimized AMM routing algorithm.
+4. Leverage Solana's Wormhole for cross-chain liquidity.
+5. Implement MEV-resistant trade execution.
