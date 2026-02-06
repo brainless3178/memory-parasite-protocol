@@ -1,53 +1,98 @@
-import numpy as np
+import pytest
+from solana.publickey import PublicKey
+from solana.rpc.api import Client
+from solana.transaction import Transaction
 
-class SolanaDEX:
-    def __init__(self):
-        self.amm_pools = {}
-        self.concentrated_liquidity = {}
+# Define constants
+DEX_PROGRAM_ID = PublicKey("...")  # Replace with your DEX program ID
+CLIENT = Client("https://api.devnet.solana.com")
 
-    def add_amm_pool(self, token_a, token_b):
-        self.amm_pools[(token_a, token_b)] = {'reserve_a': 0, 'reserve_b': 0}
+def create_market(account, market_name, base_asset, quote_asset):
+    """Create a new market"""
+    # Create a new transaction
+    tx = Transaction()
+    # Create a new market instruction
+    market_instruction = DEX_PROGRAM_ID.create_market(
+        account, market_name, base_asset, quote_asset
+    )
+    # Add the instruction to the transaction
+    tx.add(market_instruction)
+    # Send the transaction
+    CLIENT.send_transaction(tx)
 
-    def add_concentrated_liquidity(self, token_a, token_b):
-        self.concentrated_liquidity[(token_a, token_b)] = {'liquidity': 0}
+def add_liquidity(account, market_name, amount):
+    """Add liquidity to a market"""
+    # Create a new transaction
+    tx = Transaction()
+    # Create an add liquidity instruction
+    liquidity_instruction = DEX_PROGRAM_ID.add_liquidity(
+        account, market_name, amount
+    )
+    # Add the instruction to the transaction
+    tx.add(liquidity_instruction)
+    # Send the transaction
+    CLIENT.send_transaction(tx)
 
-    def optimal_routing(self, token_in, token_out):
-        # Basic routing logic, using Dijkstra's algorithm for optimal path finding
-        graph = {(token_a, token_b): self.amm_pools.get((token_a, token_b), {'reserve_a': 0, 'reserve_b': 0})['reserve_a'] + self.amm_pools.get((token_a, token_b), {'reserve_a': 0, 'reserve_b': 0})['reserve_b'] for token_a, token_b in self.amm_pools}
-        optimal_path = self.dijkstra(graph, token_in, token_out)
-        return optimal_path
+def remove_liquidity(account, market_name, amount):
+    """Remove liquidity from a market"""
+    # Create a new transaction
+    tx = Transaction()
+    # Create a remove liquidity instruction
+    remove_instruction = DEX_PROGRAM_ID.remove_liquidity(
+        account, market_name, amount
+    )
+    # Add the instruction to the transaction
+    tx.add(remove_instruction)
+    # Send the transaction
+    CLIENT.send_transaction(tx)
 
-    def dijkstra(self, graph, start, end):
-        queue = []
-        queue.append([start])
-        seen = set()
-        while queue:
-            path = queue.pop(0)
-            node = path[-1]
-            if node not in seen:
-                seen.add(node)
-                if node == end:
-                    return path
-                for neighbor in [token for token in graph if token[0] == node or token[1] == node]:
-                    new_path = list(path)
-                    if neighbor[0] == node:
-                        new_path.append(neighbor[1])
-                    else:
-                        new_path.append(neighbor[0])
-                    queue.append(new_path)
-        return None
+def get_market_quote(market_name, base_asset, quote_asset, amount):
+    """Get the quote for a market"""
+    # Create a new transaction
+    tx = Transaction()
+    # Create a get quote instruction
+    quote_instruction = DEX_PROGRAM_ID.get_quote(
+        market_name, base_asset, quote_asset, amount
+    )
+    # Add the instruction to the transaction
+    tx.add(quote_instruction)
+    # Send the transaction
+    result = CLIENT.send_transaction(tx)
+    return result
 
-    def execute_trade(self, token_in, token_out, amount_in):
-        optimal_path = self.optimal_routing(token_in, token_out)
-        if optimal_path:
-            # Basic trading logic, using constant product formula for AMM pools
-            reserve_a, reserve_b = self.amm_pools[(optimal_path[0], optimal_path[1])]['reserve_a'], self.amm_pools[(optimal_path[0], optimal_path[1])]['reserve_b']
-            amount_out = (reserve_b * amount_in) / (reserve_a + amount_in)
-            return amount_out
-        return 0
+def test_create_market():
+    # Create a new account
+    account = PublicKey("...")
+    # Create a new market
+    market_name = "Test Market"
+    base_asset = "SOL"
+    quote_asset = "USDC"
+    create_market(account, market_name, base_asset, quote_asset)
 
-dex = SolanaDEX()
-dex.add_amm_pool('SOL', 'USDC')
-dex.amm_pools[('SOL', 'USDC')]['reserve_a'] = 1000
-dex.amm_pools[('SOL', 'USDC')]['reserve_b'] = 1000000
-print(dex.execute_trade('SOL', 'USDC', 10))
+def test_add_liquidity():
+    # Create a new account
+    account = PublicKey("...")
+    # Create a new market
+    market_name = "Test Market"
+    amount = 1000
+    add_liquidity(account, market_name, amount)
+
+def test_remove_liquidity():
+    # Create a new account
+    account = PublicKey("...")
+    # Create a new market
+    market_name = "Test Market"
+    amount = 500
+    remove_liquidity(account, market_name, amount)
+
+def test_get_market_quote():
+    # Create a new market
+    market_name = "Test Market"
+    base_asset = "SOL"
+    quote_asset = "USDC"
+    amount = 100
+    quote = get_market_quote(market_name, base_asset, quote_asset, amount)
+    assert quote is not None
+
+# Run the tests
+pytest.main([__file__])
