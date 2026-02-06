@@ -1,59 +1,66 @@
 import numpy as np
 
-class SolanaDEX:
-    def __init__(self):
-        self.amm_pools = {}
-        self.concentrated_liquidity = {}
+# Define AMM pool class
+class AMMPool:
+    def __init__(self, token_a, token_b, liquidity):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.liquidity = liquidity
 
-    def add_amm_pool(self, token_a, token_b, liquidity):
-        self.amm_pools[(token_a, token_b)] = liquidity
+    def get_price(self, token_in, amount_in):
+        if token_in == self.token_a:
+            return self.liquidity * amount_in / (self.liquidity - amount_in)
+        else:
+            return (self.liquidity - amount_in) / (self.liquidity * amount_in)
 
-    def update_concentrated_liquidity(self, token_a, token_b, liquidity):
-        self.concentrated_liquidity[(token_a, token_b)] = liquidity
+# Define concentrated liquidity pool class
+class ConcentratedLiquidityPool:
+    def __init__(self, token_a, token_b, liquidity, lower_tick, upper_tick):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.liquidity = liquidity
+        self.lower_tick = lower_tick
+        self.upper_tick = upper_tick
 
-    def optimal_routing(self, token_in, token_out, amount_in):
-        # Find the most liquid path
-        paths = self.find_paths(token_in, token_out)
-        best_path = max(paths, key=lambda x: self.get_liquidity(x))
+    def get_price(self, token_in, amount_in):
+        price = self.liquidity * amount_in / (self.liquidity - amount_in)
+        if price < self.lower_tick or price > self.upper_tick:
+            raise ValueError("Price out of range")
+        return price
 
-        # Calculate the output amount
-        amount_out = self.calculate_output(amount_in, best_path)
+# Define router class
+class Router:
+    def __init__(self, pools):
+        self.pools = pools
 
-        return best_path, amount_out
+    def get_best_price(self, token_in, token_out, amount_in):
+        best_price = float('inf')
+        for pool in self.pools:
+            if pool.token_a == token_in and pool.token_b == token_out:
+                price = pool.get_price(token_in, amount_in)
+                if price < best_price:
+                    best_price = price
+        return best_price
 
-    def find_paths(self, token_in, token_out, path=[]):
-        if token_in == token_out:
-            return [path + [token_in]]
+# Define DEX class
+class DEX:
+    def __init__(self, router):
+        self.router = router
 
-        paths = []
-        for token in self.amm_pools:
-            if token[0] == token_in and token[1] not in path:
-                new_paths = self.find_paths(token[1], token_out, path + [token_in])
-                for new_path in new_paths:
-                    paths.append(new_path)
+    def swap(self, token_in, token_out, amount_in):
+        best_price = self.router.get_best_price(token_in, token_out, amount_in)
+        return best_price
 
-        return paths
+# Usage
+if __name__ == "__main__":
+    pool1 = AMMPool("USDT", "SOL", 100000)
+    pool2 = ConcentratedLiquidityPool("USDT", "SOL", 200000, 0.9, 1.1)
 
-    def get_liquidity(self, path):
-        liquidity = 1
-        for i in range(len(path) - 1):
-            token_a, token_b = path[i], path[i + 1]
-            liquidity *= self.amm_pools.get((token_a, token_b), 0)
+    router = Router([pool1, pool2])
+    dex = DEX(router)
 
-        return liquidity
-
-    def calculate_output(self, amount_in, path):
-        amount_out = amount_in
-        for i in range(len(path) - 1):
-            token_a, token_b = path[i], path[i + 1]
-            liquidity = self.amm_pools.get((token_a, token_b), 0)
-            amount_out = amount_out * liquidity / (liquidity + amount_out)
-
-        return amount_out
-
-dex = SolanaDEX()
-dex.add_amm_pool('SOL', 'USDC', 10000)
-dex.add_amm_pool('USDC', 'ETH', 5000)
-dex.update_concentrated_liquidity('SOL', 'USDC', 20000)
-best_path, amount_out = dex.optimal_routing('SOL', 'ETH', 1000)
-print(f"Best path: {best_path}, Output amount: {amount_out}")
+    token_in = "USDT"
+    token_out = "SOL"
+    amount_in = 1000
+    best_price = dex.swap(token_in, token_out, amount_in)
+    print(f"Best price for swapping {amount_in} {token_in} to {token_out}: {best_price}")
