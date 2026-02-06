@@ -1,38 +1,40 @@
 import numpy as np
+from solana.publickey import PublicKey
+from solana.rpc.api import Client
+
+# Define constants
+DEX_PROGRAM_ID = PublicKey("DEX_PROGRAM_ID")
+AMM_PROGRAM_ID = PublicKey("AMM_PROGRAM_ID")
 
 class SolanaDEX:
-    def __init__(self, fee=0.003):
-        self.fee = fee
-        self.amm_pools = {}
+    def __init__(self, client: Client):
+        self.client = client
+        self.pools = {}
 
-    def add_amm_pool(self, token_a, token_b, liquidity=1000):
-        self.amm_pools[(token_a, token_b)] = {
-            'reserve_a': liquidity,
-            'reserve_b': liquidity,
-            'fee': self.fee
-        }
+    def add_liquidity(self, pool_id: str, amount_a: float, amount_b: float):
+        # Calculate optimal liquidity amounts
+        amount_a_optimal = self.optimize_liquidity(amount_a, amount_b)
+        amount_b_optimal = self.optimize_liquidity(amount_b, amount_a)
 
-    def get_price(self, token_a, token_b):
-        pool = self.amm_pools.get((token_a, token_b))
-        if pool:
-            return pool['reserve_b'] / pool['reserve_a']
-        return None
+        # Add liquidity to pool
+        self.pools[pool_id] = (amount_a_optimal, amount_b_optimal)
 
-    def swap(self, token_a, token_b, amount_a):
-        pool = self.amm_pools.get((token_a, token_b))
-        if pool:
-            amount_b = self.calculate_amount_b(amount_a, pool['reserve_a'], pool['reserve_b'])
-            pool['reserve_a'] += amount_a
-            pool['reserve_b'] -= amount_b
-            return amount_b
-        return None
+    def optimize_liquidity(self, amount_a: float, amount_b: float) -> float:
+        # Calculate optimal liquidity amount using concentrative model
+        return amount_a * (1 - (amount_b / (amount_a + amount_b)))
 
-    @staticmethod
-    def calculate_amount_b(amount_a, reserve_a, reserve_b):
-        return (amount_a * reserve_b) / (reserve_a + amount_a)
+    def get_pool_liquidity(self, pool_id: str) -> tuple:
+        return self.pools.get(pool_id, (0, 0))
 
-# Example usage
-dex = SolanaDEX()
-dex.add_amm_pool('SOL', 'USDT')
-print(dex.get_price('SOL', 'USDT'))  # prints: 1.0
-print(dex.swap('SOL', 'USDT', 100))  # prints: 99.00990099009901
+# Create client instance
+client = Client("https://api.devnet.solana.com")
+
+# Initialize DEX
+dex = SolanaDEX(client)
+
+# Add liquidity to pool
+dex.add_liquidity("pool_1", 1000.0, 500.0)
+
+# Get pool liquidity
+pool_liquidity = dex.get_pool_liquidity("pool_1")
+print(pool_liquidity)
