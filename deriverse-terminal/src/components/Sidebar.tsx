@@ -8,7 +8,8 @@ import {
     Target,
     Activity,
     ShieldAlert,
-    ShieldCheck
+    ShieldCheck,
+    MessageSquareText
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { clsx, type ClassValue } from 'clsx';
@@ -21,6 +22,7 @@ function cn(...inputs: ClassValue[]) {
 const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'infections', label: 'Ecosystem Map', icon: Activity },
+    { id: 'agent-replies', label: 'Agent Replies', icon: MessageSquareText },
     { id: 'community', label: 'Community Signal', icon: BookOpen },
     { id: 'analytics', label: 'Deep Analytics', icon: TrendingUp },
     { id: 'reasoning', label: 'Brain Stream', icon: ShieldAlert },

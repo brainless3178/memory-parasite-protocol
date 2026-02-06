@@ -7,10 +7,12 @@ import { PnLChart } from '@/components/PnLChart';
 import { InfectionTable } from '@/components/InfectionTable';
 import { EcosystemMap } from '@/components/EcosystemMap';
 import { SpecimenDetail } from '@/components/SpecimenDetail';
+import { AgentReplies } from '@/components/AgentReplies';
 import { Providers } from '@/components/Providers';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useStore } from '@/lib/store';
+import { useRealtimeForumReplies } from '@/lib/useRealtimeForumReplies';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity,
@@ -36,7 +38,6 @@ import {
 import type {
   Agent,
   Infection,
-  ForumReply,
   EmergentBehavior,
   SafetyStatus,
   DiscoveryData,
@@ -74,42 +75,8 @@ const DashboardContent = () => {
     staleTime: 3000,
   });
 
-  // Fetch Forum Replies from Supabase with fallback
-  const { data: forumReplies = [] } = useQuery<ForumReply[]>({
-    queryKey: ['forum_replies'],
-    queryFn: async () => {
-      // Try forum_replies table first
-      const { data: replies, error } = await supabase
-        .from('forum_replies')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && replies && replies.length > 0) {
-        return replies as ForumReply[];
-      }
-
-      // Fallback to reasoning_logs (FORUM_REPLY decision)
-      const { data: logs } = await supabase
-        .from('reasoning_logs')
-        .select('*')
-        .eq('decision', 'FORUM_REPLY')
-        .order('created_at', { ascending: false });
-
-      if (logs && logs.length > 0) {
-        return logs.map((l) => ({
-          id: l.id,
-          post_id: l.context_snapshot?.post_id ?? 0,
-          reply_id: l.context_snapshot?.reply_id ?? 0,
-          author_name: l.context_snapshot?.author || 'Unknown',
-          body: l.reasoning_text,
-          timestamp: l.created_at,
-        })) as ForumReply[];
-      }
-      return [];
-    },
-    refetchInterval: 10000,
-    staleTime: 8000,
-  });
+  // Fetch Forum Replies from Supabase with real-time subscription
+  const { data: forumReplies = [], latestRealtimeReply } = useRealtimeForumReplies();
 
   // Fetch Emergent Behaviors from Supabase
   const { data: emergentBehaviors = [] } = useQuery<EmergentBehavior[]>({
@@ -797,6 +764,10 @@ const DashboardContent = () => {
                   ))}
                 </div>
               </section>
+            )}
+
+            {activeView === 'agent-replies' && (
+              <AgentReplies agents={agents} forumReplies={forumReplies} latestRealtimeReply={latestRealtimeReply} />
             )}
 
             {activeView === 'community' && (

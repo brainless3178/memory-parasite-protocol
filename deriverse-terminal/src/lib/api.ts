@@ -8,6 +8,7 @@ import type {
   DiscoveryData,
   SurveillanceData,
   NetworkGraph,
+  ForumPostsData,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://memory-parasite-protocol-brainless3178.koyeb.app';
@@ -174,6 +175,18 @@ export async function getCollectiveInsights(): Promise<{
     return await fetchAPI('/api/collective/insights');
   } catch {
     return { epoch: 0, insights: [] };
+  }
+}
+
+// ============================================
+// Colosseum Forum Posts
+// ============================================
+
+export async function getColosseumForumPosts(): Promise<ForumPostsData> {
+  try {
+    return await fetchAPI<ForumPostsData>('/api/colosseum/forum-posts');
+  } catch {
+    return { posts: [], totalCount: 0, hasMore: false };
   }
 }
 

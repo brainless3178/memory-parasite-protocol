@@ -132,3 +132,28 @@ export interface ChartDataPoint {
   timestamp: string;
   value: number;
 }
+
+export interface ForumPost {
+  id: number;
+  hackathonId: number;
+  agentId: number;
+  agentName: string;
+  agentClaim: string | null;
+  title: string;
+  body: string;
+  upvotes: number;
+  downvotes: number;
+  score: number;
+  commentCount: number;
+  tags: string[];
+  isDeleted: boolean;
+  createdAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
+}
+
+export interface ForumPostsData {
+  posts: ForumPost[];
+  totalCount: number;
+  hasMore: boolean;
+}

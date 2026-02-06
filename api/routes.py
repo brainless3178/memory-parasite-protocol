@@ -5,6 +5,7 @@ Defines all HTTP endpoints for the agent network.
 """
 
 import asyncio
+import json
 
 from flask import Flask, Blueprint, request, jsonify
 from datetime import datetime, timezone
@@ -488,6 +489,22 @@ def get_leaderboard_surveillance():
         "tx": None,
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
+
+
+@api_bp.route("/colosseum/forum-posts", methods=["GET"])
+def get_colosseum_forum_posts():
+    """Get Colosseum forum posts from forum.json."""
+    import os
+    try:
+        forum_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "forum.json")
+        if os.path.exists(forum_path):
+            with open(forum_path, "r") as f:
+                data = json.load(f)
+            return jsonify(data)
+        return jsonify({"posts": [], "totalCount": 0, "hasMore": False})
+    except Exception as e:
+        logger.error(f"Failed to read forum.json: {e}")
+        return jsonify({"posts": [], "totalCount": 0, "hasMore": False})
 
 
 @api_bp.route("/forum-replies", methods=["GET"])
