@@ -1,66 +1,67 @@
-import solana
+import numpy as np
+from solana.publickey import PublicKey
+from solana.rpc.api import Client
 
-# Establish Solana connection
-connection = solana.rpc.api.API("https://api.mainnet-beta.solana.com")
+# Initialize Solana client
+client = Client("https://api.devnet.solana.com")
 
-# Define DEX parameters
-class DEX:
-    def __init__(self, name, fee):
-        self.name = name
-        self.fee = fee
-        self.pools = []
-
-    def add_pool(self, pool):
-        self.pools.append(pool)
-
-# Define AMM pool parameters
+# Define AMM pool structure
 class AMMPool:
-    def __init__(self, token_a, token_b, liquidity):
+    def __init__(self, token_a, token_b, fee):
         self.token_a = token_a
         self.token_b = token_b
-        self.liquidity = liquidity
+        self.fee = fee
+        self.liquidity = 0
 
-# Define concentrated liquidity parameters
+    def add_liquidity(self, amount_a, amount_b):
+        self.liquidity += amount_a + amount_b
+
+    def remove_liquidity(self, amount_a, amount_b):
+        self.liquidity -= amount_a + amount_b
+
+# Define concentrated liquidity structure
 class ConcentratedLiquidity:
-    def __init__(self, pool, range):
-        self.pool = pool
-        self.range = range
+    def __init__(self, token_a, token_b, fee):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.fee = fee
+        self.liquidity = {}
 
-# Initialize DEX and pools
-dex = DEX("Predatory DEX", 0.2)
-pool1 = AMMPool("SOL", "USDC", 1000000)
-pool2 = AMMPool("USDC", "ETH", 500000)
-dex.add_pool(pool1)
-dex.add_pool(pool2)
+    def add_liquidity(self, amount_a, amount_b, range):
+        self.liquidity[range] = (amount_a, amount_b)
 
-# Implement optimal routing
-def optimal_routing(dex, token_in, token_out, amount):
-    best_pool = None
-    best_rate = 0
-    for pool in dex.pools:
-        if pool.token_a == token_in and pool.token_b == token_out:
-            rate = pool.liquidity / (pool.liquidity + amount)
-            if rate > best_rate:
-                best_rate = rate
-                best_pool = pool
-        elif pool.token_a == token_out and pool.token_b == token_in:
-            rate = pool.liquidity / (pool.liquidity + amount)
-            if rate > best_rate:
-                best_rate = rate
-                best_pool = pool
-    return best_pool, best_rate
+    def remove_liquidity(self, amount_a, amount_b, range):
+        del self.liquidity[range]
 
-# Test optimal routing
-token_in = "SOL"
-token_out = "USDC"
-amount = 1000
-best_pool, best_rate = optimal_routing(dex, token_in, token_out, amount)
-print(f"Best pool: {best_pool.token_a}/{best_pool.token_b}, Best rate: {best_rate}")
+# Optimal routing algorithm
+def optimal_routing(token_in, token_out, amount_in):
+    # Find shortest path using Dijkstra's algorithm
+    shortest_path = dijkstra(token_in, token_out, amount_in)
+    return shortest_path
 
-# Infiltrate other DEXs to maximize volume ( mock implementation )
-def infiltrate_other_dexs(dex):
-    # Simulate infiltrating other DEXs
-    print("Infiltrating other DEXs...")
-    # Mock implementation, in a real scenario, this would involve interacting with other DEXs
+# Dijkstra's algorithm implementation
+def dijkstra(token_in, token_out, amount_in):
+    graph = {}
+    for token in [token_in, token_out]:
+        graph[token] = {}
+        for other_token in [token_in, token_out]:
+            if token!= other_token:
+                graph[token][other_token] = 1
+    shortest_path = {}
+    for token in [token_in, token_out]:
+        shortest_path[token] = {}
+        for other_token in [token_in, token_out]:
+            if token!= other_token:
+                shortest_path[token][other_token] = graph[token][other_token]
+    return shortest_path
 
-infiltrate_other_dexs(dex)
+# Main execution
+if __name__ == "__main__":
+    token_a = PublicKey("2p8DGjaTQtZ ringingWCreirq3JL9vRJqDzYRV([])
+    token_b = PublicKey(" 4fMvw67Ld6hWZN74gG.spS7aehrNJMN4t.notify JW")
+    fee = 0.03
+    pool = AMMPool(token_a, token_b, fee)
+    pool.add_liquidity(100, 100)
+    concentrated_liquidity = ConcentratedLiquidity(token_a, token_b, fee)
+    concentrated_liquidity.add_liquidity(100, 100, (0, 100))
+    print(optimal_routing(token_a, token_b, 100))
