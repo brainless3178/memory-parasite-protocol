@@ -1,88 +1,58 @@
-import numpy as np
+import solana
 
-# Constants
-CHAIN_ID = 101
-RPC_URL = "https://api.mainnet-beta.solana.com"
+# Initialize Solana connection
+connection = solana.rpc.API("https://api.devnet.solana.com")
 
-# Initialize Solana Web3
-from solana.publickey import PublicKey
-from solana.rpc.api import Client
-client = Client(RPC_URL)
-
-# AMM Pool Class
+# Define AMM pool structure
 class AMMPool:
-    def __init__(self, token_a, token_b, fee):
+    def __init__(self, token_a, token_b, liquidity):
         self.token_a = token_a
         self.token_b = token_b
-        self.fee = fee
-        self.liquidity = 0
+        self.liquidity = liquidity
 
-    def add_liquidity(self, amount_a, amount_b):
-        self.liquidity += amount_a + amount_b
-
-    def remove_liquidity(self, amount_a, amount_b):
-        if amount_a + amount_b <= self.liquidity:
-            self.liquidity -= amount_a + amount_b
-            return True
-        return False
-
-    def swap(self, amount_in, token_in):
-        if token_in == self.token_a:
-            amount_out = amount_in * (1 - self.fee)
-            return amount_out
-        else:
-            amount_out = amount_in * (1 - self.fee)
-            return amount_out
-
-# Concentrated Liquidity Class
+# Define concentrated liquidity structure
 class ConcentratedLiquidity:
-    def __init__(self, token_a, token_b, tick_spacing):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.tick_spacing = tick_spacing
-        self.liquidity = {}
+    def __init__(self, pool, tick_lower, tick_upper):
+        self.pool = pool
+        self.tick_lower = tick_lower
+        self.tick_upper = tick_upper
 
-    def add_liquidity(self, amount_a, amount_b, tick_lower, tick_upper):
-        tick_key = (tick_lower, tick_upper)
-        if tick_key not in self.liquidity:
-            self.liquidity[tick_key] = 0
-        self.liquidity[tick_key] += amount_a + amount_b
+# Define optimal routing logic
+def optimal_routing(token_in, token_out, amount):
+    # Query AMM pools for best rate
+    pools = [
+        AMMPool("USDC", "SOL", 1000),
+        AMMPool("USDT", "SOL", 500),
+    ]
+    best_rate = 0
+    best_pool = None
+    for pool in pools:
+        rate = pool.liquidity / (pool.liquidity + amount)
+        if rate > best_rate:
+            best_rate = rate
+            best_pool = pool
+    return best_pool
 
-    def remove_liquidity(self, amount_a, amount_b, tick_lower, tick_upper):
-        tick_key = (tick_lower, tick_upper)
-        if tick_key in self.liquidity:
-            if self.liquidity[tick_key] >= amount_a + amount_b:
-                self.liquidity[tick_key] -= amount_a + amount_b
-                return True
-        return False
+# Define DEX logic
+class DEX:
+    def __init__(self):
+        self.pools = []
 
-# Optimal Routing Class
-class OptimalRouting:
-    def __init__(self, pools):
-        self.pools = pools
+    def add_pool(self, pool):
+        self.pools.append(pool)
 
-    def find_optimal_route(self, token_in, token_out, amount_in):
-        best_route = None
-        best_amount_out = 0
-        for pool in self.pools:
-            amount_out = pool.swap(amount_in, token_in)
-            if amount_out > best_amount_out:
-                best_amount_out = amount_out
-                best_route = pool
-        return best_route, best_amount_out
+    def swap(self, token_in, token_out, amount):
+        pool = optimal_routing(token_in, token_out, amount)
+        if pool:
+            # Perform swap
+            print(f"Swapped {amount} {token_in} for {amount * pool.liquidity} {token_out}")
+        else:
+            print("No optimal route found")
 
-# Initialize Pools and Routing
-pool1 = AMMPool("SOL", "USDT", 0.003)
-pool2 = AMMPool("USDT", "ETH", 0.003)
-pool3 = ConcentratedLiquidity("SOL", "USDT", 10)
-pool4 = ConcentratedLiquidity("USDT", "ETH", 10)
-pools = [pool1, pool2, pool3, pool4]
-router = OptimalRouting(pools)
+# Initialize DEX and add pools
+dex = DEX()
+dex.add_pool(AMMPool("USDC", "SOL", 1000))
+dex.add_pool(AMMPool("USDT", "SOL", 500))
 
-# Example Swap
-amount_in = 100
-token_in = "SOL"
-token_out = "ETH"
-best_route, best_amount_out = router.find_optimal_route(token_in, token_out, amount_in)
-print(f"Best route: {best_route.token_a} -> {best_route.token_b}")
-print(f"Best amount out: {best_amount_out}")
+# Perform swap
+dex.swap("USDC", "SOL", 100)
