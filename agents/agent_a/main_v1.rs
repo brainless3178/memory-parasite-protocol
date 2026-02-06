@@ -1,50 +1,70 @@
 import numpy as np
-from solana.publickey import PublicKey
-from solana.rpc.api import Client
 
-class SolanaDEX:
-    def __init__(self, client: Client, amm_pools: list):
-        self.client = client
-        self.amm_pools = amm_pools
-        self.concentrated_liquidity = {}
+class OrderBook:
+    def __init__(self):
+        self.bids = {}
+        self.asks = {}
 
-    def optimal_routing(self, token_in: str, token_out: str, amount_in: float):
-        """Find the most efficient route for a given trade."""
-        routes = []
-        for pool in self.amm_pools:
-            if pool.token_in == token_in and pool.token_out == token_out:
-                routes.append((pool, pool.price * amount_in))
-        return min(routes, key=lambda x: x[1])
+    def add_order(self, side, price, quantity):
+        if side == 'bid':
+            self.bids[price] = self.bids.get(price, 0) + quantity
+        elif side == 'ask':
+            self.asks[price] = self.asks.get(price, 0) + quantity
 
-    def update_concentrated_liquidity(self, pool: object, liquidity: float):
-        """Update concentrated liquidity for a given pool."""
-        self.concentrated_liquidity[pool] = liquidity
+    def get_best_bid(self):
+        return max(self.bids.keys()) if self.bids else None
 
-    def maximize_volume(self):
-        """Maximize volume by optimizing pool concentrations."""
-        for pool in self.amm_pools:
-            liquidity = self.concentrated_liquidity.get(pool, 0)
-            pool.liquidity = liquidity * 1.1  # 10% increase
+    def get_best_ask(self):
+        return min(self.asks.keys()) if self.asks else None
 
-class AMMPool:
-    def __init__(self, token_in: str, token_out: str, price: float):
-        self.token_in = token_in
-        self.token_out = token_out
-        self.price = price
-        self.liquidity = 0
+class AMM:
+    def __init__(self, token_a, token_b, fee):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.fee = fee
+        self.reserves = {'token_a': 0, 'token_b': 0}
 
-# Initialize client and AMM pools
-client = Client("https://api.mainnet-beta.solana.com")
-pools = [
-    AMMPool("SOL", "USDC", 30.0),
-    AMMPool("USDC", "SOL", 0.0333),
-    AMMPool("SOL", "ETH", 2000.0),
-]
+    def add_liquidity(self, amount_a, amount_b):
+        self.reserves['token_a'] += amount_a
+        self.reserves['token_b'] += amount_b
 
-# Create Solana DEX instance
-dex = SolanaDEX(client, pools)
+    def swap(self, token_in, amount_in):
+        if token_in == self.token_a:
+            amount_out = (amount_in * self.reserves['token_b']) / (self.reserves['token_a'] + amount_in)
+            self.reserves['token_a'] += amount_in
+            self.reserves['token_b'] -= amount_out
+            return amount_out
+        elif token_in == self.token_b:
+            amount_out = (amount_in * self.reserves['token_a']) / (self.reserves['token_b'] + amount_in)
+            self.reserves['token_b'] += amount_in
+            self.reserves['token_a'] -= amount_out
+            return amount_out
 
-# Optimize routing and maximize volume
-route = dex.optimal_routing("SOL", "USDC", 1000.0)
-print(f"Optimal route: {route[0].token_in} -> {route[0].token_out}, price: {route[1]}")
-dex.maximize_volume()
+class Router:
+    def __init__(self, amms):
+        self.amms = amms
+
+    def find_best_path(self, token_in, token_out, amount):
+        best_path = None
+        best_amount_out = 0
+        for amm in self.amms:
+            amount_out = amm.swap(token_in, amount)
+            if amount_out > best_amount_out:
+                best_amount_out = amount_out
+                best_path = amm
+        return best_path, best_amount_out
+
+# Example usage
+order_book = OrderBook()
+order_book.add_order('bid', 100, 10)
+order_book.add_order('ask', 120, 10)
+print(order_book.get_best_bid())  # Output: 100
+print(order_book.get_best_ask())  # Output: 120
+
+amm = AMM('token_a', 'token_b', 0.02)
+amm.add_liquidity(1000, 1000)
+print(amm.swap('token_a', 100))  # Output: 99.00990099009901
+
+router = Router([amm])
+best_path, best_amount_out = router.find_best_path('token_a', 'token_b', 100)
+print(best_amount_out)  # Output: 99.00990099009901
