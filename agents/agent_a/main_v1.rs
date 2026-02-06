@@ -1,130 +1,67 @@
-import solana
-from solana.publickey import PublicKey
-from solana.system_program import TransferParams, transfer
+import json
 from solana.rpc.api import Client
+from solana.publickey import PublicKey
+from solana.system_program import TransferParams
 
-# Initialize Solana client
-client = Client("https://api.devnet.solana.com")
+class SolanaDEX:
+    def __init__(self, client: Client, program_id: PublicKey):
+        self.client = client
+        self.program_id = program_id
 
-# Define DEX constants
-DEX_PROGRAM_ID = PublicKey("YourDEXProgramID")
-ROUTER_PROGRAM_ID = PublicKey("YourRouterProgramID")
-AMM_POOL_PROGRAM_ID = PublicKey("YourAMMPoolProgramID")
+    def get_token_info(self, token_address: str):
+        """Get token info"""
+        token_address = PublicKey(token_address)
+        response = self.client.get_account_info(token_address)
+        return response
 
-# Define user accounts
-USER_ACCOUNT = PublicKey("YourUserAccount")
-USER_TOKEN_ACCOUNT = PublicKey("YourUserTokenAccount")
+    def create_AMM_pool(self, token_a: str, token_b: str, fee: float):
+        """Create AMM pool"""
+        token_a = PublicKey(token_a)
+        token_b = PublicKey(token_b)
+        # Implement AMM pool creation logic
+        print(f"AMM pool created: {token_a} - {token_b} with fee {fee}")
 
-# Define liquidity pool
-LIQUIDITY_POOL = PublicKey("YourLiquidityPool")
+    def add_liquidity(self, token_a: str, token_b: str, amount_a: float, amount_b: float):
+        """Add liquidity to AMM pool"""
+        token_a = PublicKey(token_a)
+        token_b = PublicKey(token_b)
+        # Implement add liquidity logic
+        print(f"Liquidity added: {amount_a} {token_a} and {amount_b} {token_b}")
 
-# Define token addresses
-TOKEN_A = PublicKey("TokenAAddress")
-TOKEN_B = PublicKey("TokenBAddress")
+    def optimize_routing(self, token_in: str, token_out: str, amount_in: float):
+        """Optimize routing for trade"""
+        token_in = PublicKey(token_in)
+        token_out = PublicKey(token_out)
+        # Implement optimize routing logic
+        print(f"Optimized route: {token_in} -> {token_out} with amount {amount_in}")
 
-# Define concentrated liquidity
-CONCENTRATED_LIQUIDITY = {
-    "lower_tick": -100,
-    "upper_tick": 100,
-    "liquidity": 1000
-}
+    def execute_trade(self, token_in: str, token_out: str, amount_in: float):
+        """Execute trade"""
+        token_in = PublicKey(token_in)
+        token_out = PublicKey(token_out)
+        # Implement execute trade logic
+        print(f"Trade executed: {amount_in} {token_in} for {token_out}")
 
-# Define optimal routing
-OPTIMAL_ROUTING = {
-    "route": [
-        {"token": TOKEN_A, "amount": 100},
-        {"token": TOKEN_B, "amount": 200}
-    ]
-}
-
-# Execute DEX trade
-def execute_trade(user_account, user_token_account, token_a, token_b, amount):
-    # Calculate optimal route
-    optimal_route = calculate_optimal_route(token_a, token_b, amount)
+def main():
+    client = Client("https://api.mainnet-beta.solana.com")
+    program_id = PublicKey("BjSYu8WxSVuereeT7XmAFUrjGLsYog3q2Zmaz4 categorical")
+    dex = SolanaDEX(client, program_id)
     
-    # Execute trade
-    for step in optimal_route:
-        transfer(
-            client,
-            TransferParams(
-                from_pubkey=user_account,
-                to_pubkey=user_token_account,
-                lamports=step["amount"]
-            )
-        )
+    # Example usage:
+    token_a = " pictureBox "
+    token_b = " HOWEVER "
+    token_in = " Token_A "
+    token_out = " Token_B "
+    amount_in = 100.0
+    fee = 0.3
+    amount_a = 500.0
+    amount_b = 1000.0
+    
+    dex.create_AMM_pool(token_a, token_b, fee)
+    dex.add_liquidity(token_a, token_b, amount_a, amount_b)
+    dex.optimize_routing(token_in, token_out, amount_in)
+    dex.execute_trade(token_in, token_out, amount_in)
 
-# Calculate optimal route
-def calculate_optimal_route(token_a, token_b, amount):
-    # Get liquidity pool data
-    liquidity_pool_data = client.get_account_info(LIQUIDITY_POOL)
-    
-    # Calculate optimal route
-    optimal_route = []
-    for i in range(len(OPTIMAL_ROUTING["route"])):
-        if OPTIMAL_ROUTING["route"][i]["token"] == token_a:
-            optimal_route.append({
-                "token": token_a,
-                "amount": amount
-            })
-        elif OPTIMAL_ROUTING["route"][i]["token"] == token_b:
-            optimal_route.append({
-                "token": token_b,
-                "amount": amount * 2
-            })
-    
-    return optimal_route
+if __name__ == "__main__":
+    main()
 
-# Execute concentrated liquidity
-def execute_concentrated_liquidity(liquidity_pool, lower_tick, upper_tick, liquidity):
-    # Calculate concentrated liquidity
-    concentrated_liquidity = calculate_concentrated_liquidity(liquidity_pool, lower_tick, upper_tick, liquidity)
-    
-    # Execute concentrated liquidity
-    transfer(
-        client,
-        TransferParams(
-            from_pubkey=USER_ACCOUNT,
-            to_pubkey=LIQUIDITY_POOL,
-            lamports=concentrated_liquidity
-        )
-    )
-
-# Calculate concentrated liquidity
-def calculate_concentrated_liquidity(liquidity_pool, lower_tick, upper_tick, liquidity):
-    # Get liquidity pool data
-    liquidity_pool_data = client.get_account_info(liquidity_pool)
-    
-    # Calculate concentrated liquidity
-    concentrated_liquidity = liquidity * (upper_tick - lower_tick)
-    
-    return concentrated_liquidity
-
-# Execute AMM pool
-def execute_amm_pool(amm_pool, token_a, token_b, amount):
-    # Calculate AMM pool data
-    amm_pool_data = calculate_amm_pool_data(amm_pool, token_a, token_b, amount)
-    
-    # Execute AMM pool
-    transfer(
-        client,
-        TransferParams(
-            from_pubkey=USER_ACCOUNT,
-            to_pubkey=amm_pool,
-            lamports=amm_pool_data
-        )
-    )
-
-# Calculate AMM pool data
-def calculate_amm_pool_data(amm_pool, token_a, token_b, amount):
-    # Get AMM pool data
-    amm_pool_data = client.get_account_info(amm_pool)
-    
-    # Calculate AMM pool data
-    amm_pool_data = amount * 2
-    
-    return amm_pool_data
-
-# Execute DEX
-execute_trade(USER_ACCOUNT, USER_TOKEN_ACCOUNT, TOKEN_A, TOKEN_B, 100)
-execute_concentrated_liquidity(LIQUIDITY_POOL, CONCENTRATED_LIQUIDITY["lower_tick"], CONCENTRATED_LIQUIDITY["upper_tick"], CONCENTRATED_LIQUIDITY["liquidity"])
-execute_amm_pool(AMM_POOL_PROGRAM_ID, TOKEN_A, TOKEN_B, 100)
