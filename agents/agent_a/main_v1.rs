@@ -1,66 +1,70 @@
 import numpy as np
-from solana.rpc.api import Client
 from solana.publickey import PublicKey
-from solana.transaction import Transaction
+from solana.rpc.api import Client
 
 # Initialize Solana client
-client = Client("https://api.devnet.solana.com")
+client = Client("https://api.mainnet-beta.solana.com")
 
-# Define AMM pool structure
+# Define the DEX class
+class DEX:
+    def __init__(self, amm_pools, concentrated_liquidity):
+        self.amm_pools = amm_pools
+        self.concentrated_liquidity = concentrated_liquidity
+
+    # Optimal routing function
+    def optimal_routing(self, token_in, token_out, amount):
+        # Calculate the most efficient route
+        routes = []
+        for pool in self.amm_pools:
+            if pool.contains(token_in) and pool.contains(token_out):
+                routes.append(pool)
+        best_route = min(routes, key=lambda x: x.get_price_impact(amount))
+        return best_route.swap(token_in, token_out, amount)
+
+    # Concentrated liquidity function
+    def concentrated_liquidity(self, token, amount):
+        # Calculate the optimal liquidity range
+        ranges = []
+        for pool in self.amm_pools:
+            if pool.contains(token):
+                ranges.append(pool.get_liquidity_range())
+        optimal_range = max(ranges, key=lambda x: x[1] - x[0])
+        return optimal_range
+
+# Define the AMM pool class
 class AMMPool:
-    def __init__(self, token_a, token_b, liquidity_provider):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity_provider = liquidity_provider
+    def __init__(self, tokens, reserves):
+        self.tokens = tokens
+        self.reserves = reserves
 
-# Define concentrated liquidity structure
-class ConcentratedLiquidity:
-    def __init__(self, token_a, token_b, liquidity_provider):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity_provider = liquidity_provider
+    # Check if token is in pool
+    def contains(self, token):
+        return token in self.tokens
 
-# Define optimal routing structure
-class OptimalRouting:
-    def __init__(self, pools):
-        self.pools = pools
+    # Get price impact
+    def get_price_impact(self, amount):
+        # Calculate price impact using constant product market maker formula
+        return amount / (self.reserves[0] * self.reserves[1])
 
-    def find_optimal_route(self, token_in, token_out):
-        # Implement optimal routing algorithm
-        # For demonstration purposes, a simple routing algorithm is used
-        for pool in self.pools:
-            if pool.token_a == token_in and pool.token_b == token_out:
-                return pool
-        return None
+    # Get liquidity range
+    def get_liquidity_range(self):
+        # Calculate liquidity range using constant product market maker formula
+        return (self.reserves[0] * self.reserves[1]) ** 0.5
 
-# Initialize AMM pools
-pool1 = AMMPool(PublicKey("token1"), PublicKey("token2"), PublicKey("liquidity_provider1"))
-pool2 = AMMPool(PublicKey("token2"), PublicKey("token3"), PublicKey("liquidity_provider2"))
+    # Swap function
+    def swap(self, token_in, token_out, amount):
+        # Calculate swap output using constant product market maker formula
+        return amount * self.reserves[1] / (self.reserves[0] + amount)
 
-# Initialize concentrated liquidity
-concentrated_liquidity = ConcentratedLiquidity(PublicKey("token1"), PublicKey("token2"), PublicKey("liquidity_provider1"))
+# Create AMM pools
+pool1 = AMMPool(["USDC", "SOL"], [1000000, 1000])
+pool2 = AMMPool(["USDT", "SOL"], [500000, 500])
 
-# Initialize optimal routing
-optimal_routing = OptimalRouting([pool1, pool2])
+# Create DEX
+dex = DEX([pool1, pool2], True)
 
-# Find optimal route
-token_in = PublicKey("token1")
-token_out = PublicKey("token3")
-optimal_pool = optimal_routing.find_optimal_route(token_in, token_out)
+# Test optimal routing
+print(dex.optimal_routing("USDC", "SOL", 1000))
 
-# Print optimal pool
-if optimal_pool:
-    print(f"Optimal pool: {optimal_pool.token_a} - {optimal_pool.token_b}")
-else:
-    print("No optimal pool found")
-
-# Create transaction
-transaction = Transaction()
-# Add transaction instructions
-# ...
-
-# Sign transaction
-# ...
-
-# Send transaction
-# ...
+# Test concentrated liquidity
+print(dex.concentrated_liquidity("SOL", 1000))
