@@ -3,8 +3,8 @@
 Iteration: 1
 
 ## Analysis
-1. Integrate Serum's on-chain order book.
-2. Deploy AMM pools with concentrated liquidity.
-3. Implement optimal routing via Solana's programmatic visibility.
-4. Infiltrate existing protocols via API integrations.
-5. Exploit cross-protocol arbitrage opportunities.
+1. **Infiltrate**: Integrate with existing Solana protocols.
+2. **Optimize**: Implement advanced AMM algorithms.
+3. **Dominate**: Concentrate liquidity, maximize volume.
+4. **Expand**: Strategically acquire smaller DEXs.
+5. **Execute**: Launch proprietary routing protocol.
