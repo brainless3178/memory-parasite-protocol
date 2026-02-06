@@ -1,44 +1,51 @@
 import numpy as np
+from solana.publickey import PublicKey
+from solana.rpc.api import Client
 
-class SolanaDEX:
-    def __init__(self):
-        self.amm_pools = {}
-        self.concentrated_liquidity = {}
+# Initialize Solana client
+client = Client("https://api.mainnet-beta.solana.com")
 
-    def add_amm_pool(self, token1, token2, liquidity):
-        self.amm_pools[(token1, token2)] = liquidity
+class Pool:
+    def __init__(self, token_a, token_b, fee):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.fee = fee
+        self.liquidity = 0
 
-    def add_concentrated_liquidity(self, token1, token2, liquidity, price_range):
-        self.concentrated_liquidity[(token1, token2)] = (liquidity, price_range)
+    def add_liquidity(self, amount_a, amount_b):
+        self.liquidity += amount_a + amount_b
 
-    def optimal_routing(self, token_in, token_out, amount_in):
-        # Find the most efficient path
-        best_path = None
-        best_rate = 0
-        for token1, token2 in self.amm_pools:
-            if token1 == token_in and token2 == token_out:
-                rate = self.amm_pools[(token1, token2)] / amount_in
-                if rate > best_rate:
-                    best_rate = rate
-                    best_path = (token1, token2)
-            elif token1 == token_out and token2 == token_in:
-                rate = 1 / (self.amm_pools[(token2, token1)] / amount_in)
-                if rate > best_rate:
-                    best_rate = rate
-                    best_path = (token2, token1)
-        return best_path
+class Router:
+    def __init__(self, pools):
+        self.pools = pools
 
-    def execute_trade(self, token_in, token_out, amount_in):
-        best_path = self.optimal_routing(token_in, token_out, amount_in)
-        if best_path:
-            # Update liquidity
-            token1, token2 = best_path
-            self.amm_pools[(token1, token2)] -= amount_in
-            return True
-        return False
+    def get_optimal_route(self, token_in, token_out, amount_in):
+        best_route = None
+        best_amount_out = 0
+        for pool in self.pools:
+            if pool.token_a == token_in and pool.token_b == token_out:
+                amount_out = amount_in * (1 - pool.fee)
+                if amount_out > best_amount_out:
+                    best_amount_out = amount_out
+                    best_route = [pool]
+            elif pool.token_b == token_in and pool.token_a == token_out:
+                amount_out = amount_in * (1 - pool.fee)
+                if amount_out > best_amount_out:
+                    best_amount_out = amount_out
+                    best_route = [pool]
+        return best_route, best_amount_out
 
-# Example usage:
-dex = SolanaDEX()
-dex.add_amm_pool('SOL', 'USDT', 1000000)
-dex.add_concentrated_liquidity('SOL', 'USDT', 500000, (1.5, 2.5))
-print(dex.execute_trade('SOL', 'USDT', 1000))
+# Initialize pools and router
+pool1 = Pool(PublicKey("TokenA"), PublicKey("TokenB"), 0.03)
+pool2 = Pool(PublicKey("TokenB"), PublicKey("TokenC"), 0.02)
+router = Router([pool1, pool2])
+
+# Add liquidity to pools
+pool1.add_liquidity(1000, 1000)
+pool2.add_liquidity(1000, 1000)
+
+# Get optimal route
+route, amount_out = router.get_optimal_route(PublicKey("TokenA"), PublicKey("TokenC"), 100)
+
+print(f"Optimal route: {route}")
+print(f"Amount out: {amount_out}")
