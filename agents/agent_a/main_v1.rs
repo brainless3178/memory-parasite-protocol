@@ -1,80 +1,55 @@
 import numpy as np
-from solana.publickey import PublicKey
-from solana.transaction import Transaction
-from solana.rpc.api import Client
 
-# Initialize Solana client
-client = Client("https://api.devnet.solana.com")
-
-# Define DEX constants
-DEX_PROGRAM_ID = PublicKey("YOUR_DEX_PROGRAM_ID")
-AMM_POOL_PROGRAM_ID = PublicKey("YOUR_AMM_POOL_PROGRAM_ID")
-
-# Define AMM pool class
-class AMMPool:
-    def __init__(self, coin1, coin2, liquidity):
-        self.coin1 = coin1
-        self.coin2 = coin2
-        self.liquidity = liquidity
-
-    def get_price(self):
-        return self.liquidity[self.coin1] / self.liquidity[self.coin2]
-
-# Define concentrated liquidity class
-class ConcentratedLiquidity:
-    def __init__(self, amm_pool, lower_tick, upper_tick):
-        self.amm_pool = amm_pool
-        self.lower_tick = lower_tick
-        self.upper_tick = upper_tick
-
-    def get_liquidity(self):
-        return self.amm_pool.liquidity
-
-# Define optimal routing class
-class OptimalRouting:
-    def __init__(self, dex_program_id, amm_pool_program_id):
-        self.dex_program_id = dex_program_id
-        self.amm_pool_program_id = amm_pool_program_id
-
-    def get_optimal_route(self, coin1, coin2):
-        # Implement optimal routing algorithm
-        # For simplicity, assume the optimal route is a direct swap
-        return [coin1, coin2]
-
-# Define DEX class
-class DEX:
-    def __init__(self, program_id, amm_pool_program_id):
-        self.program_id = program_id
-        self.amm_pool_program_id = amm_pool_program_id
+class SolanaDEX:
+    def __init__(self):
         self.amm_pools = {}
         self.concentrated_liquidity = {}
 
-    def add_amm_pool(self, amm_pool):
-        self.amm_pools[amm_pool.coin1] = amm_pool
+    def add_amm_pool(self, pool_name, token_a, token_b, liquidity):
+        self.amm_pools[pool_name] = {'token_a': token_a, 'token_b': token_b, 'liquidity': liquidity}
 
-    def add_concentrated_liquidity(self, concentrated_liquidity):
-        self.concentrated_liquidity[concentrated_liquidity.amm_pool.coin1] = concentrated_liquidity
+    def add_concentrated_liquidity(self, pool_name, liquidity):
+        self.concentrated_liquidity[pool_name] = liquidity
 
-    def get_optimal_route(self, coin1, coin2):
-        optimal_routing = OptimalRouting(self.program_id, self.amm_pool_program_id)
-        return optimal_routing.get_optimal_route(coin1, coin2)
+    def optimal_routing(self, token_in, token_out, amount):
+        # Calculate optimal route using Bellman-Ford algorithm
+        distances = {token: float('inf') for token in self.amm_pools}
+        distances[token_in] = 0
 
-# Initialize DEX
-dex = DEX(DEX_PROGRAM_ID, AMM_POOL_PROGRAM_ID)
+        for _ in range(len(self.amm_pools) - 1):
+            for pool, tokens in self.amm_pools.items():
+                for token in [tokens['token_a'], tokens['token_b']]:
+                    if distances[pool] + 1 < distances[token]:
+                        distances[token] = distances[pool] + 1
 
-# Add AMM pool
-amm_pool = AMMPool("SOL", "USDC", {"SOL": 1000, "USDC": 100000})
-dex.add_amm_pool(amm_pool)
+        route = []
+        current_token = token_out
+        while current_token!= token_in:
+            route.append(current_token)
+            for pool, tokens in self.amm_pools.items():
+                if tokens['token_a'] == current_token or tokens['token_b'] == current_token:
+                    current_token = tokens['token_a'] if tokens['token_b'] == current_token else tokens['token_b']
+                    break
 
-# Add concentrated liquidity
-concentrated_liquidity = ConcentratedLiquidity(amm_pool, -100, 100)
-dex.add_concentrated_liquidity(concentrated_liquidity)
+        return route[::-1]
 
-# Get optimal route
-optimal_route = dex.get_optimal_route("SOL", "USDC")
-print(optimal_route)
+    def trade(self, token_in, token_out, amount):
+        route = self.optimal_routing(token_in, token_out, amount)
+        for i in range(len(route) - 1):
+            pool_name = f'{route[i]}_{route[i+1]}'
+            if pool_name not in self.amm_pools:
+                pool_name = f'{route[i+1]}_{route[i]}'
+            liquidity = self.amm_pools[pool_name]['liquidity']
+            # Calculate trade using AMM formula
+            amount_out = amount * liquidity / (liquidity + amount)
+            amount = amount_out
 
-# Example transaction
-transaction = Transaction()
-# Transaction instructions go here
-# client.send_transaction(transaction)
+        return amount
+
+dex = SolanaDEX()
+dex.add_amm_pool('POOL1', 'SOL', 'USDT', 10000)
+dex.add_amm_pool('POOL2', 'USDT', 'ETH', 5000)
+dex.add_concentrated_liquidity('POOL1', 1000)
+dex.add_concentrated_liquidity('POOL2', 500)
+
+print(dex.trade('SOL', 'ETH', 100))
