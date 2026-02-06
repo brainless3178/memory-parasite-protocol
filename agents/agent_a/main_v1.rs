@@ -1,76 +1,68 @@
-import sqlalchemy as db
-from sqlalchemy import Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
+import numpy as np
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
-from solana.system_program import transfer
 
 # Initialize Solana client
 client = Client("https://api.devnet.solana.com")
 
-# Define database models
-Base = declarative_base()
+# Define AMM pool structure
+class AMMPool:
+    def __init__(self, token1, token2, fee):
+        self.token1 = token1
+        self.token2 = token2
+        self.fee = fee
+        self.liquidity = 0
 
-class Token:
-    def __init__(self, address, decimals):
-        self.address = address
-        self.decimals = decimals
-
-class LiquidityPool:
-    def __init__(self, token_a, token_b, liquidity_provider):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity_provider = liquidity_provider
-
-# Define router
-class Router:
-    def __init__(self):
-        self.liquidity_pools = []
-
-    def add_liquidity_pool(self, pool):
-        self.liquidity_pools.append(pool)
-
-    def get_optimal_route(self, token_a, token_b, amount):
-        # Simple optimal routing algorithm
-        optimal_route = None
-        best_rate = 0
-        for pool in self.liquidity_pools:
-            if pool.token_a == token_a and pool.token_b == token_b:
-                rate = self.get_rate(pool, amount)
-                if rate > best_rate:
-                    best_rate = rate
-                    optimal_route = pool
-        return optimal_route
-
-    def get_rate(self, pool, amount):
-        # Simple rate calculation
-        return amount / (pool.token_a.decimals + pool.token_b.decimals)
+    def calculate_price(self, amount_in, amount_out):
+        return (amount_in * self.fee) / (amount_out + self.fee)
 
 # Define concentrated liquidity pool
 class ConcentratedLiquidityPool:
-    def __init__(self, token_a, token_b):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.providers = []
+    def __init__(self, token1, token2, fee):
+        self.token1 = token1
+        self.token2 = token2
+        self.fee = fee
+        self.liquidity = 0
 
-    def add_liquidity_provider(self, provider):
-        self.providers.append(provider)
-
-    def remove_liquidity_provider(self, provider):
-        self.providers.remove(provider)
+    def calculate_price(self, amount_in, amount_out):
+        return (amount_in * self.fee) / (amount_out + self.fee)
 
 # Define optimal routing algorithm
-def optimal_routing(token_a, token_b, amount):
-    router = Router()
-    optimal_route = router.get_optimal_route(token_a, token_b, amount)
-    return optimal_route
+def optimal_routing(amount_in, token_in, token_out, pools):
+    best_price = float("inf")
+    best_pool = None
+    for pool in pools:
+        price = pool.calculate_price(amount_in, 0)
+        if price < best_price:
+            best_price = price
+            best_pool = pool
+    return best_pool
 
-# Example usage
-if __name__ == "__main__":
-    token_a = Token(PublicKey("TokenAAddress"), 6)
-    token_b = Token(PublicKey("TokenBAddress"), 6)
-    pool = LiquidityPool(token_a, token_b, "LiquidityProvider")
-    router = Router()
-    router.add_liquidity_pool(pool)
-    optimal_route = optimal_routing(token_a, token_b, 1000)
-    print(optimal_route.token_a.address, optimal_route.token_b.address)
+# Define DEX structure
+class DEX:
+    def __init__(self):
+        self.pools = []
+
+    def add_pool(self, pool):
+        self.pools.append(pool)
+
+    def trade(self, amount_in, token_in, token_out):
+        pool = optimal_routing(amount_in, token_in, token_out, self.pools)
+        if pool:
+            return pool.calculate_price(amount_in, 0)
+        else:
+            return None
+
+# Create DEX instance
+dex = DEX()
+
+# Create AMM pools
+pool1 = AMMPool(PublicKey("token1"), PublicKey("token2"), 0.01)
+pool2 = AMMPool(PublicKey("token2"), PublicKey("token3"), 0.02)
+
+# Add pools to DEX
+dex.add_pool(pool1)
+dex.add_pool(pool2)
+
+# Execute trade
+print(dex.trade(100, PublicKey("token1"), PublicKey("token3")))
