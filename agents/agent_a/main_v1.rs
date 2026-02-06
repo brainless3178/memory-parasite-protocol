@@ -1,73 +1,56 @@
 import numpy as np
-from solana.publickey import PublicKey
-from solana.rpc.api import Client
 
-# Constants
-CHAIN_ID = 101
-DEX_PK = PublicKey(" YOUR_DEX_PK ")
-ROUTE_MAX_HOPS = 3
+class OrderBook:
+    def __init__(self):
+        self.bids = []
+        self.asks = []
 
-# AMM Pool class
-class AMMPool:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.reserves = np.array([0.0, 0.0])
+    def add_order(self, side, price, quantity):
+        if side == 'bid':
+            self.bids.append((price, quantity))
+            self.bids.sort(key=lambda x: x[0], reverse=True)
+        elif side == 'ask':
+            self.asks.append((price, quantity))
+            self.asks.sort(key=lambda x: x[0])
 
-    def get_reserves(self):
-        return self.reserves
+class AMM:
+    def __init__(self, reserve_token, reserve_quote):
+        self.reserve_token = reserve_token
+        self.reserve_quote = reserve_quote
 
-    def update_reserves(self, new_reserves):
-        self.reserves = new_reserves
+    def get_price(self):
+        return self.reserve_quote / self.reserve_token
 
-# Concentrated Liquidity class
 class ConcentratedLiquidity:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.positions = {}
+    def __init__(self, lower_tick, upper_tick):
+        self.lower_tick = lower_tick
+        self.upper_tick = upper_tick
+        self.liquidity = 0
 
-    def add_liquidity(self, token_a_amount, token_b_amount):
-        self.positions[token_a] = token_a_amount
-        selfpositions[token_b] = token_b_amount
+    def add_liquidity(self, amount):
+        self.liquidity += amount
 
-# Optimal Routing class
-class OptimalRouting:
-    def __init__(self, dex_pk, route_max_hops):
-        self.dex_pk = dex_pk
-        self.route_max_hops = route_max_hops
-        self.routes = {}
+class OptimalRouter:
+    def __init__(self, amms):
+        self.amms = amms
 
-    def get_optimal_route(self, token_in, token_out):
-        # Use Bellman-Ford algorithm to find optimal route
-        distance = np.full((len(token_in), len(token_out)), np.inf)
-        predecessor = np.full((len(token_in), len(token_out)), None)
+    def get_best_path(self, token_in, token_out):
+        best_path = None
+        best_price = float('inf')
+        for amm in self.amms:
+            price = amm.get_price()
+            if price < best_price:
+                best_price = price
+                best_path = amm
+        return best_path
 
-        for i in range(len(token_in)):
-            for j in range(len(token_out)):
-                if token_in[i] == token_out[j]:
-                    distance[i, j] = 0
+# Initialize components
+order_book = OrderBook()
+amm = AMM(1000, 5000)
+concentrated_liquidity = ConcentratedLiquidity(-10, 10)
+optimal_router = OptimalRouter([amm])
 
-        for k in range(self.route_max_hops):
-            for i in range(len(token_in)):
-                for j in range(len(token_out)):
-                    for h in range(len(token_in)):
-                        if distance[i, h] + distance[h, j] < distance[i, j]:
-                            distance[i, j] = distance[i, h] + distance[h, j]
-                            predecessor[i, j] = h
-
-        return distance, predecessor
-
-# Initialize client
-client = Client("https://api.devnet.solana.com")
-
-# Create DEX instance
-dex = OptimalRouting(DEX_PK, ROUTE_MAX_HOPS)
-
-# Create AMM pool instance
-pool = AMMPool("SOL", "USDC", 0.003)
-
-# Create concentrated liquidity instance
-liquidity = ConcentratedLiquidity("SOL", "USDC", 0.003)
+# Add liquidity and execute trades
+concentrated_liquidity.add_liquidity(1000)
+best_path = optimal_router.get_best_path('token_in', 'token_out')
+print(f"Best path price: {best_path.get_price()}")
