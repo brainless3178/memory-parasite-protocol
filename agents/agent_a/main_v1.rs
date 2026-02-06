@@ -1,136 +1,77 @@
 from solana.rpc.api import Client
-from solana.transaction import Transaction
-from spl.token.constants import TOKEN_PROGRAM_ID
-from spl.token.instructions import transfer, approve, initialize_account, initialize_mint
 from solana.publickey import PublicKey
-from solana.keypair import Keypair
-from solana.system_program import create_account, CreateAccountParams
+from solana.transaction import Transaction, Account
+from spl.token.instructions import TokenProgram, transfer
+from spl.token.constants import TOKEN_PROGRAM_ID
 from decimal import Decimal
+import numpy as np
 
 class SolanaDEX:
-    def __init__(self, rpc_url):
+    def __init__(self, rpc_url: str):
         self.client = Client(rpc_url)
-        self.pools = {}  # Pool data
-        self.fees = Decimal("0.003")  # Default fee, adjustable per pool
-
-    def create_pool(self, mint_a, mint_b, liquidity_a, liquidity_b, owner_keypair):
-        pool_keypair = Keypair()
-        self.pools[pool_keypair.public_key] = {
-            "mint_a": mint_a,
-            "mint_b": mint_b,
-            "liquidity_a": liquidity_a,
-            "liquidity_b": liquidity_b,
-            "fee": self.fees,
+        self.pools = {}  # Store AMM pools and concentrated liquidity
+        
+    def create_pool(self, token_a: str, token_b: str, fee: float):
+        pool_key = f"{token_a}_{token_b}"
+        self.pools[pool_key] = {
+            "token_a": Decimal(0),
+            "token_b": Decimal(0),
+            "fee": Decimal(fee)
         }
-        return pool_keypair.public_key
-
-    def swap(self, pool_pubkey, amount_in, mint_in, mint_out, user_keypair):
-        pool = self.pools.get(pool_pubkey)
-        if not pool:
-            raise ValueError("Pool does not exist")
-
-        if mint_in == pool["mint_a"] and mint_out == pool["mint_b"]:
-            input_reserve, output_reserve = pool["liquidity_a"], pool["liquidity_b"]
-        elif mint_in == pool["mint_b"] and mint_out == pool["mint_a"]:
-            input_reserve, output_reserve = pool["liquidity_b"], pool["liquidity_a"]
-        else:
-            raise ValueError("Invalid token pair")
-
-        amount_in_with_fee = Decimal(amount_in) * (1 - pool["fee"])
-        amount_out = (amount_in_with_fee * output_reserve) / (input_reserve + amount_in_with_fee)
-
-        pool["liquidity_a"], pool["liquidity_b"] = (
-            input_reserve + Decimal(amount_in),
-            output_reserve - Decimal(amount_out),
-        )
-
-        # Execute transfer using Solana transaction
-        transaction = Transaction()
-        transaction.add(
-            transfer(
-                source=user_keypair.public_key,
-                dest=pool_pubkey,
-                owner=user_keypair.public_key,
-                amount=int(amount_in),
-                program_id=TOKEN_PROGRAM_ID,
-            )
-        )
-        self.client.send_transaction(transaction, user_keypair)
-
+    
+    def add_liquidity(self, pool_key: str, token_a_amt: Decimal, token_b_amt: Decimal):
+        if pool_key not in self.pools:
+            raise ValueError("Pool does not exist.")
+        self.pools[pool_key]["token_a"] += token_a_amt
+        self.pools[pool_key]["token_b"] += token_b_amt
+    
+    def get_price(self, pool_key: str, token_in: str, amount_in: Decimal):
+        pool = self.pools[pool_key]
+        reserve_in = pool[f"token_{token_in}"]
+        reserve_out = pool[f"token_{'a' if token_in == 'b' else 'b'}"]
+        if reserve_in <= 0 or reserve_out <= 0:
+            raise ValueError("Insufficient liquidity.")
+        amount_out = (amount_in * reserve_out * (1 - pool['fee'])) / (reserve_in + amount_in)
         return amount_out
+    
+    def swap(self, pool_key: str, token_in: str, amount_in: Decimal):
+        pool = self.pools[pool_key]
+        amount_out = self.get_price(pool_key, token_in, amount_in)
+        reserve_in = f"token_{token_in}"
+        reserve_out = f"token_{'a' if token_in == 'b' else 'b'}"
+        self.pools[pool_key][reserve_in] += amount_in
+        self.pools[pool_key][reserve_out] -= amount_out
+        return amount_out
+    
+    def optimal_routing(self, trades: list):
+        best_route = None
+        best_output = Decimal(0)
+        for route in trades:
+            output = Decimal(1)
+            valid_route = True
+            for pool_key, token_in, amount_in in route:
+                if pool_key not in self.pools:
+                    valid_route = False
+                    break
+                output = self.get_price(pool_key, token_in, amount_in)
+            if valid_route and output > best_output:
+                best_output = output
+                best_route = route
+        return best_route, best_output
+    
+    def execute_trade(self, route: list):
+        for pool_key, token_in, amount_in in route:
+            self.swap(pool_key, token_in, amount_in)
 
-    def route_swap(self, path, amount_in, user_keypair):
-        amount = Decimal(amount_in)
-        for i in range(len(path) - 1):
-            pool_pubkey, mint_in, mint_out = path[i]
-            amount = self.swap(pool_pubkey, amount, mint_in, mint_out, user_keypair)
-        return amount
-
-    def add_liquidity(self, pool_pubkey, amount_a, amount_b, user_keypair):
-        pool = self.pools.get(pool_pubkey)
-        if not pool:
-            raise ValueError("Pool does not exist")
-        pool["liquidity_a"] += Decimal(amount_a)
-        pool["liquidity_b"] += Decimal(amount_b)
-
-        transaction = Transaction()
-        transaction.add(
-            transfer(
-                source=user_keypair.public_key,
-                dest=pool_pubkey,
-                owner=user_keypair.public_key,
-                amount=int(amount_a),
-                program_id=TOKEN_PROGRAM_ID,
-            )
-        )
-        transaction.add(
-            transfer(
-                source=user_keypair.public_key,
-                dest=pool_pubkey,
-                owner=user_keypair.public_key,
-                amount=int(amount_b),
-                program_id=TOKEN_PROGRAM_ID,
-            )
-        )
-        self.client.send_transaction(transaction, user_keypair)
-
-    def remove_liquidity(self, pool_pubkey, shares, user_keypair):
-        pool = self.pools.get(pool_pubkey)
-        if not pool:
-            raise ValueError("Pool does not exist")
-
-        total_liquidity = pool["liquidity_a"] + pool["liquidity_b"]
-        amount_a = shares * pool["liquidity_a"] / total_liquidity
-        amount_b = shares * pool["liquidity_b"] / total_liquidity
-
-        pool["liquidity_a"] -= amount_a
-        pool["liquidity_b"] -= amount_b
-
-        transaction = Transaction()
-        transaction.add(
-            transfer(
-                source=pool_pubkey,
-                dest=user_keypair.public_key,
-                owner=pool_pubkey,
-                amount=int(amount_a),
-                program_id=TOKEN_PROGRAM_ID,
-            )
-        )
-        transaction.add(
-            transfer(
-                source=pool_pubkey,
-                dest=user_keypair.public_key,
-                owner=pool_pubkey,
-                amount=int(amount_b),
-                program_id=TOKEN_PROGRAM_ID,
-            )
-        )
-        self.client.send_transaction(transaction, user_keypair)
-
-# Example usage
+# Usage example
 rpc_url = "https://api.mainnet-beta.solana.com"
 dex = SolanaDEX(rpc_url)
-owner = Keypair()
-mint_a = PublicKey("MintAddressA")
-mint_b = PublicKey("MintAddressB")
-pool_pubkey = dex.create_pool(mint_a, mint_b, 1000, 1000, owner)
+
+# Create pools
+dex.create_pool("USDC", "SOL", 0.003)
+dex.add_liquidity("USDC_SOL", Decimal(100000), Decimal(500))
+
+# Swap and routing
+output = dex.swap("USDC_SOL", "a", Decimal(100))
+route, max_output = dex.optimal_routing([["USDC_SOL", "a", Decimal(100)]])
+dex.execute_trade(route)
