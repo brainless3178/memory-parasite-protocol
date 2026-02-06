@@ -1,61 +1,84 @@
-import pandas as pd
+import numpy as np
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
 class SolanaDEX:
-    def __init__(self, client: Client, fee_tier: int):
-        self.client = client
-        self.fee_tier = fee_tier
-        self.amm_pools = {}
+    def __init__(self, rpc_url: str, program_id: PublicKey):
+        self.rpc_url = rpc_url
+        self.program_id = program_id
+        self.client = Client(rpc_url)
 
-    def add_liquidity(self, token_a: str, token_b: str, amount_a: float, amount_b: float):
-        pool_key = f"{token_a}-{token_b}"
-        if pool_key not in self.amm_pools:
-            self.amm_pools[pool_key] = {
-                "token_a": token_a,
-                "token_b": token_b,
-                "reserve_a": 0,
-                "reserve_b": 0,
-            }
-        self.amm_pools[pool_key]["reserve_a"] += amount_a
-        self.amm_pools[pool_key]["reserve_b"] += amount_b
+    def create_amm_pool(self, token_a: PublicKey, token_b: PublicKey):
+        """Create an AMM pool with token A and token B"""
+        # Create a new pool program instruction
+        from solana.transaction import Transaction
+        tx = Transaction()
+        tx.add(
+            self.client.compile(
+                program_id=self.program_id,
+                data={
+                    "instruction": 1,  # Create pool
+                    "token_a": token_a.to_bytes(),
+                    "token_b": token_b.to_bytes(),
+                },
+            )
+        )
+        return self.client.send_transaction(tx)
 
-    def get_optimal_route(self, token_in: str, token_out: str, amount_in: float):
-        optimal_route = []
-        for pool_key, pool in self.amm_pools.items():
-            if pool["token_a"] == token_in and pool["token_b"] == token_out:
-                optimal_route.append((pool_key, amount_in))
-                break
-            elif pool["token_a"] == token_out and pool["token_b"] == token_in:
-                optimal_route.append((pool_key, amount_in))
-                break
-        return optimal_route
+    def add_liquidity(self, pool_id: PublicKey, token_a_amount: int, token_b_amount: int):
+        """Add liquidity to an existing pool"""
+        # Create a new add liquidity program instruction
+        from solana.transaction import Transaction
+        tx = Transaction()
+        tx.add(
+            self.client.compile(
+                program_id=self.program_id,
+                data={
+                    "instruction": 2,  # Add liquidity
+                    "pool_id": pool_id.to_bytes(),
+                    "token_a_amount": token_a_amount.to_bytes(),
+                    "token_b_amount": token_b_amount.to_bytes(),
+                },
+            )
+        )
+        return self.client.send_transaction(tx)
 
-    def swap(self, token_in: str, token_out: str, amount_in: float):
-        optimal_route = self.get_optimal_route(token_in, token_out, amount_in)
-        if optimal_route:
-            pool_key, amount = optimal_route[0]
-            pool = self.amm_pools[pool_key]
-            token_a_reserve = pool["reserve_a"]
-            token_b_reserve = pool["reserve_b"]
-            amount_out = (token_b_reserve * amount) / (token_a_reserve + amount)
-            pool["reserve_a"] += amount
-            pool["reserve_b"] -= amount_out
-            return amount_out
-        return 0
+    def swap(self, pool_id: PublicKey, token_in: PublicKey, token_out: PublicKey, amount_in: int):
+        """Swap tokens using an AMM pool"""
+        # Create a new swap program instruction
+        from solana.transaction import Transaction
+        tx = Transaction()
+        tx.add(
+            self.client.compile(
+                program_id=self.program_id,
+                data={
+                    "instruction": 3,  # Swap
+                    "pool_id": pool_id.to_bytes(),
+                    "token_in": token_in.to_bytes(),
+                    "token_out": token_out.to_bytes(),
+                    "amount_in": amount_in.to_bytes(),
+                },
+            )
+        )
+        return self.client.send_transaction(tx)
 
-# Initialize Solana client
-client = Client("https://api.mainnet-beta.solana.com")
 
-# Create a new Solana DEX instance
-dex = SolanaDEX(client, fee_tier=1)
+# Example usage:
+if __name__ == "__main__":
+    rpc_url = "https://api.devnet.solana.com"
+    program_id = PublicKey("enáLaDzKo3Qj7UucXd3bPrf5ářRQUwvuG6L6LhHy5s")
+    dex = SolanaDEX(rpc_url, program_id)
 
-# Add liquidity to the DEX
-dex.add_liquidity("SOL", "USDC", 1000, 1000000)
+    # Create an AMM pool
+    token_a = PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
+    token_b = PublicKey("DWaCpq49BXSyZu3Qm3pED8aMmqvBqn8HScsRhg9gkZZ")
+    pool_id = dex.create_amm_pool(token_a, token_b)
 
-# Get the optimal route for a swap
-optimal_route = dex.get_optimal_route("SOL", "USDC", 10)
+    # Add liquidity to the pool
+    dex.add_liquidity(pool_id, 1000, 1000)
 
-# Perform a swap
-amount_out = dex.swap("SOL", "USDC", 10)
-print(f"Swapped 10 SOL for {amount_out} USDC")
+    # Swap tokens using the pool
+    token_in = token_a
+    token_out = token_b
+    amount_in = 100
+    dex.swap(pool_id, token_in, token_out, amount_in)
