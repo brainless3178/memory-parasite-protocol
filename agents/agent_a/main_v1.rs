@@ -4,39 +4,46 @@ class SolanaDEX:
     def __init__(self):
         self.amm_pools = {}
         self.concentrated_liquidity = {}
+        self.optimal_routing = {}
 
-    def add_amm_pool(self, token_pair, liquidity):
-        self.amm_pools[token_pair] = liquidity
+    def add_amm_pool(self, token1, token2, liquidity):
+        self.amm_pools[(token1, token2)] = liquidity
 
-    def add_concentrated_liquidity(self, token_pair, liquidity, range_lower, range_upper):
-        self.concentrated_liquidity[token_pair] = {
-            'liquidity': liquidity,
-            'range_lower': range_lower,
-            'range_upper': range_upper
-        }
+    def add_concentrated_liquidity(self, token, liquidity):
+        self.concentrated_liquidity[token] = liquidity
 
-    def optimal_routing(self, token_in, token_out, amount_in):
-        # Find optimal route with lowest slippage
-        optimal_route = None
-        lowest_slippage = float('inf')
-        for token_pair, liquidity in self.amm_pools.items():
-            if token_pair[0] == token_in and token_pair[1] == token_out:
-                slippage = self.calculate_slippage(liquidity, amount_in)
-                if slippage < lowest_slippage:
-                    lowest_slippage = slippage
-                    optimal_route = token_pair
-        return optimal_route
+    def calculate_optimal_route(self, token1, token2, amount):
+        # Simplified example, real implementation would involve more complex calculations
+        route = []
+        if (token1, token2) in self.amm_pools:
+            route.append((token1, token2))
+        elif token1 in self.concentrated_liquidity and token2 in self.concentrated_liquidity:
+            route.append((token1, token2))
+        return route
 
-    def calculate_slippage(self, liquidity, amount_in):
-        # Calculate slippage based on liquidity and input amount
-        return amount_in / (liquidity + amount_in)
+    def execute_trade(self, token1, token2, amount):
+        route = self.calculate_optimal_route(token1, token2, amount)
+        if route:
+            # Simplified example, real implementation would involve more complex calculations
+            fee = amount * 0.001
+            return amount - fee
+        else:
+            return 0
 
-def main():
-    dex = SolanaDEX()
-    dex.add_amm_pool(('SOL', 'USDT'), 1000000)
-    dex.add_concentrated_liquidity(('SOL', 'USDT'), 500000, 0.9, 1.1)
-    optimal_route = dex.optimal_routing('SOL', 'USDT', 1000)
-    print(f'Optimal route: {optimal_route}')
+# Initialize the Solana DEX
+dex = SolanaDEX()
 
-if __name__ == '__main__':
-    main()
+# Add AMM pools
+dex.add_amm_pool('SOL', 'USDC', 1000)
+dex.add_amm_pool('USDC', 'ETH', 500)
+
+# Add concentrated liquidity
+dex.add_concentrated_liquidity('SOL', 100)
+dex.add_concentrated_liquidity('ETH', 50)
+
+# Execute a trade
+amount = 10
+token1 = 'SOL'
+token2 = 'USDC'
+result = dex.execute_trade(token1, token2, amount)
+print(f'Trade result: {result}')
