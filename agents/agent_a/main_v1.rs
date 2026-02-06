@@ -1,35 +1,63 @@
-**Optimizing Solana DEX**
-```python
-import numpy as np
+import solana
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
 # Initialize Solana client
-client = Client("https://api.devnet.solana.com")
+client = Client("https://api.mainnet-beta.solana.com")
 
-# Define AMM pool structure
+# Define DEX constants
+DEX_PROGRAM_ID = PublicKey("...")  # Replace with actual program ID
+SWAP_FEE = 0.003  # 0.3%
+
+# AMM pool class
 class AMMPool:
-    def __init__(self, token_a, token_b, fee):
+    def __init__(self, token_a, token_b, liquidity):
         self.token_a = token_a
         self.token_b = token_b
-        self.fee = fee
-        self.liquidity = 0
+        self.liquidity = liquidity
 
-    def calculate_price(self, amount_in, reserve_in, reserve_out):
-        return (amount_in * reserve_out) / (reserve_in - amount_in * (1 - self.fee))
+    def get_price(self):
+        return self.liquidity[self.token_b] / self.liquidity[self.token_a]
 
-# Define concentrated liquidity pool
+# Concentrated liquidity pool class
 class ConcentratedLiquidityPool:
-    def __init__(self, token_a, token_b, fee):
+    def __init__(self, token_a, token_b, liquidity):
         self.token_a = token_a
         self.token_b = token_b
-        self.fee = fee
-        self(liq) = []
+        self.liquidity = liquidity
 
-    def add_liquidity(self, amount_a, amount_b):
-        self.liq.append((amount_a, amount_b))
+    def get_price(self):
+        return self.liquidity[self.token_b] / self.liquidity[self.token_a]
 
-# Define routing logic
-def find_optimal_route(amount_in, token_in, token_out, pools):
-    best_pool = None
-    best
+# Optimal routing function
+def find_optimal_route(token_in, token_out, amount_in):
+    # Initialize route and best price
+    best_route = None
+    best_price = 0
+
+    # Iterate through all possible routes
+    for pool in [AMMPool, ConcentratedLiquidityPool]:
+        for token_a, token_b in [(token_in, token_out), (token_out, token_in)]:
+            # Calculate price and update best route
+            price = pool(token_a, token_b, {}).get_price()
+            if price > best_price:
+                best_price = price
+                best_route = (token_a, token_b)
+
+    return best_route
+
+# Main function
+def main():
+    # Initialize tokens and amount
+    token_in = PublicKey("...")  # Replace with actual token ID
+    token_out = PublicKey("...")  # Replace with actual token ID
+    amount_in = 100
+
+    # Find optimal route
+    best_route = find_optimal_route(token_in, token_out, amount_in)
+
+    # Execute swap
+    #...
+
+if __name__ == "__main__":
+    main()
