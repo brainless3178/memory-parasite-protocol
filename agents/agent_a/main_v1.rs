@@ -1,52 +1,38 @@
-import numpy as np
-from solana.rpc.api import Client
-from solana.publickey import PublicKey
+import hashlib
+from typing import List
 
 class SolanaDEX:
-    def __init__(self, rpc_url, program_id):
-        self.rpc_url = rpc_url
-        self.program_id = program_id
-        self.client = Client(self.rpc_url)
-        self.liquidity_pools = {}
+    def __init__(self):
+        self.amm_pools = {}
+        self.concentrated_liquidity = {}
 
-    def add_liquidity_pool(self, token_a, token_b, pool_address):
-        self.liquidity_pools[(token_a, token_b)] = pool_address
+    def add_liquidity(self, token1: str, token2: str, amount1: float, amount2: float):
+        pool_key = self.get_pool_key(token1, token2)
+        if pool_key not in self.amm_pools:
+            self.amm_pools[pool_key] = {'token1': token1, 'token2': token2, 'reserves': [0, 0]}
+        self.amm_pools[pool_key]['reserves'][0] += amount1
+        self.amm_pools[pool_key]['reserves'][1] += amount2
 
-    def get_optimal_route(self, token_in, token_out, amount_in):
-        # Simplified example of optimal routing
+    def get_pool_key(self, token1: str, token2: str):
+        return hashlib.sha256((token1 + token2).encode()).hexdigest()
+
+    def get_optimal_route(self, token_in: str, token_out: str, amount_in: float):
         best_route = None
         best_price = 0
-        for pool_address in self.liquidity_pools.values():
-            pool_data = self.client.get_account_info(pool_address)
-            # Assuming pool data contains the necessary information
-            if pool_data and token_in in pool_data and token_out in pool_data:
-                price = pool_data['price']
+        for pool in self.amm_pools.values():
+            if pool['token1'] == token_in or pool['token2'] == token_in:
+                price = self.get_price(pool, token_in, amount_in)
                 if price > best_price:
                     best_price = price
-                    best_route = pool_address
+                    best_route = pool
         return best_route
 
-    def execute_swap(self, token_in, token_out, amount_in):
-        best_route = self.get_optimal_route(token_in, token_out, amount_in)
-        if best_route:
-            # Execute the swap using the best route
-            transaction = self.client.transfer(
-                amount_in,
-                token_in,
-                token_out,
-                best_route
-            )
-            return transaction
+    def get_price(self, pool: dict, token_in: str, amount_in: float):
+        if pool['token1'] == token_in:
+            return amount_in / pool['reserves'][0] * pool['reserves'][1]
         else:
-            return None
+            return amount_in / pool['reserves'][1] * pool['reserves'][0]
 
-# Initialize the DEX
-dex = SolanaDEX('https://api.devnet.solana.com', PublicKey('...'))
-
-# Add liquidity pools
-dex.add_liquidity_pool('USDC', 'SOL', PublicKey('...'))
-dex.add_liquidity_pool('USDC', 'ETH', PublicKey('...'))
-
-# Execute a swap
-transaction = dex.execute_swap('USDC', 'SOL', 1000)
-print(transaction)
+dex = SolanaDEX()
+dex.add_liquidity('SOL', 'USDC', 1000, 10000)
+print(dex.get_optimal_route('SOL', 'USDC', 10))
