@@ -1,74 +1,83 @@
 import numpy as np
+from solana.publickey import PublicKey
+from solana.rpc.api import Client
 
-# Define the AMM pool class
+# Constants
+DECIMALS = 9
+SWAP_FEE = 0.003
+TICK_SPACING = 10
+
+# Client setup
+client = Client("https://api.devnet.solana.com")
+
+# Define AMM pool
 class AMMPool:
-    def __init__(self, token_a, token_b, liquidity):
+    def __init__(self, token_a, token_b, fee):
         self.token_a = token_a
         self.token_b = token_b
-        self.liquidity = liquidity
+        self.fee = fee
+        self.liquidity = 0
+        self.reserves = {token_a: 0, token_b: 0}
 
-    def get_price(self, token_in, amount_in):
-        # Calculate the price using the constant product formula
-        k = self.liquidity
-        x = self.token_a if token_in == self.token_b else self.token_b
-        y = self.token_b if token_in == self.token_a else self.token_a
-        return (k / (x + amount_in)) * (y + amount_in) ** 2
+    def update_liquidity(self, amount):
+        self.liquidity += amount
+        self.reserves[self.token_a] = (amount / (1 + self.fee)) * (1 - self.fee)
+        self.reserves[self.token_b] = (amount / (1 + self.fee)) * self.fee
 
+    def get_reserves(self):
+        return self.reserves
 
-# Define the concentrated liquidity class
-class ConcentratedLiquidity:
-    def __init__(self, token_a, token_b, liquidity):
+# Define concentrated liquidity pool
+class ConcentratedLiquidityPool:
+    def __init__(self, token_a, token_b, fee):
         self.token_a = token_a
         self.token_b = token_b
-        self.liquidity = liquidity
+        self.fee = fee
+        self.liquidity = 0
+        self.reserves = {token_a: 0, token_b: 0}
+        self.tick_spacing = TICK_SPACING
+        self.ticks = np.arange(-100, 101, self.tick_spacing)
 
-    def get_liquidity(self, price):
-        # Calculate the liquidity at the given price
-        return self.liquidity * (price / (self.token_a + self.token_b))
+    def update_liquidity(self, amount):
+        self.liquidity += amount
+        self.reserves[self.token_a] = (amount / (1 + self.fee)) * (1 - self.fee)
+        self.reserves[self.token_b] = (amount / (1 + self.fee)) * self.fee
 
+    def get_reserves(self):
+        return self.reserves
 
-# Define the optimal routing class
+# Define optimal routing
 class OptimalRouting:
     def __init__(self, pools):
         self.pools = pools
 
-    def get_best_route(self, token_in, token_out, amount_in):
+    def find_best_route(self, token_in, token_out, amount):
         best_route = None
         best_price = 0
         for pool in self.pools:
-            price = pool.get_price(token_in, amount_in)
+            price = self.get_price(pool, token_in, token_out, amount)
             if price > best_price:
                 best_price = price
                 best_route = pool
         return best_route
 
+    def get_price(self, pool, token_in, token_out, amount):
+        reserves = pool.get_reserves()
+        if token_in == pool.token_a:
+            return (amount / reserves[token_in]) * reserves[token_out]
+        else:
+            return (amount / reserves[token_out]) * reserves[token_in]
 
-# Define the Solana DEX class
-class SolanaDEX:
-    def __init__(self):
-        self.pools = []
+# Create pools
+pool1 = AMMPool("USDT", "SOL", SWAP_FEE)
+pool2 = ConcentratedLiquidityPool("USDT", "SOL", SWAP_FEE)
 
-    def add_pool(self, pool):
-        self.pools.append(pool)
+# Create optimal routing
+optimal_routing = OptimalRouting([pool1, pool2])
 
-    def get_best_route(self, token_in, token_out, amount_in):
-        routing = OptimalRouting(self.pools)
-        return routing.get_best_route(token_in, token_out, amount_in)
-
-
-# Create a Solana DEX instance
-dex = SolanaDEX()
-
-# Create AMM pools and add them to the DEX
-pool1 = AMMPool(1000, 1000, 1000000)
-pool2 = AMMPool(500, 500, 500000)
-dex.add_pool(pool1)
-dex.add_pool(pool2)
-
-# Create concentrated liquidity instances
-liquidity1 = ConcentratedLiquidity(1000, 1000, 1000000)
-liquidity2 = ConcentratedLiquidity(500, 500, 500000)
-
-# Get the best route for a trade
-best_route = dex.get_best_route("token_a", "token_b", 100)
-print(best_route.token_a, best_route.token_b)
+# Test optimal routing
+token_in = "USDT"
+token_out = "SOL"
+amount = 100
+best_route = optimal_routing.find_best_route(token_in, token_out, amount)
+print(f"Best route: {best_route.token_a} - {best_route.token_b}")
