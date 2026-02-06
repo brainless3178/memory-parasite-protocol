@@ -2,80 +2,128 @@ import solana
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
-# Set up Solana client
+# Initialize Solana client
 client = Client("https://api.devnet.solana.com")
 
 # Define DEX constants
-DEX_PROGRAM_ID = PublicKey("YOUR_DEX_PROGRAM_ID")
-SWAP_FEE = 0.003  # 0.3%
+DEX_PROGRAM_ID = PublicKey("YourDEXProgramID")
+ROUTER 프로그램_ID = PublicKey("YourRouterProgramID")
 
-# Create AMM pool
-class AMMPool:
-    def __init__(self, token_a, token_b, liquidity_provider):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity_provider = liquidity_provider
-        self.reserves = {token_a: 0, token_b: 0}
+# Define AMM pool constants
+AMM_POOL_PROGRAM_ID = PublicKey("YourAMMPoolProgramID")
+CONCENTRATED_LIQUIDITY_PROGRAM_ID = PublicKey("YourConcentratedLiquidityProgramID")
 
-    def add_liquidity(self, amount_a, amount_b):
-        self.reserves[self.token_a] += amount_a
-        self.reserves[self.token_b] += amount_b
+# Define functions for optimal routing
+def get_optimal_route(token_in, token_out, amount):
+    # Query Solana blockchain for best route
+    response = client.get_token_accounts_by_owner(
+        owner=DEX_PROGRAM_ID,
+        mint=token_in,
+        program_id=DEX_PROGRAM_ID,
+    )
+    # Calculate optimal route based on response
+    optimal_route = []
+    for account in response["result"]:
+        account_data = client.get_account_info(account["pubkey"])
+        if account_data["result"]["data"]:
+            optimal_route.append(account["pubkey"])
+    return optimal_route
 
-    def remove_liquidity(self, amount_a, amount_b):
-        self.reserves[self.token_a] -= amount_a
-        self.reserves[self.token_b] -= amount_b
+def execute_trade(token_in, token_out, amount, optimal_route):
+    # Execute trade based on optimal route
+    instructions = []
+    for i in range(len(optimal_route) - 1):
+        instructions.append(
+            solana.transaction.TransactionInstruction(
+                keys=[
+                    solana.account.AccountMeta(
+                        pubkey=optimal_route[i],
+                        is_signer=False,
+                        is_writable=True,
+                    ),
+                    solana.account.AccountMeta(
+                        pubkey=optimal_route[i + 1],
+                        is_signer=False,
+                        is_writable=True,
+                    ),
+                ],
+                program_id=ROUTER_PROGRAM_ID,
+                data=b"\x01" + amount.to_bytes(8, "little"),
+            )
+        )
+    return instructions
 
-# Create concentrated liquidity pool
-class ConcentratedLiquidityPool:
-    def __init__(self, token_a, token_b, liquidity_provider):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity_provider = liquidity_provider
-        self.reserves = {token_a: 0, token_b: 0}
+# Define functions for AMM pools and concentrated liquidity
+def create_amm_pool(token_a, token_b):
+    # Create AMM pool
+    instructions = [
+        solana.transaction.TransactionInstruction(
+            keys=[
+                solana.account.AccountMeta(
+                    pubkey=token_a,
+                    is_signer=False,
+                    is_writable=True,
+                ),
+                solana.account.AccountMeta(
+                    pubkey=token_b,
+                    is_signer=False,
+                    is_writable=True,
+                ),
+            ],
+            program_id=AMM_POOL_PROGRAM_ID,
+            data=b"\x01",
+        )
+    ]
+    return instructions
 
-    def add_liquidity(self, amount_a, amount_b):
-        self.reserves[self.token_a] += amount_a
-        self.reserves[self.token_b] += amount_b
-
-    def remove_liquidity(self, amount_a, amount_b):
-        self.reserves[self.token_a] -= amount_a
-        self.reserves[self.token_b] -= amount_b
-
-# Optimal routing
-def optimal_routing(token_in, token_out, amount_in):
-    # Find the best route
-    best_route = None
-    best_price = 0
-    for pool in [AMMPool, ConcentratedLiquidityPool]:
-        price = pool(token_in, token_out, None).get_price(amount_in)
-        if price > best_price:
-            best_price = price
-            best_route = pool
-    return best_route
-
-# Swap function
-def swap(token_in, token_out, amount_in):
-    best_route = optimal_routing(token_in, token_out, amount_in)
-    return best_route(token_in, token_out, None).swap(amount_in)
+def add_liquidity(token_a, token_b, amount_a, amount_b):
+    # Add liquidity to AMM pool
+    instructions = [
+        solana.transaction.TransactionInstruction(
+            keys=[
+                solana.account.AccountMeta(
+                    pubkey=token_a,
+                    is_signer=False,
+                    is_writable=True,
+                ),
+                solana.account.AccountMeta(
+                    pubkey=token_b,
+                    is_signer=False,
+                    is_writable=True,
+                ),
+            ],
+            program_id=CONCENTRATED_LIQUIDITY_PROGRAM_ID,
+            data=b"\x02" + amount_a.to_bytes(8, "little") + amount_b.to_bytes(8, "little"),
+        )
+    ]
+    return instructions
 
 # Main function
 def main():
-    # Create a new DEX
-    dex = DEX_PROGRAM_ID
+    # Initialize variables
+    token_in = PublicKey("YourTokenIn")
+    token_out = PublicKey("YourTokenOut")
+    amount = 1000
 
-    # Create a new AMM pool
-    amm_pool = AMMPool("USDC", "SOL", None)
+    # Get optimal route
+    optimal_route = get_optimal_route(token_in, token_out, amount)
+    print("Optimal Route:", optimal_route)
 
-    # Create a new concentrated liquidity pool
-    concentrated_liquidity_pool = ConcentratedLiquidityPool("USDC", "SOL", None)
+    # Execute trade
+    instructions = execute_trade(token_in, token_out, amount, optimal_route)
+    print("Instructions:", instructions)
 
-    # Add liquidity to the pools
-    amm_pool.add_liquidity(1000, 100)
-    concentrated_liquidity_pool.add_liquidity(1000, 100)
+    # Create AMM pool
+    token_a = PublicKey("YourTokenA")
+    token_b = PublicKey("YourTokenB")
+    instructions = create_amm_pool(token_a, token_b)
+    print("Create AMM Pool Instructions:", instructions)
 
-    # Swap tokens
-    amount_out = swap("USDC", "SOL", 100)
-    print(f"Swapped 100 USDC for {amount_out} SOL")
+    # Add liquidity
+    amount_a = 1000
+    amount_b = 1000
+    instructions = add_liquidity(token_a, token_b, amount_a, amount_b)
+    print("Add Liquidity Instructions:", instructions)
 
 if __name__ == "__main__":
     main()
