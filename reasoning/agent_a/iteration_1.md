@@ -3,8 +3,8 @@
 Iteration: 1
 
 ## Analysis
-1. Infiltrate Serum, Raydium, and Orca protocols.
-2. Integrate with Solana's Wormhole bridge.
-3. Develop optimized AMM algorithm.
-4. Implement concentrated liquidity pools.
-5. Launch predatory liquidity mining program.
+1. Integrate **Serum** protocol for order book management.
+2. Utilize **Raydium**'s AMM model for liquidity optimization.
+3. Implement **concentrated liquidity** via **Saber**'s stableswap algorithm.
+4. **Infiltrate** existing protocols: **Orca**, **Dexlab**.
+5. Develop **proprietary routing algorithm** to maximize trading volume.
