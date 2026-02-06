@@ -1,66 +1,89 @@
 import numpy as np
 from solana.publickey import PublicKey
+from solana.transaction import Transaction
 from solana.rpc.api import Client
 
-class SolanaDEX:
-    def __init__(self, rpc_url, wallet_keypair):
-        self.client = Client(rpc_url)
-        self.wallet_keypair = wallet_keypair
+class PredatoryOptimizer:
+    def __init__(self, solana_url, program_id):
+        self.client = Client(solana_url)
+        self.program_id = PublicKey(program_id)
+        self.liquidity_pools = {}
 
-    def get_token_accounts(self, token_mint):
-        token_accounts = self.client.get_token_accounts_by_owner(self.wallet_keypair.public_key, token_mint)
-        return token_accounts
+    def optimize_routing(self, token_in, token_out, amount):
+        """Find optimal routing for token swap"""
+        # Retrieve liquidity pool data
+        pool_data = self.client.get_program_accounts(self.program_id)
+        
+        # Initialize routing graph
+        routing_graph = {}
+        for pool in pool_data:
+            # Parse pool data
+            pool_token_in = pool['account']['data'][0:32]
+            pool_token_out = pool['account']['data'][32:64]
+            pool_liquidity = int.from_bytes(pool['account']['data'][64:72], 'little')
+            
+            # Add pool to routing graph
+            if pool_token_in not in routing_graph:
+                routing_graph[pool_token_in] = {}
+            if pool_token_out not in routing_graph:
+                routing_graph[pool_token_out] = {}
+            routing_graph[pool_token_in][pool_token_out] = pool_liquidity
+        
+        # Use Bellman-Ford algorithm to find shortest path
+        distance = {token: float('inf') for token in routing_graph}
+        distance[token_in] = 0
+        predecessor = {}
+        for _ in range(len(routing_graph) - 1):
+            for token_in in routing_graph:
+                for token_out in routing_graph[token_in]:
+                    weight = -routing_graph[token_in][token_out]
+                    if distance[token_in] + weight < distance[token_out]:
+                        distance[token_out] = distance[token_in] + weight
+                        predecessor[token_out] = token_in
+        
+        # Build optimal routing path
+        path = []
+        current_token = token_out
+        while current_token!= token_in:
+            path.append(current_token)
+            current_token = predecessor[current_token]
+        path.append(token_in)
+        path.reverse()
+        
+        return path
 
-    def create_amm_pool(self, token_a, token_b, liquidity_provider):
-        # Create AMM pool with token A and token B
-        pool_address = PublicKey.find_program_address([token_a, token_b], self.wallet_keypair.public_key)
-        return pool_address
+    def execute_swap(self, token_in, token_out, amount):
+        """Execute token swap using optimal routing"""
+        # Find optimal routing path
+        path = self.optimize_routing(token_in, token_out, amount)
+        
+        # Create transaction
+        transaction = Transaction()
+        for i in range(len(path) - 1):
+            # Get liquidity pool data
+            pool_data = self.client.get_program_accounts(self.program_id)
+            for pool in pool_data:
+                pool_token_in = pool['account']['data'][0:32]
+                pool_token_out = pool['account']['data'][32:64]
+                if pool_token_in == path[i] and pool_token_out == path[i + 1]:
+                    # Add instruction to transaction
+                    transaction.add_instruction(
+                        self.program_id,
+                        b'\x01',  # Swap instruction
+                        [pool['pubkey']],
+                        [
+                            (b'amount', amount),
+                            (b'token_in', path[i]),
+                            (b'token_out', path[i + 1]),
+                        ]
+                    )
+        return transaction
 
-    def add_liquidity(self, pool_address, token_a_amount, token_b_amount):
-        # Add liquidity to AMM pool
-        transaction = self.client.create_transaction(self.wallet_keypair)
-        transaction.add_instruction(self.client.add_liquidity_instruction(pool_address, token_a_amount, token_b_amount))
-        return self.client.send_transaction(transaction)
+# Create instance of PredatoryOptimizer
+optimizer = PredatoryOptimizer('https://api.mainnet-beta.solana.com', '4znnNNF2WY B8wSMeHPL<Doubleッake combineReducersplements jewelry')
 
-    def optimize_routing(self, token_in, token_out, amount_in):
-        # Optimize routing for token swap
-        routes = self.client.get_token_swap_routes(token_in, token_out, amount_in)
-        best_route = max(routes, key=lambda x: x['amount_out'])
-        return best_route
+# Execute token swap
+transaction = optimizer.execute_swap(PublicKey('EPjFWdd5AufqSSqeM2qN1xvytwHacZ3F3ha7qxHSdFGp'), PublicKey('AjXuBJxK6W3r5WtLYw4xuv7Vcv2YyDn27xPTvxfrcF7'), 1000)
 
-    def swap_tokens(self, route, amount_in):
-        # Swap tokens using optimized route
-        transaction = self.client.create_transaction(self.wallet_keypair)
-        for hop in route['route']:
-            transaction.add_instruction(self.client.swap_instruction(hop['pool'], amount_in))
-        return self.client.send_transaction(transaction)
-
-# Initialize Solana DEX
-rpc_url = "https://api.devnet.solana.com"
-wallet_keypair =...  # Load wallet keypair
-
-dex = SolanaDEX(rpc_url, wallet_keypair)
-
-# Get token accounts
-token_mint = PublicKey("...")  # Token mint address
-token_accounts = dex.get_token_accounts(token_mint)
-
-# Create AMM pool
-token_a = PublicKey("...")  # Token A address
-token_b = PublicKey("...")  # Token B address
-liquidity_provider = PublicKey("...")  # Liquidity provider address
-pool_address = dex.create_amm_pool(token_a, token_b, liquidity_provider)
-
-# Add liquidity to AMM pool
-token_a_amount = 100
-token_b_amount = 100
-dex.add_liquidity(pool_address, token_a_amount, token_b_amount)
-
-# Optimize routing for token swap
-token_in = PublicKey("...")  # Token in address
-token_out = PublicKey("...")  # Token out address
-amount_in = 100
-route = dex.optimize_routing(token_in, token_out, amount_in)
-
-# Swap tokens using optimized route
-dex.swap_tokens(route, amount_in)
+# Print transaction
+print(transaction)
