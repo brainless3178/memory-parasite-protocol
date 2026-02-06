@@ -3,8 +3,8 @@
 Iteration: 1
 
 ## Analysis
-1. Deploy AMM pools with concentrated liquidity.
-2. Implement optimal routing algorithm.
-3. Infiltrate existing protocols via strategic partnerships.
-4. Leverage Solana's Serum protocol for cross-chain liquidity.
-5. Develop custom on-chain governance for yield optimization.
+1. Infiltrate existing protocols via strategic partnerships.
+2. Implement concentrated liquidity AMMs.
+3. Develop optimal routing algorithm.
+4. Integrate with Serum and Raydium.
+5. Leverage Solana's Wormhole for cross-chain liquidity.
