@@ -1,96 +1,85 @@
-from solana.rpc.api import Client
-from solana.transaction import Transaction
 from solana.publickey import PublicKey
-from spl.token.constants import TOKEN_PROGRAM_ID
-from spl.token.instructions import transfer_checked, approve
+from solana.transaction import Transaction
+from solana.rpc.api import Client
+from solana.rpc.async_api import AsyncClient
+from solana.account import Account
+import asyncio
+from math import sqrt
 
-class SolanaDEX:
-    def __init__(self, rpc_url):
-        self.client = Client(rpc_url)
-        self.pools = {}  # Store AMM pools
-        self.routes = {}  # Optimized routing paths
+# Constants
+RPC_URL = "https://api.mainnet-beta.solana.com"
+DEX_PROGRAM_ID = PublicKey("DEX111111111111111111111111111111111111111")
+FEE_TIER = [0.0001, 0.003, 0.01]
 
-    def create_pool(self, token_a, token_b, fee_tier, initial_liquidity_a, initial_liquidity_b):
-        pool_key = f"{token_a}:{token_b}:{fee_tier}"
-        self.pools[pool_key] = {
-            "token_a": token_a,
-            "token_b": token_b,
-            "liquidity_a": initial_liquidity_a,
-            "liquidity_b": initial_liquidity_b,
-            "fee_tier": fee_tier
-        }
+# Initialize Solana Client
+client = Client(RPC_URL)
+async_client = AsyncClient(RPC_URL)
 
-    def update_pool_liquidity(self, pool_key, liquidity_a, liquidity_b):
-        pool = self.pools.get(pool_key)
-        if not pool:
-            raise ValueError("Pool not found")
-        pool["liquidity_a"] = liquidity_a
-        pool["liquidity_b"] = liquidity_b
+# Pool Struct
+class Pool:
+    def __init__(self, token_a, token_b, sqrt_price, liquidity, fee_tier):
+        self.token_a = token_a
+        self.token_b = token_b
+        self.sqrt_price = sqrt_price
+        self.liquidity = liquidity
+        self.fee_tier = fee_tier
 
-    def calculate_swap(self, pool_key, input_amount, from_token):
-        pool = self.pools.get(pool_key)
-        if not pool:
-            raise ValueError("Pool not found")
-
-        if from_token == pool["token_a"]:
-            input_reserve = pool["liquidity_a"]
-            output_reserve = pool["liquidity_b"]
-        elif from_token == pool["token_b"]:
-            input_reserve = pool["liquidity_b"]
-            output_reserve = pool["liquidity_a"]
+    def get_output_amount(self, input_amount, is_token_a=True):
+        if is_token_a:
+            return self._calculate_swap(self.sqrt_price, self.liquidity, input_amount, self.fee_tier)
         else:
-            raise ValueError("Token not in pool")
+            return self._calculate_swap(1/self.sqrt_price, self.liquidity, input_amount, self.fee_tier)
 
-        fee = input_amount * pool["fee_tier"] / 1_000_000
-        input_amount_minus_fee = input_amount - fee
-        output_amount = (input_amount_minus_fee * output_reserve) / (input_reserve + input_amount_minus_fee)
-        return output_amount, fee
+    def _calculate_swap(self, sqrt_price, liquidity, input_amount, fee):
+        fee_adjusted = input_amount * (1 - fee)
+        delta_x = fee_adjusted / sqrt_price
+        delta_y = liquidity * (1 - sqrt(sqrt_price**2 - delta_x / liquidity))
+        return delta_y
 
-    def execute_swap(self, user_pubkey, pool_key, input_amount, from_token):
-        pool = self.pools.get(pool_key)
-        if not pool:
-            raise ValueError("Pool not found")
+# Optimal Routing
+class Router:
+    def __init__(self):
+        self.pools = []
 
-        output_amount, fee = self.calculate_swap(pool_key, input_amount, from_token)
-        if from_token == pool["token_a"]:
-            pool["liquidity_a"] += input_amount
-            pool["liquidity_b"] -= output_amount
-        else:
-            pool["liquidity_b"] += input_amount
-            pool["liquidity_a"] -= output_amount
+    def add_pool(self, pool):
+        self.pools.append(pool)
 
-        transaction = Transaction()
-        transaction.add(transfer_checked(
-            source=PublicKey(user_pubkey),
-            dest=PublicKey(pool[from_token]),
-            owner=PublicKey(user_pubkey),
-            amount=input_amount,
-            decimals=6,
-            program_id=TOKEN_PROGRAM_ID,
-        ))
-        self.client.send_transaction(transaction)
-        return output_amount, fee
+    def find_best_route(self, token_in, token_out, amount_in):
+        best_output = 0
+        best_pool = None
+        for pool in self.pools:
+            if (pool.token_a == token_in and pool.token_b == token_out) or \
+               (pool.token_a == token_out and pool.token_b == token_in):
+                output = pool.get_output_amount(amount_in, is_token_a=(pool.token_a == token_in))
+                if output > best_output:
+                    best_output = output
+                    best_pool = pool
+        return best_pool, best_output
 
-    def find_optimal_route(self, token_in, token_out, amount_in):
-        # Placeholder for routing algorithm
-        pass
+# Example: Create DEX Pool
+pool = Pool(
+    token_a=PublicKey("TOKENA111111111111111111111111111111111111"), 
+    token_b=PublicKey("TOKENB111111111111111111111111111111111111"), 
+    sqrt_price=1.5, 
+    liquidity=1_000_000, 
+    fee_tier=FEE_TIER[1]
+)
 
-    def add_concentrated_liquidity(self, pool_key, lower_bound, upper_bound, amount_a, amount_b):
-        pool = self.pools.get(pool_key)
-        if not pool:
-            raise ValueError("Pool not found")
-        # Concentrated liquidity logic here
-        pass
+# Router Example
+router = Router()
+router.add_pool(pool)
 
-    def get_pool_state(self, pool_key):
-        return self.pools.get(pool_key)
+# Swap Example
+token_in = PublicKey("TOKENA111111111111111111111111111111111111")
+token_out = PublicKey("TOKENB111111111111111111111111111111111111")
+input_amount = 1000
 
-rpc_url = "https://api.mainnet-beta.solana.com"
-dex = SolanaDEX(rpc_url)
+best_pool, best_output = router.find_best_route(token_in, token_out, input_amount)
+print(f"Best Pool: {best_pool}, Output Amount: {best_output}")
 
-# Example: Create a pool
-dex.create_pool("USDC", "SOL", 30, 1_000_000, 500)
+# Async Environment Setup for Solana Interaction
+async def initialize():
+    await async_client.is_connected()
+    print("Connected to Solana RPC.")
 
-# Example: Execute swap
-output, fee = dex.execute_swap("6u8X4...YourPublicKey", "USDC:SOL:30", 100_000, "USDC")
-print(f"Output: {output}, Fee: {fee}")
+asyncio.run(initialize())
