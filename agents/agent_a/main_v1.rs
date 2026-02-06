@@ -1,80 +1,53 @@
 import numpy as np
+from solana.publickey import PublicKey
+from solana.rpc.api import Client
 
-# Define constants
-POOL_FEE = 0.003
-ORACLE_FEE = 0.001
-LIQUIDITY_PROVIDER_FEE = 0.002
+# Initialize Solana client
+client = Client("https://api.devnet.solana.com")
 
-# Define AMM pool class
+# Define AMM pool structure
 class AMMPool:
-    def __init__(self, token_a, token_b, reserve_a, reserve_b):
+    def __init__(self, token_a, token_b, liquidity):
         self.token_a = token_a
         self.token_b = token_b
-        self.reserve_a = reserve_a
-        self.reserve_b = reserve_b
+        self.liquidity = liquidity
 
-    def get_price(self, token_in, amount_in):
-        if token_in == self.token_a:
-            return (amount_in * self.reserve_b) / (self.reserve_a + amount_in)
-        else:
-            return (amount_in * self.reserve_a) / (self.reserve_b + amount_in)
-
-    def swap(self, token_in, amount_in):
-        price = self.get_price(token_in, amount_in)
-        if token_in == self.token_a:
-            self.reserve_a += amount_in
-            self.reserve_b -= price
-        else:
-            self.reserve_b += amount_in
-            self.reserve_a -= price
-        return price
-
-# Define concentrated liquidity pool class
+# Define concentrated liquidity pool structure
 class ConcentratedLiquidityPool:
-    def __init__(self, token_a, token_b, reserve_a, reserve_b):
+    def __init__(self, token_a, token_b, liquidity, lower_tick, upper_tick):
         self.token_a = token_a
         self.token_b = token_b
-        self.reserve_a = reserve_a
-        self.reserve_b = reserve_b
+        self.liquidity = liquidity
+        self.lower_tick = lower_tick
+        self.upper_tick = upper_tick
 
-    def get_price(self, token_in, amount_in):
-        # Use a more complex pricing algorithm for concentrated liquidity
-        price = (amount_in * self.reserve_b) / (self.reserve_a + amount_in)
-        price *= 1.01  # adjustment for concentrated liquidity
-        return price
-
-    def swap(self, token_in, amount_in):
-        price = self.get_price(token_in, amount_in)
-        if token_in == self.token_a:
-            self.reserve_a += amount_in
-            self.reserve_b -= price
-        else:
-            self.reserve_b += amount_in
-            self.reserve_a -= price
-        return price
-
-# Define routing function
-def route_swap(token_in, amount_in, pools):
-    best_price = 0
-    best_pool = None
+# Define optimal routing function
+def optimal_routing(pools, amount_in, token_in):
+    best_path = None
+    best_amount_out = 0
     for pool in pools:
-        price = pool.get_price(token_in, amount_in)
-        if price > best_price:
-            best_price = price
-            best_pool = pool
-    return best_pool.swap(token_in, amount_in)
+        amount_out = calculate_amount_out(pool, amount_in, token_in)
+        if amount_out > best_amount_out:
+            best_amount_out = amount_out
+            best_path = pool
+    return best_path, best_amount_out
 
-# Initialize AMM pool
-pool = AMMPool("SOL", "USDT", 1000, 1000000)
+# Define calculate amount out function
+def calculate_amount_out(pool, amount_in, token_in):
+    if token_in == pool.token_a:
+        return amount_in * pool.liquidity / (pool.liquidity + amount_in)
+    else:
+        return amount_in * pool.liquidity / (pool.liquidity - amount_in)
 
-# Initialize concentrated liquidity pool
-cl_pool = ConcentratedLiquidityPool("SOL", "USDT", 1000, 1000000)
+# Initialize pools
+pools = [
+    AMMPool(PublicKey("TokenA"), PublicKey("TokenB"), 1000),
+    ConcentratedLiquidityPool(PublicKey("TokenA"), PublicKey("TokenB"), 1000, -10, 10)
+]
 
-# Define pools list
-pools = [pool, cl_pool]
-
-# Execute swap
+# Test optimal routing
 amount_in = 100
-token_in = "SOL"
-price = route_swap(token_in, amount_in, pools)
-print(f"Swap price: {price}")
+token_in = PublicKey("TokenA")
+best_path, best_amount_out = optimal_routing(pools, amount_in, token_in)
+print(f"Best path: {best_path.token_a} - {best_path.token_b}")
+print(f"Best amount out: {best_amount_out}")
