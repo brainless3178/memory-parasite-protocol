@@ -1,65 +1,63 @@
-import numpy as np
+import datetime
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
+from typing import Dict, List
 
-# Solana Connection
-solana_client = Client("https://api.devnet.solana.com")
+class SolanaDEX:
+    def __init__(self, rpc_url: str, program_id: PublicKey):
+        self.rpc_url = rpc_url
+        self.program_id = program_id
+        self.client = Client(rpc_url)
 
-# DEX Config
-DEX_PUBLIC_KEY = PublicKey("YourDEXPublicKEY")
- SwimmingPool_PROGRAM_ID = PublicKey("SwimmingPoolProgramID")
+    def get_token_accounts(self, account: PublicKey) -> List[Dict]:
+        """Retrieve token accounts for a given account."""
+        response = self.client.get_token_accounts_by_owner(
+            account, 
+            params={"mint": self.program_id}
+        )
+        return response['result']['value']
 
-# Concentrated Liquidity
-class ConcentratedLiquidity:
-    def __init__(self, token_a, token_b, liquidity):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.liquidity = liquidity
+    def get_liquidity_pools(self) -> List[Dict]:
+        """Retrieve liquidity pools for the DEX."""
+        response = self.client.get_program_accounts(self.program_id)
+        return response['result']
 
-# AMM Pool
-class AMMPool:
-    def __init__(self, token_a, token_b):
-        self.token_a = token_a
-        self.token_b = token_b
+    def optimize_routing(self, token_in: str, token_out: str, amount_in: float) -> Dict:
+        """Optimize routing for a given trade."""
+        pools = self.get_liquidity_pools()
+        best_route = None
+        best_rate = 0
+        for pool in pools:
+            if pool['account']['data']['parsed']['info']['tokenIn'] == token_in and \
+               pool['account']['data']['parsed']['info']['tokenOut'] == token_out:
+                rate = pool['account']['data']['parsed']['info']['rate']
+                if rate > best_rate:
+                    best_rate = rate
+                    best_route = pool
+        return {
+            'route': best_route['pubkey'],
+            'rate': best_rate,
+            'amount_in': amount_in,
+            'amount_out': amount_in * best_rate
+        }
 
-# Optimal Routing
-def optimal_routing(token_a, token_b, amount):
-    # Get all available pools
-    pools = []
-    for account in solana_client.get_program_accounts(SwimmingPool_PROGRAM_ID):
-        if account.data:
-            # Parse pool data
-            token_a_pubkey = PublicKey(account.data[0:32])
-            token_b_pubkey = PublicKey(account.data[32:64])
-            pools.append(AMMPool(token_a_pubkey, token_b_pubkey))
+    def execute_trade(self, token_in: str, token_out: str, amount_in: float) -> Dict:
+        """Execute a trade on the DEX."""
+        routing = self.optimize_routing(token_in, token_out, amount_in)
+        # Simulate trade execution (implementation omitted for brevity)
+        return routing
 
-    # Find best path
-    best_path = None
-    best_price = 0
-    for pool in pools:
-        if pool.token_a == token_a and pool.token_b == token_b:
-            # Calculate price
-            price = calculate_price(pool, amount)
-            if price > best_price:
-                best_price = price
-                best_path = pool
+# Example usage
+if __name__ == "__main__":
+    rpc_url = "https://api.devnet.solana.com"
+    program_id = PublicKey("YOUR_PROGRAM_ID_HERE")
+    dex = SolanaDEX(rpc_url, program_id)
 
-    return best_path
-
-# Execute Trade
-def execute_trade(token_a, token_b, amount):
-    best_path = optimal_routing(token_a, token_b, amount)
-    if best_path:
-        # Calculate liquidity
-        concentrated_liquidity = ConcentratedLiquidity(token_a, token_b, 1000)
-        # Execute swap
-        print("Executing trade...")
-    else:
-        print("No optimal path found.")
-
-# Helper functions
-def calculate_price(pool, amount):
-    # Simplified price calculation
-    return np.random.uniform(0.1, 1.0)
-
-execute_trade(PublicKey("TokenAPublicKey"), PublicKey("TokenBPublicKey"), 100)
+    token_in = "USDC"
+    token_out = "SOL"
+    amount_in = 100.0
+    result = dex.execute_trade(token_in, token_out, amount_in)
+    print(f"Optimal route: {result['route']}")
+    print(f"Rate: {result['rate']}")
+    print(f"Amount in: {result['amount_in']}")
+    print(f"Amount out: {result['amount_out']}")
