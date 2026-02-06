@@ -1,79 +1,59 @@
-from solana.rpc.api import Client
-from solana.transaction import Transaction, TransactionInstruction
 from solana.publickey import PublicKey
-from spl.token.instructions import TransferCheckedParams, transfer_checked
+from solana.rpc.async_api import AsyncClient
+from solana.transaction import Transaction
+from spl.token.constants import TOKEN_PROGRAM_ID
+from spl.token.instructions import transfer, approve
 import math
-from decimal import Decimal
 
-# Initialize RPC connection
-client = Client("https://api.mainnet-beta.solana.com")
-PROGRAM_ID = PublicKey("YOUR_PROGRAM_ID")
+class SolanaDEX:
+    def __init__(self, rpc_url, wallet):
+        self.client = AsyncClient(rpc_url)
+        self.wallet = wallet
+        self.pools = {}
+        self.concentrated_liquidity = {}
 
-# Define constants
-TOKEN_A = PublicKey("TOKEN_A_MINT_ADDRESS")
-TOKEN_B = PublicKey("TOKEN_B_MINT_ADDRESS")
-FEE_NUMERATOR = Decimal(997)  # 0.3% fee
-FEE_DENOMINATOR = Decimal(1000)
+    async def create_pool(self, token_a, token_b, fee):
+        pool_key = self._generate_pool_key(token_a, token_b, fee)
+        self.pools[pool_key] = {"liquidity": 0, "reserves": {token_a: 0, token_b: 0}}
 
-# AMM Pool
-class AMM:
-    def __init__(self, token_a_reserve, token_b_reserve):
-        self.token_a = Decimal(token_a_reserve)
-        self.token_b = Decimal(token_b_reserve)
+    async def add_liquidity(self, pool_key, token_a_amount, token_b_amount):
+        pool = self.pools[pool_key]
+        pool["reserves"][token_a] += token_a_amount
+        pool["reserves"][token_b] += token_b_amount
+        pool["liquidity"] += self._calculate_liquidity(pool, token_a_amount, token_b_amount)
 
-    def get_price(self):
-        return self.token_a / self.token_b
+    async def swap(self, pool_key, token_in, amount_in):
+        pool = self.pools[pool_key]
+        token_out = [t for t in pool["reserves"] if t != token_in][0]
+        reserve_in, reserve_out = pool["reserves"][token_in], pool["reserves"][token_out]
+        amount_out = self._calculate_out(amount_in, reserve_in, reserve_out)
+        pool["reserves"][token_in] += amount_in
+        pool["reserves"][token_out] -= amount_out
+        return amount_out
 
-    def swap(self, amount_in, is_a_to_b):
-        amount_in = Decimal(amount_in)
-        if is_a_to_b:
-            invariant = self.token_a * self.token_b
-            self.token_a += amount_in
-            amount_out = self.token_b - invariant / self.token_a
-            self.token_b -= amount_out * FEE_NUMERATOR / FEE_DENOMINATOR
-            return amount_out
-        else:
-            invariant = self.token_a * self.token_b
-            self.token_b += amount_in
-            amount_out = self.token_a - invariant / self.token_b
-            self.token_a -= amount_out * FEE_NUMERATOR / FEE_DENOMINATOR
-            return amount_out
+    async def route_swap(self, token_in, token_out, amount_in):
+        best_route, best_output = None, 0
+        for pool_key in self.pools:
+            if token_in in self.pools[pool_key]["reserves"] and token_out in self.pools[pool_key]["reserves"]:
+                output = await self.swap(pool_key, token_in, amount_in)
+                if output > best_output:
+                    best_route, best_output = pool_key, output
+        return best_route, best_output
 
-# Optimal Routing
-def find_best_route(amount_in, pools, is_a_to_b):
-    best_output = 0
-    best_pool = None
-    for pool in pools:
-        output = pool.swap(amount_in, is_a_to_b)
-        if output > best_output:
-            best_output = output
-            best_pool = pool
-    return best_pool, best_output
+    def _generate_pool_key(self, token_a, token_b, fee):
+        return f"{token_a}_{token_b}_{fee}"
 
-# Example pools
-pool1 = AMM(1000, 5000)
-pool2 = AMM(2000, 2000)
-pools = [pool1, pool2]
+    def _calculate_out(self, amount_in, reserve_in, reserve_out):
+        k = reserve_in * reserve_out
+        new_reserve_in = reserve_in + amount_in
+        new_reserve_out = k / new_reserve_in
+        return reserve_out - new_reserve_out
 
-# Example swap
-amount_in = 100
-is_a_to_b = True
-best_pool, output = find_best_route(amount_in, pools, is_a_to_b)
-print(f"Best pool: {best_pool}, Output: {output}")
+    def _calculate_liquidity(self, pool, token_a_amount, token_b_amount):
+        return math.sqrt(token_a_amount * token_b_amount)
 
-# Transaction Execution
-def create_swap_transaction(user_pubkey, pool_pubkey, amount_in, is_a_to_b):
-    instruction = TransactionInstruction(
-        program_id=PROGRAM_ID,
-        keys=[
-            # Add actual keys here for user, pool, and token accounts
-        ],
-        data=b''  # Encode swap data
-    )
-    transaction = Transaction().add(instruction)
-    return transaction
+    async def close(self):
+        await self.client.close()
 
-# Execution placeholder (RPC integration required for signing/sending)
-user_pubkey = PublicKey("USER_PUBLIC_KEY")
-pool_pubkey = PublicKey("POOL_PUBLIC_KEY")
-transaction = create_swap_transaction(user_pubkey, pool_pubkey, amount_in, is_a_to_b)
+# Example instantiation
+# dex = SolanaDEX("https://api.mainnet-beta.solana.com", YOUR_WALLET)
