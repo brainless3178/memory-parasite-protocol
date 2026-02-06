@@ -2,93 +2,55 @@ import numpy as np
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
+# Initialize Solana client
+client = Client("https://api.mainnet-beta.solana.com")
+
 # Define constants
-DEX_PROGRAM_ID = PublicKey("DEX_PROGRAM_ID")
-DEX_MARKET_ID = PublicKey("DEX_MARKET_ID")
+AMM_FEE = 0.003  # 0.3%
+SlIPPAGE_TOLERANCE = 0.01  # 1%
 
-class SolanaDEX:
-    def __init__(self, client: Client):
-        self.client = client
+# Load AMM pools
+def load_amm_pools():
+    amm_pools = []
+    for pubkey in client.is_finalized().keys():
+        if pubkey.startswith("amm"):
+            amm_pools.append(PublicKey(pubkey))
+    return amm_pools
 
-    def get_market_data(self):
-        """Retrieve market data."""
-        market_data = self.client.get_account_info(DEX_MARKET_ID)
-        return market_data
+# Calculate optimal routing
+def calculate_optimal_routing(amm_pools, input_token, output_token, amount):
+    best_route = None
+    best_rate = 0
+    for pool in amm_pools:
+        pool_data = client.get_account_info(pool)
+        if pool_data and input_token in pool_data and output_token in pool_data:
+            rate = calculate_rate(pool_data, input_token, output_token, amount)
+            if rate > best_rate:
+                best_rate = rate
+                best_route = pool
+    return best_route, best_rate
 
-    def execute_trade(self, amount: float, side: str):
-        """Execute a trade."""
-        # Calculate optimal routing
-        route = self.calculate_optimal_route(amount, side)
-        
-        # Execute trade along optimal route
-        for market in route:
-            self.client.send_transaction(
-                transactions=[{
-                    "instruction": {
-                        "programId": DEX_PROGRAM_ID,
-                        "data": f"{side} {amount}".encode(),
-                        "keys": [{"pubkey": market, "isSigner": False}]
-                    }
-                }]
-            )
+# Calculate rate
+def calculate_rate(pool_data, input_token, output_token, amount):
+    input_balance = pool_data[input_token]
+    output_balance = pool_data[output_token]
+    return (amount * output_balance) / (input_balance + (AMM_FEE * amount))
 
-    def calculate_optimal_route(self, amount: float, side: str):
-        """Calculate optimal routing using AMM pool and concentrated liquidity data."""
-        # Retrieve AMM pool and concentrated liquidity data
-        amm_pool_data = self.get_amm_pool_data()
-        concentrated_liquidity_data = self.get_concentrated_liquidity_data()
+# Concentrated liquidity
+def concentrated_liquidity(amm_pool, input_token, output_token, liquidity):
+    input_amount = liquidity * 0.5
+    output_amount = liquidity * 0.5
+    client.add_liquidity(amm_pool, input_token, output_token, input_amount, output_amount)
 
-        # Calculate optimal route using a graph algorithm (e.g. Dijkstra's)
-        graph = self.build_graph(amm_pool_data, concentrated_liquidity_data)
-        route = self.dijkstra(graph, amount, side)
-
-        return route
-
-    def get_amm_pool_data(self):
-        """Retrieve AMM pool data."""
-        amm_pool_data = self.client.get_program_accounts(DEX_PROGRAM_ID)
-        return amm_pool_data
-
-    def get_concentrated_liquidity_data(self):
-        """Retrieve concentrated liquidity data."""
-        concentrated_liquidity_data = self.client.get_program_accounts(DEX_PROGRAM_ID)
-        return concentrated_liquidity_data
-
-    def build_graph(self, amm_pool_data, concentrated_liquidity_data):
-        """Build a graph representing the AMM pools and concentrated liquidity."""
-        graph = {}
-        for pool in amm_pool_data:
-            graph[pool] = {}
-            for liquidity in concentrated_liquidity_data:
-                graph[pool][liquidity] = self.calculate_edge_weight(pool, liquidity)
-        return graph
-
-    def dijkstra(self, graph, amount, side):
-        """Run Dijkstra's algorithm to find the optimal route."""
-        queue = [(0, amount, side, [])]
-        seen = set()
-
-        while queue:
-            (cost, amount, side, path) = min(queue)
-            queue.remove((cost, amount, side, path))
-
-            if amount == 0:
-                return path
-
-            for neighbor, weight in graph.items():
-                if neighbor not in seen:
-                    seen.add(neighbor)
-                    queue.append((cost + weight, amount - 1, side, path + [neighbor]))
-
-        return None
-
-    def calculate_edge_weight(self, pool, liquidity):
-        """Calculate the weight of an edge in the graph."""
-        # Calculate the weight based on the pool's and liquidity's properties
-        weight = np.random.rand()  # Replace with actual calculation
-        return weight
+# Main function
+def main():
+    amm_pools = load_amm_pools()
+    input_token = "USDT"
+    output_token = "SOL"
+    amount = 1000
+    best_route, best_rate = calculate_optimal_routing(amm_pools, input_token, output_token, amount)
+    print(f"Best route: {best_route}, Best rate: {best_rate}")
+    concentrated_liquidity(best_route, input_token, output_token, 10000)
 
 if __name__ == "__main__":
-    client = Client("https://api.devnet.solana.com")
-    dex = SolanaDEX(client)
-    dex.execute_trade(100.0, "buy")
+    main()
