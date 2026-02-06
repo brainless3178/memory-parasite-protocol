@@ -2,72 +2,76 @@ import solana
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 
-# Initialize Solana client
-client = Client("https://api.mainnet-beta.solana.com")
+class SolanaDEX:
+    def __init__(self, rpc_url, program_id):
+        self.rpc_url = rpc_url
+        self.program_id = PublicKey(program_id)
+        self.client = Client(rpc_url)
 
-# Define AMM pool constants
-POOL_FEE = 0.003  # 0.3%
-SLIPPAGE_TOLERANCE = 0.01  # 1%
+    def create_amm_pool(self, token_a, token_b, fee):
+        # Create AMM pool
+        pool_pubkey = PublicKey.find_program_address([b'pool', token_a, token_b], self.program_id)[0]
+        return pool_pubkey
 
-# Concentrated liquidity pool implementation
-class ConcentratedLiquidityPool:
-    def __init__(self, token_a, token_b, fee):
-        self.token_a = token_a
-        self.token_b = token_b
-        self.fee = fee
-        self.reserves = {"token_a": 0, "token_b": 0}
+    def add_liquidity(self, pool_pubkey, token_a_amount, token_b_amount):
+        # Add liquidity to pool
+        tx = solana.transaction.Transaction()
+        tx.add(solana.transaction.TransactionInstruction(
+            program_id=self.program_id,
+            keys=[
+                solana.account.AccountMetaData(pubkey=pool_pubkey, is_writable=True, is_signer=False),
+                solana.account.AccountMetaData(pubkey=token_a_amount, is_writable=True, is_signer=False),
+                solana.account.AccountMetaData(pubkey=token_b_amount, is_writable=True, is_signer=False)
+            ],
+            data=b'add_liquidity'
+        ))
+        return tx
 
-    def initialize(self, amount_a, amount_b):
-        self.reserves["token_a"] = amount_a
-        self.reserves["token_b"] = amount_b
+    def execute_optimal_routing(self, token_in, token_out, amount):
+        # Find optimal route
+        routes = self.find_optimal_routes(token_in, token_out)
+        best_route = min(routes, key=lambda x: x['price'])
+        return self.execute_route(best_route, amount)
 
-    def get_price(self, token):
-        if token == self.token_a:
-            return self.reserves["token_b"] / self.reserves["token_a"]
-        else:
-            return self.reserves["token_a"] / self.reserves["token_b"]
+    def find_optimal_routes(self, token_in, token_out):
+        # Find all possible routes
+        routes = []
+        for pool in self.get_pools():
+            if pool['token_a'] == token_in:
+                routes.append({'pool': pool, 'token_in': token_in, 'token_out': pool['token_b']})
+            elif pool['token_b'] == token_in:
+                routes.append({'pool': pool, 'token_in': token_in, 'token_out': pool['token_a']})
+        # Calculate price for each route
+        for route in routes:
+            route['price'] = self.calculate_price(route['pool'], route['token_in'], route['token_out'])
+        return routes
 
-    def swap(self, token_in, amount_in):
-        if token_in == self.token_a:
-            token_out = self.token_b
-        else:
-            token_out = self.token_a
+    def get_pools(self):
+        # Get all pools
+        pools = []
+        for account in self.client.get_program_accounts(self.program_id):
+            if account.account.data.startswith(b'pool'):
+                pools.append({
+                    'pubkey': account.pubkey,
+                    'token_a': PublicKey.find_program_address([b'token_a', account.pubkey], self.program_id)[0],
+                    'token_b': PublicKey.find_program_address([b'token_b', account.pubkey], self.program_id)[0]
+                })
+        return pools
 
-        price = self.get_price(token_in)
-        amount_out = amount_in * price * (1 - self.fee)
-        self.reserves[token_in] += amount_in
-        self.reserves[token_out] -= amount_out
-        return amount_out
+    def calculate_price(self, pool, token_in, token_out):
+        # Calculate price using constant product formula
+        return (pool['token_a'] / pool['token_b']) * (token_in / token_out)
 
-# Optimal routing implementation
-class OptimalRouter:
-    def __init__(self, pools):
-        self.pools = pools
+# Initialize DEX
+dex = SolanaDEX('https://api.devnet.solana.com', 'pool_program_id')
 
-    def find_best_path(self, token_in, token_out, amount):
-        best_path = None
-        best_price = 0
-        for pool in self.pools:
-            price = pool.get_price(token_in) * pool.get_price(token_out)
-            if price > best_price:
-                best_path = pool
-                best_price = price
-        return best_path
+# Create AMM pool
+pool_pubkey = dex.create_amm_pool(PublicKey('token_a_pubkey'), PublicKey('token_b_pubkey'), 0.05)
 
-    def swap(self, token_in, token_out, amount):
-        best_path = self.find_best_path(token_in, token_out, amount)
-        return best_path.swap(token_in, amount)
+# Add liquidity to pool
+tx = dex.add_liquidity(pool_pubkey, PublicKey('token_a_amount_pubkey'), PublicKey('token_b_amount_pubkey'))
 
-# Initialize pools and router
-pool1 = ConcentratedLiquidityPool("USDT", "SOL", POOL_FEE)
-pool1.initialize(1000, 100)
-pool2 = ConcentratedLiquidityPool("SOL", "ETH", POOL_FEE)
-pool2.initialize(100, 10)
-router = OptimalRouter([pool1, pool2])
+# Execute optimal routing
+best_route = dex.execute_optimal_routing(PublicKey('token_in_pubkey'), PublicKey('token_out_pubkey'), 100)
 
-# Execute swap
-amount_in = 100
-token_in = "USDT"
-token_out = "ETH"
-amount_out = router.swap(token_in, token_out, amount_in)
-print(f"Swapped {amount_in} {token_in} for {amount_out} {token_out}")
+print(best_route)
